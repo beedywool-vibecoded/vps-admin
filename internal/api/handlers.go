@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/beedywool/vps-admin/internal/auth"
@@ -236,7 +237,7 @@ func (s *Server) addDockerCheck(r *http.Request, rep *system.Security) {
 	}
 	if len(exposed) > 0 {
 		c.Status = system.Warn
-		c.Detail = fmt.Sprintf("Reachable from the internet whatever ufw says: %v", exposed)
+		c.Detail = "Reachable from the internet whatever ufw says: " + strings.Join(exposed, ", ")
 		c.Fix = "Publish on 127.0.0.1 (\"127.0.0.1:8080:80\") and serve through the reverse proxy, unless the port must be public."
 	}
 	rep.Checks = append(rep.Checks, c)

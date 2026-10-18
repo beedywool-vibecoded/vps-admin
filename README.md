@@ -2,7 +2,10 @@
 
 Panneau d'administration auto-hébergé pour n'importe quel VPS Linux : un agent en un seul binaire Go sur le serveur, un panneau web Material 3 embarqué, et une app Android Flutter (Material You) qui se connecte à plusieurs serveurs.
 
-> Statut : l'agent est fonctionnel (API, appairage, passkeys, métriques, services, Docker, audit de sécurité, mise à jour automatique). Le panneau web, les déploiements depuis GitHub, l'assistant et l'app arrivent ensuite.
+> Statut :
+>
+> - Fonctionnel : l'agent (API, appairage, passkeys, métriques, services, Docker, audit de sécurité, mise à jour automatique) et le panneau web.
+> - À venir : les déploiements depuis GitHub, l'assistant et l'app.
 
 ## Fonctionnalités
 
@@ -72,6 +75,7 @@ go run ./tools/release-sign -keygen
 ## Développement
 
 ```sh
+cd web && npm ci && npm run build && cd ..   # le panneau est compilé dans internal/web/dist
 go test ./...
 go run ./cmd/vps-admin serve -config dev.json   # sans fichier : 127.0.0.1:7171, données dans /var/lib/vps-admin
 go run ./cmd/vps-admin pair -config dev.json
@@ -87,5 +91,5 @@ go run ./cmd/vps-admin pair -config dev.json
 | `internal/update` | releases signées, installation, retour arrière |
 | `internal/store` | SQLite (pur Go, binaire statique) |
 | `deploy/` | installeur, unité systemd, `preflight.sh` |
-| `web/` | panneau Vue 3 (à venir) |
+| `web/` | panneau Vue 3, Material 3 Expressive, couleurs Material You générées depuis une couleur de base |
 | `app/` | app Flutter (à venir) |

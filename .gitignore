@@ -1,7 +1,7 @@
 /vps-admin
 /dist/
 internal/web/dist/*
-!internal/web/dist/index.html
+!internal/web/dist/.gitkeep
 node_modules/
 *.db
 *.db-*

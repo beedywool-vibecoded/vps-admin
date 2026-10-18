@@ -1,0 +1,332 @@
+/* Google Sans Flex (OFL), same self-hosted subset as the portfolio */
+@font-face {
+  font-family: 'Google Sans Flex';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('/fonts/google-sans-flex-latin-ext.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Google Sans Flex';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('/fonts/google-sans-flex-latin.woff2') format('woff2');
+  unicode-range:
+    U+0020-007E, U+00A0-00FF, U+0152-0153, U+2013-2014, U+2018-201E, U+2022, U+2026, U+20AC, U+2122;
+}
+
+/* M3 color roles. theme.ts overwrites them from the seed color; these are the baseline
+   purple values so the first paint is already right. */
+:root {
+  color-scheme: dark;
+  --surface: #141218;
+  --scl: #1d1b20;
+  --sc: #211f26;
+  --sch: #2b2930;
+  --schh: #36343b;
+  --scc: #0f0d13;
+  --primary: #d0bcff;
+  --on-primary: #381e72;
+  --pc: #4f378b;
+  --on-pc: #eaddff;
+  --secc: #4a4458;
+  --on-secc: #e8def8;
+  --tertiary: #efb8c8;
+  --tc: #633b48;
+  --on-tc: #ffd8e4;
+  --error: #f2b8b5;
+  --on-error: #601410;
+  --ec: #8c1d18;
+  --on-ec: #f9dedc;
+  --on-surface: #e6e0e9;
+  --on-sv: #cac4d0;
+  --outline: #938f99;
+  --outline-v: #49454f;
+  --dot: rgba(202, 196, 208, 0.16);
+
+  /* Status, fixed across seeds so states always read the same */
+  --ok: #8fd694;
+  --on-ok: #0b3a12;
+  --warn: #f6c177;
+  --on-warn: #3a2600;
+  --bad: #f2b8b5;
+  --on-bad: #601410;
+
+  /* Chart series, validated for color vision deficiency on the dark surface */
+  --series-1: #9478e8;
+  --series-2: #1e9e81;
+
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --ease-decel: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --font: 'Google Sans Flex', 'Google Sans', 'Roboto Flex', system-ui, sans-serif;
+  --mono: 'Google Sans Code', ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --ok: #2e7d32;
+  --on-ok: #ffffff;
+  --warn: #8a5a00;
+  --on-warn: #ffffff;
+  --bad: #b3261e;
+  --on-bad: #ffffff;
+  --dot: rgba(73, 69, 79, 0.16);
+  --series-1: #6750a4;
+  --series-2: #008a73;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--surface);
+  background-image:
+    radial-gradient(var(--dot) 1.2px, transparent 1.2px),
+    radial-gradient(var(--dot) 1.2px, transparent 1.2px);
+  background-size: 30px 30px;
+  background-position:
+    0 0,
+    15px 15px;
+  background-attachment: fixed;
+  color: var(--on-surface);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.45;
+}
+a {
+  color: var(--primary);
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+code,
+pre {
+  font-family: var(--mono);
+}
+:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+}
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 500;
+}
+
+/* State layer: hover and press tint in the content color, like M3 */
+.st {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.st::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity 0.2s var(--ease);
+  pointer-events: none;
+}
+.st:hover:not(:disabled)::after {
+  opacity: 0.08;
+}
+.st:active:not(:disabled)::after {
+  opacity: 0.12;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 20px;
+  border-radius: 20px;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.btn-filled {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.btn-tonal {
+  background: var(--secc);
+  color: var(--on-secc);
+}
+.btn-outlined {
+  background: transparent;
+  color: var(--primary);
+  border: 1px solid var(--outline);
+}
+.btn-text {
+  background: transparent;
+  color: var(--primary);
+  padding: 0 12px;
+}
+.btn-danger {
+  background: var(--error);
+  color: var(--on-error);
+}
+.btn-lg {
+  height: 48px;
+  padding: 0 28px;
+  border-radius: 24px;
+  font-size: 15px;
+}
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 20px;
+  border: none;
+  background: transparent;
+  color: var(--on-sv);
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+/* Surfaces */
+.card {
+  border-radius: 28px;
+  background: var(--sc);
+  padding: 20px 22px;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.card-head h2 {
+  font-size: 20px;
+  flex: 1;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--secc);
+  color: var(--on-secc);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.chip-outline {
+  background: transparent;
+  color: var(--on-sv);
+  border: 1px solid var(--outline-v);
+  font-weight: 500;
+}
+.muted {
+  color: var(--on-sv);
+}
+.small {
+  font-size: 13px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 6px;
+  border-top: 1px solid var(--sch);
+  flex-wrap: wrap;
+}
+.row:first-of-type {
+  border-top: none;
+}
+.grow {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.ellipsis {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.page-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.page-title h1 {
+  font-size: 30px;
+  flex: 1;
+}
+
+/* Text field, filled style */
+.field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 48px;
+  padding: 0 18px;
+  border-radius: 24px;
+  background: var(--sch);
+  color: var(--on-sv);
+}
+.field input {
+  border: none;
+  background: none;
+  outline: none;
+  flex: 1;
+  min-width: 0;
+  color: var(--on-surface);
+  font-size: 15px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
