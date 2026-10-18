@@ -14,8 +14,9 @@ const route = useRoute()
 
 const NAV: { to: string; label: string; icon: IconName; mobile: boolean }[] = [
   { to: '/', label: 'Overview', icon: 'overview', mobile: true },
+  { to: '/apps', label: 'Apps', icon: 'apps', mobile: true },
   { to: '/services', label: 'Services', icon: 'services', mobile: true },
-  { to: '/containers', label: 'Containers', icon: 'containers', mobile: true },
+  { to: '/containers', label: 'Containers', icon: 'containers', mobile: false },
   { to: '/security', label: 'Security', icon: 'security', mobile: true },
   { to: '/updates', label: 'Updates', icon: 'updates', mobile: false },
   { to: '/settings', label: 'Settings', icon: 'settings', mobile: true },

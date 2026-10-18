@@ -198,10 +198,15 @@ done
 curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 || die "the agent did not start, see: journalctl -u vps-admin"
 
 # 5. Reverse proxy --------------------------------------------------------------------
-if [ -n "$DOMAIN" ] && [ "$USE_CADDY" = 1 ] && command -v caddy >/dev/null && [ -f /etc/caddy/Caddyfile ]; then
-	say "Adding $DOMAIN to Caddy"
+if [ "$USE_CADDY" = 1 ] && command -v caddy >/dev/null && [ -f /etc/caddy/Caddyfile ]; then
+	say "Configuring Caddy"
+	backup="/etc/caddy/Caddyfile.$(date +%Y%m%d%H%M%S).bak"
+	cp -a /etc/caddy/Caddyfile "$backup"
 	install -d /etc/caddy/conf.d
-	cat > /etc/caddy/conf.d/vps-admin.caddy <<EOF
+	# Deployed apps get one snippet each in this folder, written by the agent.
+	install -d -o vps-admin -g vps-admin -m 755 /etc/caddy/vps-admin-apps
+	if [ -n "$DOMAIN" ]; then
+		cat > /etc/caddy/conf.d/vps-admin.caddy <<CADDY
 # Managed by the VPS Admin installer
 $DOMAIN {
 	encode zstd gzip
@@ -209,17 +214,20 @@ $DOMAIN {
 		flush_interval -1
 	}
 }
-EOF
-	cp -a /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.$(date +%Y%m%d%H%M%S).bak"
-	grep -q '^import conf.d/\*.caddy' /etc/caddy/Caddyfile || printf '\nimport conf.d/*.caddy\n' >> /etc/caddy/Caddyfile
+CADDY
+		grep -q '^import conf.d/\*.caddy' /etc/caddy/Caddyfile || printf '\nimport conf.d/*.caddy\n' >> /etc/caddy/Caddyfile
+	fi
+	grep -q '^import vps-admin-apps/\*.caddy' /etc/caddy/Caddyfile || printf '\nimport vps-admin-apps/*.caddy\n' >> /etc/caddy/Caddyfile
 	if caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
 		systemctl reload caddy
 	else
+		cp -a "$backup" /etc/caddy/Caddyfile
 		rm -f /etc/caddy/conf.d/vps-admin.caddy
-		say "Caddy rejected the config, left it unchanged. Proxy $DOMAIN to 127.0.0.1:$PORT yourself."
+		say "Caddy rejected the new config, restored it. Proxy ${DOMAIN:-the panel} to 127.0.0.1:$PORT yourself."
 	fi
 elif [ -n "$DOMAIN" ]; then
 	say "Point your reverse proxy for $DOMAIN to 127.0.0.1:$PORT (TLS is required for passkeys)."
+	say "Without Caddy, deployed apps get no domain (reachable on 127.0.0.1 only)."
 fi
 
 # 6. Pairing --------------------------------------------------------------------------

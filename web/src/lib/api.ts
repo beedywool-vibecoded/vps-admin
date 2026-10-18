@@ -153,6 +153,93 @@ export interface AuditEntry {
   detail?: string
 }
 
+export type BuildType = 'auto' | 'dockerfile' | 'compose' | 'node' | 'static'
+
+export interface App {
+  id: string
+  repo: string
+  installationId: number
+  branch: string
+  rootDir: string
+  build: BuildType
+  port: number
+  domain: string
+  autoDeploy: boolean
+  keep: number
+  memoryMb: number
+  createdAt: string
+}
+
+export interface Deployment {
+  id: number
+  appId: string
+  sha: string
+  message: string
+  trigger: 'manual' | 'push' | 'rollback' | 'create'
+  status: 'queued' | 'building' | 'starting' | 'live' | 'failed' | 'superseded' | 'cancelled'
+  build: string
+  image: string
+  container: string
+  hostPort: number
+  error: string
+  createdAt: string
+  finishedAt?: string
+}
+
+export interface AppView extends App {
+  status: string
+  live?: Deployment
+  latest?: Deployment
+  busy: boolean
+}
+
+export interface EnvVar {
+  key: string
+  value: string
+  secret: boolean
+  hasValue?: boolean
+  keep?: boolean
+}
+
+export interface GitHubStatus {
+  connected: boolean
+  domains: boolean
+  publicUrl: string
+  app?: { slug: string; name: string; owner: string; htmlUrl: string; installUrl: string }
+  installations?: { id: number; account: string; type: string; htmlUrl: string }[]
+  error?: string
+}
+
+export interface Repo {
+  fullName: string
+  private: boolean
+  defaultBranch: string
+  language: string
+  pushedAt: string
+  installationId: number
+}
+
+export interface Detection {
+  build: BuildType | ''
+  port: number
+  reason: string
+}
+
+export interface AppInput {
+  id?: string
+  repo?: string
+  branch: string
+  rootDir: string
+  build: BuildType
+  port: number
+  domain: string
+  autoDeploy: boolean
+  keep: number
+  memoryMb: number
+  env?: EnvVar[]
+  deploy?: boolean
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -225,11 +312,50 @@ export const api = {
   devices: () => request<{ devices: Device[]; current: string }>('GET', '/api/devices'),
   revokeDevice: (id: string) => request<void>('DELETE', `/api/devices/${encodeURIComponent(id)}`),
   audit: (before = 0) => request<{ entries: AuditEntry[] }>('GET', `/api/audit?limit=50&before=${before}`),
+
+  github: () => request<GitHubStatus>('GET', '/api/github'),
+  githubManifest: (org = '') => request<{ url: string; manifest: string }>('POST', '/api/github/manifest', { org }),
+  githubDisconnect: () => request<void>('DELETE', '/api/github'),
+  repos: () => request<{ repos: Repo[] }>('GET', '/api/github/repos'),
+  detect: (r: Repo, ref: string, root: string) =>
+    request<{ detection: Detection; files: string[] }>(
+      'GET',
+      `/api/github/detect?installation=${r.installationId}&repo=${encodeURIComponent(r.fullName)}&ref=${encodeURIComponent(ref)}&root=${encodeURIComponent(root)}`,
+    ),
+
+  apps: () => request<{ apps: AppView[]; domains: boolean }>('GET', '/api/apps'),
+  app: (id: string) =>
+    request<{ app: AppView; env: EnvVar[]; deployments: Deployment[]; domains: boolean }>('GET', `/api/apps/${id}`),
+  createApp: (a: AppInput) => request<{ app: App; deployment?: Deployment }>('POST', '/api/apps', a),
+  updateApp: (id: string, a: AppInput) => request<{ app: App }>('PUT', `/api/apps/${id}`, a),
+  deleteApp: (id: string, volumes: boolean) => request<void>('DELETE', `/api/apps/${id}${volumes ? '?volumes=1' : ''}`),
+  setEnv: (id: string, env: EnvVar[]) => request<void>('PUT', `/api/apps/${id}/env`, { env }),
+  deploy: (id: string) => request<Deployment>('POST', `/api/apps/${id}/deploy`),
+  rollback: (id: string, dep: number) => request<Deployment>('POST', `/api/apps/${id}/rollback/${dep}`),
+  restartApp: (id: string) => request<void>('POST', `/api/apps/${id}/restart`),
+  deploymentLog: (id: string, dep: number) =>
+    request<{ deployment: Deployment; log: string }>('GET', `/api/apps/${id}/deployments/${dep}`),
 }
 
 // Live metrics over server-sent events. Returns a function that closes the stream.
 export function streamSystem(onSnapshot: (s: Snapshot) => void): () => void {
   const es = new EventSource('/api/system/stream')
   es.onmessage = (e) => onSnapshot(JSON.parse(e.data) as Snapshot)
+  return () => es.close()
+}
+
+// Build output of a deployment: the stored log first, then live chunks until it ends.
+export function streamDeployment(
+  app: string,
+  dep: number,
+  on: { log: (chunk: string) => void; status: (d: Deployment) => void; end: (d: Deployment) => void },
+): () => void {
+  const es = new EventSource(`/api/apps/${app}/deployments/${dep}/stream`)
+  es.addEventListener('log', (e) => on.log(JSON.parse((e as MessageEvent).data)))
+  es.addEventListener('status', (e) => on.status(JSON.parse((e as MessageEvent).data)))
+  es.addEventListener('end', (e) => {
+    on.end(JSON.parse((e as MessageEvent).data))
+    es.close()
+  })
   return () => es.close()
 }

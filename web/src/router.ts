@@ -6,6 +6,9 @@ export const router = createRouter({
   routes: [
     { path: '/login', name: 'login', component: () => import('./views/LoginView.vue'), meta: { public: true } },
     { path: '/', name: 'overview', component: () => import('./views/OverviewView.vue') },
+    { path: '/apps', name: 'apps', component: () => import('./views/AppsView.vue') },
+    { path: '/apps/new', name: 'app-new', component: () => import('./views/NewAppView.vue') },
+    { path: '/apps/:id', name: 'app', component: () => import('./views/AppDetailView.vue'), props: true },
     { path: '/services', name: 'services', component: () => import('./views/ServicesView.vue') },
     { path: '/containers', name: 'containers', component: () => import('./views/ContainersView.vue') },
     { path: '/security', name: 'security', component: () => import('./views/SecurityView.vue') },

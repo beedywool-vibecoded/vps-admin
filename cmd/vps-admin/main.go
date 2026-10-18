@@ -125,6 +125,10 @@ func serve(cfgPath string) error {
 
 	runner := system.NewRunner()
 	gh := github.New()
+	// For tests against a fake GitHub; never set in production.
+	if v := os.Getenv("VPS_ADMIN_GITHUB_API"); v != "" {
+		gh.API = v
+	}
 	engine := &deploy.Engine{
 		Store: st, Box: box, GitHub: gh, DataDir: cfg.DataDir, SitesDir: cfg.CaddySitesDir,
 		ReloadCaddy: func(ctx context.Context) error {

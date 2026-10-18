@@ -117,22 +117,29 @@ func Manifest(publicURL, name string) map[string]any {
 
 // Convert exchanges the one-time code from the manifest redirect for the App credentials.
 func (c *Client) Convert(ctx context.Context, code string) (*Creds, error) {
-	var cr Creds
-	var owner struct {
-		Owner struct {
-			Login string `json:"login"`
-		} `json:"owner"`
-	}
 	body, err := c.call(ctx, http.MethodPost, "/app-manifests/"+url.PathEscape(code)+"/conversions", "", nil)
 	if err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal(body, &cr); err != nil {
+	// Same fields as Creds, except owner, which GitHub sends as an object.
+	var raw struct {
+		ID            int64  `json:"id"`
+		Slug          string `json:"slug"`
+		Name          string `json:"name"`
+		HTMLURL       string `json:"html_url"`
+		PEM           string `json:"pem"`
+		WebhookSecret string `json:"webhook_secret"`
+		ClientID      string `json:"client_id"`
+		ClientSecret  string `json:"client_secret"`
+		Owner         struct {
+			Login string `json:"login"`
+		} `json:"owner"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, err
 	}
-	json.Unmarshal(body, &owner)
-	cr.Owner = owner.Owner.Login
-	return &cr, nil
+	return &Creds{ID: raw.ID, Slug: raw.Slug, Name: raw.Name, HTMLURL: raw.HTMLURL, Owner: raw.Owner.Login,
+		PEM: raw.PEM, WebhookSecret: raw.WebhookSecret, ClientID: raw.ClientID, ClientSecret: raw.ClientSecret}, nil
 }
 
 func b64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
