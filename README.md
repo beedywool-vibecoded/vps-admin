@@ -37,6 +37,8 @@ L'installeur :
 5. Ajoute le domaine à Caddy si Caddy est présent. Sinon, fais pointer ton reverse proxy vers `127.0.0.1:7171`.
 6. Affiche un **code d'appairage**.
 
+Si le repo est **privé**, ajoute `--token <jeton>` : un jeton GitHub fine-grained, en lecture seule sur « Contents » de ce seul repo. Il est gardé dans la config pour que la mise à jour automatique continue de fonctionner.
+
 On peut le relancer pour réparer ou mettre à jour : les données sont gardées. Pour un nouveau code plus tard : `sudo vps-admin pair`.
 
 ## Sécurité

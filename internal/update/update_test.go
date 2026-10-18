@@ -158,3 +158,47 @@ func TestApplyRejectsForeignKey(t *testing.T) {
 		t.Fatalf("got %v, want ErrSignature", err)
 	}
 }
+
+// With a token, assets come from the API URLs with the token attached.
+func TestPrivateRepoUsesAPIAssets(t *testing.T) {
+	priv := useKey(t)
+	bin := []byte("#!/bin/sh\necho v1.1.0\n")
+	sum := sha256.Sum256(bin)
+	sums := []byte(hex.EncodeToString(sum[:]) + "  " + AssetName() + "\n")
+	sig := base64.StdEncoding.EncodeToString(ed25519.Sign(priv, sums))
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer secret" {
+			http.NotFound(w, r) // GitHub hides private repos from anonymous requests
+			return
+		}
+		if strings.Contains(r.URL.Path, "/releases/assets/") && r.Header.Get("Accept") != "application/octet-stream" {
+			t.Errorf("asset %s fetched without octet-stream", r.URL.Path)
+		}
+		switch r.URL.Path {
+		case "/repos/o/r/releases":
+			fmt.Fprintf(w, `[{"tag_name":"v1.1.0","assets":[{"name":%q,"url":"%[2]s/repos/o/r/releases/assets/1","browser_download_url":"x"},{"name":"SHA256SUMS","url":"%[2]s/repos/o/r/releases/assets/2","browser_download_url":"x"},{"name":"SHA256SUMS.sig","url":"%[2]s/repos/o/r/releases/assets/3","browser_download_url":"x"}]}]`, AssetName(), srv.URL)
+		case "/repos/o/r/releases/assets/1":
+			w.Write(bin)
+		case "/repos/o/r/releases/assets/2":
+			w.Write(sums)
+		case "/repos/o/r/releases/assets/3":
+			w.Write([]byte(sig))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	u := newTestUpdater(t, srv)
+	if _, err := u.latest(context.Background(), false); err == nil {
+		t.Fatal("anonymous request should fail on a private repo")
+	}
+	u.Token = "secret"
+	rel, err := u.latest(context.Background(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := u.Apply(context.Background(), rel); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -107,6 +107,7 @@ func serve(cfgPath string) error {
 	if err != nil {
 		return err
 	}
+	up.Token = cfg.Update.GitHubToken
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

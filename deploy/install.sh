@@ -8,6 +8,8 @@
 #   --version TAG     install this release instead of the latest
 #   --binary PATH     install a local binary instead of downloading one (testing)
 #   --no-caddy        do not touch Caddy even if it is installed
+#   --token TOKEN     GitHub token for a private repository (read-only Contents access);
+#                     also saved in the config so self-update keeps working
 #
 # Running it again repairs or upgrades an existing install and keeps its data.
 set -euo pipefail
@@ -20,6 +22,7 @@ DOMAIN=""
 VERSION=""
 LOCAL_BINARY=""
 USE_CADDY=1
+TOKEN="${VPS_ADMIN_GITHUB_TOKEN:-}"
 
 say() { printf '\033[1;35m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -30,7 +33,8 @@ while [ $# -gt 0 ]; do
 		--version) VERSION="${2:-}"; shift 2 ;;
 		--binary) LOCAL_BINARY="${2:-}"; shift 2 ;;
 		--no-caddy) USE_CADDY=0; shift ;;
-		-h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+		--token) TOKEN="${2:-}"; shift 2 ;;
+		-h|--help) sed -n '2,15p' "$0"; exit 0 ;;
 		*) die "unknown option $1" ;;
 	esac
 done
@@ -63,9 +67,27 @@ else
 		BASE="https://github.com/$REPO/releases/latest/download"
 	fi
 	say "Downloading vps-admin for linux/$ARCH"
-	curl -fsSL -o "$TMP/vps-admin" "$BASE/vps-admin_linux_$ARCH"
-	curl -fsSL -o "$TMP/SHA256SUMS" "$BASE/SHA256SUMS"
-	curl -fsSL -o "$TMP/SHA256SUMS.sig" "$BASE/SHA256SUMS.sig"
+	if [ -n "$TOKEN" ]; then
+		# Private repository: download links need the API and the token.
+		api="https://api.github.com/repos/$REPO/releases/latest"
+		[ -n "$VERSION" ] && api="https://api.github.com/repos/$REPO/releases/tags/$VERSION"
+		curl -fsSL -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" -o "$TMP/release.json" "$api" \
+			|| die "cannot read the release (check the token and its access to $REPO)"
+		get() { # asset name, destination
+			local url
+			# Each asset object lists its API "url" before its "name"; no jq needed.
+			url=$(awk -v want="$1" '
+				/"url": *"https:\/\/api\.github\.com\/repos\/.*\/releases\/assets\// { match($0, /https:[^"]*/); u = substr($0, RSTART, RLENGTH) }
+				/"name": *"/ { if (index($0, "\"" want "\"") && u != "") { print u; exit } }' "$TMP/release.json")
+			[ -n "$url" ] || die "the release has no $1"
+			curl -fsSL -H "Authorization: Bearer $TOKEN" -H "Accept: application/octet-stream" -o "$2" "$url"
+		}
+	else
+		get() { curl -fsSL -o "$2" "$BASE/$1"; }
+	fi
+	get "vps-admin_linux_$ARCH" "$TMP/vps-admin"
+	get SHA256SUMS "$TMP/SHA256SUMS"
+	get SHA256SUMS.sig "$TMP/SHA256SUMS.sig"
 
 	say "Verifying the signature"
 	# Wrap the raw ed25519 key in its DER header so openssl can read it.
@@ -105,11 +127,18 @@ if [ ! -f /etc/vps-admin/config.json ]; then
   "data_dir": "/var/lib/vps-admin",
   "trusted_proxies": ["127.0.0.1/32", "::1/128"],
   "docker_socket": "/var/run/docker.sock",
-  "update": { "auto": true, "prerelease": false }
+  "update": { "auto": true, "prerelease": false, "github_token": "$TOKEN" }
 }
 EOF
-elif [ -n "$DOMAIN" ]; then
-	sed -i "s#\"public_url\": *\"[^\"]*\"#\"public_url\": \"$PUBLIC_URL\"#" /etc/vps-admin/config.json
+else
+	[ -n "$DOMAIN" ] && sed -i "s#\"public_url\": *\"[^\"]*\"#\"public_url\": \"$PUBLIC_URL\"#" /etc/vps-admin/config.json
+	if [ -n "$TOKEN" ]; then
+		if grep -q '"github_token"' /etc/vps-admin/config.json; then
+			sed -i "s#\"github_token\": *\"[^\"]*\"#\"github_token\": \"$TOKEN\"#" /etc/vps-admin/config.json
+		else
+			sed -i "s#\"update\": *{#\"update\": { \"github_token\": \"$TOKEN\",#" /etc/vps-admin/config.json
+		fi
+	fi
 fi
 chown root:vps-admin /etc/vps-admin/config.json
 chmod 640 /etc/vps-admin/config.json
@@ -144,6 +173,8 @@ fetch_asset() { # name, destination
 	# Local files only with --binary: piped through bash, the "script dir" is just the cwd.
 	if [ -n "$LOCAL_BINARY" ] && [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/$1" ]; then
 		cp "$SCRIPT_DIR/$1" "$2"
+	elif [ -n "$TOKEN" ] && declare -F get >/dev/null; then
+		get "$1" "$2"
 	else
 		curl -fsSL -o "$2" "${BASE:-https://github.com/$REPO/releases/latest/download}/$1"
 	fi

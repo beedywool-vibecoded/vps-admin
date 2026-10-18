@@ -50,13 +50,13 @@ var (
 )
 
 type Release struct {
-	Tag        string    `json:"tag"`
-	Name       string    `json:"name"`
-	Notes      string    `json:"notes"`
-	Prerelease bool      `json:"prerelease"`
-	Published  time.Time `json:"published"`
-	URL        string    `json:"url"`
-	assets     map[string]string
+	Tag        string            `json:"tag"`
+	Name       string            `json:"name"`
+	Notes      string            `json:"notes"`
+	Prerelease bool              `json:"prerelease"`
+	Published  time.Time         `json:"published"`
+	URL        string            `json:"url"`
+	assets     map[string]string // name -> download URL
 }
 
 type Status struct {
@@ -76,6 +76,9 @@ type Updater struct {
 	Binary string
 	HTTP   *http.Client
 	API    string // GitHub API root, changed by tests
+	// Token authenticates against a private repository; assets are then fetched through
+	// the API instead of the public download links.
+	Token string
 
 	mu      sync.Mutex
 	status  Status
@@ -127,7 +130,7 @@ func (u *Updater) Check(ctx context.Context, prerelease bool) (Status, error) {
 func (u *Updater) latest(ctx context.Context, prerelease bool) (*Release, error) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/repos/%s/releases?per_page=20", u.API, u.Repo), nil)
 	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "vps-admin/"+buildinfo.Version)
+	u.auth(req)
 	res, err := u.HTTP.Do(req)
 	if err != nil {
 		return nil, err
@@ -145,8 +148,9 @@ func (u *Updater) latest(ctx context.Context, prerelease bool) (*Release, error)
 		Published  time.Time `json:"published_at"`
 		HTMLURL    string    `json:"html_url"`
 		Assets     []struct {
-			Name string `json:"name"`
-			URL  string `json:"browser_download_url"`
+			Name   string `json:"name"`
+			URL    string `json:"browser_download_url"`
+			APIURL string `json:"url"`
 		} `json:"assets"`
 	}
 	if err := json.NewDecoder(io.LimitReader(res.Body, 4<<20)).Decode(&list); err != nil {
@@ -163,6 +167,9 @@ func (u *Updater) latest(ctx context.Context, prerelease bool) (*Release, error)
 		rel := &Release{Tag: r.Tag, Name: r.Name, Notes: r.Body, Prerelease: r.Prerelease, Published: r.Published, URL: r.HTMLURL, assets: map[string]string{}}
 		for _, a := range r.Assets {
 			rel.assets[a.Name] = a.URL
+			if u.Token != "" {
+				rel.assets[a.Name] = a.APIURL
+			}
 		}
 		best = rel
 	}
@@ -239,9 +246,22 @@ func (u *Updater) Apply(ctx context.Context, rel *Release) error {
 	return nil
 }
 
+// auth sets the user agent and, for private repositories, the token. Asset requests
+// through the API need Accept: application/octet-stream to get the file itself.
+func (u *Updater) auth(req *http.Request) {
+	req.Header.Set("User-Agent", "vps-admin/"+buildinfo.Version)
+	if u.Token == "" {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+u.Token)
+	if strings.Contains(req.URL.Path, "/releases/assets/") {
+		req.Header.Set("Accept", "application/octet-stream")
+	}
+}
+
 func (u *Updater) fetch(ctx context.Context, url string, limit int64) ([]byte, error) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	req.Header.Set("User-Agent", "vps-admin/"+buildinfo.Version)
+	u.auth(req)
 	res, err := u.HTTP.Do(req)
 	if err != nil {
 		return nil, err
@@ -255,7 +275,7 @@ func (u *Updater) fetch(ctx context.Context, url string, limit int64) ([]byte, e
 
 func (u *Updater) download(ctx context.Context, url, dst string, wantSum []byte) error {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	req.Header.Set("User-Agent", "vps-admin/"+buildinfo.Version)
+	u.auth(req)
 	res, err := u.HTTP.Do(req)
 	if err != nil {
 		return err

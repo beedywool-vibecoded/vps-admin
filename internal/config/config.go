@@ -36,6 +36,9 @@ type Update struct {
 	Auto bool `json:"auto"`
 	// Prerelease also follows GitHub pre-releases.
 	Prerelease bool `json:"prerelease"`
+	// GitHubToken reads releases of a private repository. A fine-grained token with
+	// read-only "Contents" access to that one repository is enough.
+	GitHubToken string `json:"github_token,omitempty"`
 }
 
 func Default() Config {
