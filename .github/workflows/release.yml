@@ -1,0 +1,69 @@
+# Push a tag like v1.2.3 to publish a release. Every agent with auto-update on installs
+# it within 6 hours; the binaries are only trusted if SHA256SUMS.sig verifies against the
+# public key compiled into the agent.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v5
+        if: hashFiles('web/package.json') != ''
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build the panel
+        if: hashFiles('web/package.json') != ''
+        working-directory: web
+        run: npm ci && npm run build
+
+      - run: go test ./...
+
+      - name: Build
+        run: |
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X github.com/beedywool/vps-admin/internal/buildinfo.Version=$GITHUB_REF_NAME -X github.com/beedywool/vps-admin/internal/buildinfo.Repo=$GITHUB_REPOSITORY" \
+              -o dist/vps-admin_linux_$arch ./cmd/vps-admin
+          done
+          cp deploy/install.sh deploy/preflight.sh deploy/vps-admin.service dist/
+          cd dist && sha256sum vps-admin_linux_* > SHA256SUMS
+
+      - name: Sign
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          test -n "$RELEASE_SIGNING_KEY" || { echo "RELEASE_SIGNING_KEY secret missing"; exit 1; }
+          go run ./tools/release-sign dist/SHA256SUMS > dist/SHA256SUMS.sig
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prev=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
+          if [ -n "$prev" ]; then
+            git log --no-merges --format='- %s' "$prev..$GITHUB_REF_NAME" > notes.md
+          else
+            echo "First release." > notes.md
+          fi
+          flags=""
+          case "$GITHUB_REF_NAME" in *-*) flags="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes-file notes.md $flags

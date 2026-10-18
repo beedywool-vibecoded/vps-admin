@@ -1,0 +1,22 @@
+[Unit]
+Description=VPS Admin agent
+Documentation=https://github.com/beedywool/vps-admin
+After=network-online.target docker.service
+Wants=network-online.target
+# Keep restarting: preflight.sh needs a few failed starts to roll back a bad update.
+StartLimitIntervalSec=0
+
+[Service]
+User=vps-admin
+Group=vps-admin
+ExecStartPre=/opt/vps-admin/preflight.sh
+ExecStart=/opt/vps-admin/bin/vps-admin serve
+Restart=always
+RestartSec=3
+UMask=0077
+PrivateTmp=yes
+# No stronger sandboxing on purpose: the agent administers the host through sudo, and
+# children inherit the unit's restrictions (ProtectSystem would break package updates).
+
+[Install]
+WantedBy=multi-user.target
