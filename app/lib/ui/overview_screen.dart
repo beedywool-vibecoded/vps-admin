@@ -99,7 +99,7 @@ class OverviewScreen extends StatelessWidget {
                 contentPadding: const EdgeInsets.fromLTRB(12, 8, 16, 8),
                 leading: ShapeIcon(M3Shape.clover, size: 44, color: cs.secondaryContainer),
                 title: Text('Agent ${d.update!.current}'),
-                subtitle: Text(d.update!.available ? '${d.update!.latest} is available' : 'Up to date · auto-update ${d.update!.auto ? 'on' : 'off'}'),
+                subtitle: Text(d.update!.available ? '${d.update!.latest} is available' : d.update!.error != null ? 'Update check failed: ${d.update!.error}' : 'Up to date · auto-update ${d.update!.auto ? 'on' : 'off'}'),
                 trailing: d.update!.available
                     ? FilledButton(
                         onPressed: () async {

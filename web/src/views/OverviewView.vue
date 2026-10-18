@@ -217,7 +217,7 @@ onBeforeUnmount(() => clearInterval(timer))
           <div class="grow">
             <div class="tile-title">VPS Admin agent {{ update?.current ?? session.version }}</div>
             <div class="muted small">
-              {{ update?.available ? `${update.latest?.tag} is available` : update?.checkedAt ? 'Up to date, signed builds only' : 'Not checked yet' }}
+              {{ update?.available ? `${update.latest?.tag} is available` : update?.error ? `Update check failed: ${update.error}` : update?.checkedAt ? 'Up to date, signed builds only' : 'Not checked yet' }}
             </div>
           </div>
           <RouterLink to="/updates" class="btn st" :class="update?.available ? 'btn-filled' : 'btn-tonal'">

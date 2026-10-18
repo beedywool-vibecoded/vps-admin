@@ -93,9 +93,10 @@ class UpdateStatus {
         latest = (j['latest'] as Map<String, dynamic>?)?['tag'] as String?,
         available = j['available'] as bool? ?? false,
         auto = j['auto'] as bool? ?? false,
-        lastResult = j['lastResult'] as String?;
+        lastResult = j['lastResult'] as String?,
+        error = j['error'] as String?;
   final String current;
-  final String? latest, lastResult;
+  final String? latest, lastResult, error;
   final bool available, auto;
 }
 
