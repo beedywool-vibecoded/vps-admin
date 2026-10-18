@@ -47,7 +47,6 @@
   --on-sv: #cac4d0;
   --outline: #938f99;
   --outline-v: #49454f;
-  --dot: rgba(202, 196, 208, 0.16);
 
   /* Status, fixed across seeds so states always read the same */
   --ok: #8fd694;
@@ -74,7 +73,6 @@
   --on-warn: #ffffff;
   --bad: #b3261e;
   --on-bad: #ffffff;
-  --dot: rgba(73, 69, 79, 0.16);
   --series-1: #6750a4;
   --series-2: #008a73;
 }
@@ -91,14 +89,6 @@ body {
   margin: 0;
   min-height: 100vh;
   background-color: var(--surface);
-  background-image:
-    radial-gradient(var(--dot) 1.2px, transparent 1.2px),
-    radial-gradient(var(--dot) 1.2px, transparent 1.2px);
-  background-size: 30px 30px;
-  background-position:
-    0 0,
-    15px 15px;
-  background-attachment: fixed;
   color: var(--on-surface);
   font-family: var(--font);
   font-size: 15px;
@@ -106,6 +96,56 @@ body {
 }
 a {
   color: var(--primary);
+}
+::selection {
+  background: var(--pc);
+  color: var(--on-pc);
+}
+
+/* Thin rounded scrollbars in the theme colors instead of the browser's */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--outline-v) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 8px;
+  background: var(--outline-v) padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* M3 plain tooltip (lib/tooltip.ts) */
+.m3-tooltip {
+  position: fixed;
+  z-index: 100;
+  max-width: 280px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--on-surface);
+  color: var(--surface);
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+  opacity: 0;
+  translate: 0 4px;
+  transition:
+    opacity 0.15s,
+    translate 0.15s var(--ease);
+}
+.m3-tooltip.show {
+  opacity: 1;
+  translate: 0 0;
+}
+
+/* Number fields are plain text fields: no browser spinners */
+input[inputmode='numeric'] {
+  font-variant-numeric: tabular-nums;
 }
 button,
 input,

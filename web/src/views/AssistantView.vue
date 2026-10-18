@@ -5,6 +5,8 @@ import Icon from '@/components/Icon.vue'
 import M3Shape from '@/components/M3Shape.vue'
 import M3Switch from '@/components/M3Switch.vue'
 import M3Dialog from '@/components/M3Dialog.vue'
+import M3Select from '@/components/M3Select.vue'
+import M3Expand from '@/components/M3Expand.vue'
 import {
   api,
   streamConversation,
@@ -203,6 +205,22 @@ async function setOption(o: { model?: string; effort?: string; autoRead?: boolea
     toastError(e)
   }
 }
+const model = computed({
+  get: () => settings.value?.model ?? '',
+  set: (v) => setOption({ model: v }),
+})
+const effort = computed({
+  get: () => settings.value?.effort ?? 'high',
+  set: (v) => setOption({ effort: v }),
+})
+const modelOptions = computed(() => models.value.map((m) => ({ value: m.id, label: m.label })))
+const EFFORTS = [
+  { value: 'low', label: 'Low', hint: 'Quick answers, lowest cost' },
+  { value: 'medium', label: 'Medium', hint: 'Everyday questions' },
+  { value: 'high', label: 'High', hint: 'Careful investigation' },
+  { value: 'xhigh', label: 'Extra high', hint: 'Hard incidents' },
+  { value: 'max', label: 'Max', hint: 'When correctness matters most' },
+]
 const autoRead = computed({
   get: () => settings.value?.autoRead ?? true,
   set: (v) => setOption({ autoRead: v }),
@@ -231,6 +249,7 @@ const statusLabel = (t: ToolCall) =>
 
 watch(() => props.id, (id) => open(id))
 onMounted(async () => {
+  document.documentElement.classList.add('assistant-page')
   try {
     await Promise.all([loadSettings(), loadList()])
   } catch (e) {
@@ -238,7 +257,10 @@ onMounted(async () => {
   }
   open(props.id)
 })
-onBeforeUnmount(() => close?.())
+onBeforeUnmount(() => {
+  close?.()
+  document.documentElement.classList.remove('assistant-page')
+})
 </script>
 
 <template>
@@ -256,22 +278,8 @@ onBeforeUnmount(() => close?.())
           </div>
           <button class="btn btn-text st" type="button" @click="keyOpen = true">{{ settings?.configured ? 'Change' : 'Connect' }}</button>
         </div>
-        <label class="tf">
-          <span>Model</span>
-          <select :value="settings?.model" :disabled="!settings" @change="setOption({ model: ($event.target as HTMLSelectElement).value })">
-            <option v-for="m in models" :key="m.id" :value="m.id">{{ m.label }}</option>
-          </select>
-        </label>
-        <label class="tf">
-          <span>Effort</span>
-          <select :value="settings?.effort" :disabled="!settings" @change="setOption({ effort: ($event.target as HTMLSelectElement).value })">
-            <option value="low">Low: quick answers</option>
-            <option value="medium">Medium</option>
-            <option value="high">High: careful investigation</option>
-            <option value="xhigh">Extra high</option>
-            <option value="max">Max</option>
-          </select>
-        </label>
+        <M3Select v-model="model" label="Model" :options="modelOptions" :disabled="!settings" />
+        <M3Select v-model="effort" label="Effort" :options="EFFORTS" :disabled="!settings" />
         <p class="small muted">The key is encrypted on this server. Usage is billed to your Anthropic account.</p>
       </section>
 
@@ -335,10 +343,10 @@ onBeforeUnmount(() => close?.())
 
         <template v-for="it in items" :key="it.key">
           <div v-if="it.kind === 'user'" class="bubble user">{{ it.text }}</div>
-          <details v-else-if="it.kind === 'thinking'" class="thinking">
-            <summary class="small muted">Reasoning</summary>
-            <div class="small" v-html="markdown(it.text ?? '')" />
-          </details>
+          <M3Expand v-else-if="it.kind === 'thinking'" class="thinking">
+            <template #summary><span class="small muted">Reasoning</span></template>
+            <div class="small reasoning" v-html="markdown(it.text ?? '')" />
+          </M3Expand>
           <div v-else-if="it.kind === 'text'" class="bubble claude md" v-html="markdown(it.text ?? '')" />
           <div v-else class="tools">
             <template v-for="t in it.tools" :key="t.id">
@@ -355,14 +363,14 @@ onBeforeUnmount(() => close?.())
                   <button class="btn btn-outlined st" type="button" @click="decide(t, false)">Deny</button>
                 </div>
               </section>
-              <details v-else class="tool" :class="[t.status, { err: t.isError }]">
-                <summary>
-                  <Icon :name="t.status === 'done' && !t.isError ? 'check' : t.status === 'running' ? 'restart' : 'alert'" :size="14" />
+              <M3Expand v-else class="tool" :class="[t.status, { err: t.isError }]">
+                <template #summary>
+                  <Icon :name="t.status === 'done' && !t.isError ? 'check' : t.status === 'running' ? 'restart' : 'alert'" :size="14" class="ticon" />
                   <code class="ellipsis">{{ t.summary || t.name }}</code>
-                  <span class="small">{{ statusLabel(t) }}</span>
-                </summary>
+                  <span class="small tstate">{{ statusLabel(t) }}</span>
+                </template>
                 <pre v-if="t.result">{{ t.result }}</pre>
-              </details>
+              </M3Expand>
             </template>
           </div>
         </template>
@@ -414,7 +422,7 @@ onBeforeUnmount(() => close?.())
 .assistant {
   display: flex;
   gap: 0;
-  min-height: calc(100vh - 140px);
+  height: calc(100dvh - 140px);
   border-radius: 28px;
   overflow: hidden;
   background: var(--surface);
@@ -428,7 +436,6 @@ onBeforeUnmount(() => close?.())
   padding: 20px 18px;
   border-right: 1px solid var(--sch);
   overflow-y: auto;
-  max-height: calc(100vh - 140px);
 }
 .side h1 {
   font-size: 26px;
@@ -469,30 +476,6 @@ onBeforeUnmount(() => close?.())
 }
 .dot.on {
   background: var(--ok);
-}
-.tf {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 14px;
-  border-radius: 12px 12px 4px 4px;
-  background: var(--sch);
-  border-bottom: 2px solid var(--on-sv);
-}
-.tf span {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--primary);
-}
-.tf select {
-  border: none;
-  background: none;
-  font-size: 15px;
-  color: var(--on-surface);
-  padding: 2px 0;
-}
-.tf option {
-  background: var(--sch);
 }
 .perm {
   display: flex;
@@ -552,9 +535,9 @@ onBeforeUnmount(() => close?.())
 .chat {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 140px);
 }
 .chat-head {
   display: flex;
@@ -667,13 +650,14 @@ onBeforeUnmount(() => close?.())
 .thinking {
   padding: 0 4px;
 }
-.thinking summary {
-  cursor: pointer;
+.thinking :deep(.head) {
+  width: auto;
+  padding: 4px 8px;
 }
-.thinking div {
+.reasoning {
   padding: 8px 12px;
   border-left: 2px solid var(--outline-v);
-  margin-top: 6px;
+  margin: 6px 0 0 8px;
   color: var(--on-sv);
 }
 .tools {
@@ -687,26 +671,29 @@ onBeforeUnmount(() => close?.())
   border: 1px solid var(--outline-v);
   font-size: 13px;
 }
-.tool summary {
-  display: flex;
-  align-items: center;
+.tool :deep(.head) {
   gap: 8px;
   padding: 6px 12px;
-  cursor: pointer;
   color: var(--on-sv);
 }
-.tool summary svg {
+.tool :deep(.chev) {
+  margin-left: 0;
+}
+.ticon {
   flex-shrink: 0;
   color: var(--ok);
 }
-.tool.err summary svg,
-.tool.denied summary svg,
-.tool.blocked summary svg {
+.tool.err .ticon,
+.tool.denied .ticon,
+.tool.blocked .ticon {
   color: var(--error);
 }
-.tool.running summary svg {
+.tool.running .ticon {
   color: var(--primary);
   animation: spin 1.2s linear infinite;
+}
+.tstate {
+  flex-shrink: 0;
 }
 .tool code {
   flex: 1;
@@ -815,8 +802,14 @@ onBeforeUnmount(() => close?.())
   place-items: center;
   flex-shrink: 0;
 }
+@media (min-width: 1001px) {
+  :global(html.assistant-page) {
+    overflow: hidden;
+  }
+}
 @media (max-width: 1000px) {
   .assistant {
+    height: auto;
     flex-direction: column;
     border: none;
     background: transparent;

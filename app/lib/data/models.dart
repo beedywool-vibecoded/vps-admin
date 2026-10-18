@@ -60,9 +60,10 @@ class DockerContainer {
         status = j['status'] as String,
         health = j['health'] as String?,
         project = j['project'] as String?,
+        workDir = j['workDir'] as String?,
         exposed = j['exposed'] as bool? ?? false;
   final String id, name, image, state, status;
-  final String? health, project;
+  final String? health, project, workDir;
   final bool exposed;
   bool get bad => health == 'unhealthy' || state == 'restarting' || state == 'dead';
 }

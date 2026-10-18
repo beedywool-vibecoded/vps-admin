@@ -7,7 +7,7 @@ const color = computed(() => ({ ok: 'var(--ok)', warn: 'var(--warn)', bad: 'var(
 </script>
 
 <template>
-  <span role="img" :aria-label="label" :title="label" class="dot" :style="{ '--c': color }" />
+  <span role="img" :aria-label="label" v-tip="label" class="dot" :style="{ '--c': color }" />
 </template>
 
 <style scoped>

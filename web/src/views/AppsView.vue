@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import Icon from '@/components/Icon.vue'
+import M3Expand from '@/components/M3Expand.vue'
 import M3Shape from '@/components/M3Shape.vue'
 import StatusDot from '@/components/StatusDot.vue'
 import { api, type AppView, type GitHubStatus } from '@/lib/api'
@@ -93,12 +94,12 @@ onBeforeUnmount(() => clearInterval(timer))
           Creates a private GitHub App for this server in one click: it can only read the repositories you
           choose, and tells the server when you push so it redeploys by itself.
         </p>
-        <details class="small muted">
-          <summary>For an organization</summary>
+        <M3Expand class="small muted org-x">
+          <template #summary>For an organization</template>
           <label class="field org">
             <input v-model="org" placeholder="organization name" aria-label="GitHub organization" />
           </label>
-        </details>
+        </M3Expand>
       </div>
       <button class="btn btn-filled btn-lg st" type="button" :disabled="connecting" @click="connect">
         <Icon name="github" :size="20" /> Connect GitHub
@@ -168,8 +169,15 @@ onBeforeUnmount(() => clearInterval(timer))
   max-width: 640px;
 }
 .org {
-  margin-top: 8px;
+  margin: 8px 2px 2px;
   max-width: 320px;
+}
+.org-x {
+  max-width: 340px;
+}
+.org-x :deep(.head) {
+  padding: 4px 8px;
+  width: auto;
 }
 .gh {
   display: flex;

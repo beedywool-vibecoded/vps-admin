@@ -11,8 +11,8 @@ class ServicesScreen extends StatelessWidget {
   Widget build(BuildContext context) => DefaultTabController(
         length: 2,
         child: Column(children: [
-          const TabBar(tabs: [Tab(text: 'Services'), Tab(text: 'Containers')]),
-          Expanded(child: TabBarView(children: [_Systemd(), _Containers()])),
+          const TabBar(tabs: [Tab(text: 'Containers'), Tab(text: 'Services')]),
+          Expanded(child: TabBarView(children: [_Containers(), _Systemd()])),
         ]),
       );
 }
@@ -119,7 +119,14 @@ class _Containers extends StatelessWidget {
         }
         return ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 16), children: [
           for (final g in groups.entries) ...[
-            Padding(padding: const EdgeInsets.fromLTRB(8, 8, 8, 6), child: Text(g.key, style: Theme.of(context).textTheme.titleMedium)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(g.key, style: Theme.of(context).textTheme.titleMedium),
+                if (g.value.first.workDir != null)
+                  Text(g.value.first.workDir!, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontFamily: 'monospace', color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              ]),
+            ),
             Card(
               margin: const EdgeInsets.only(bottom: 8),
               child: Column(children: [

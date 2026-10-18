@@ -5,6 +5,7 @@ import Icon from '@/components/Icon.vue'
 import M3Shape from '@/components/M3Shape.vue'
 import M3Switch from '@/components/M3Switch.vue'
 import EnvEditor from '@/components/EnvEditor.vue'
+import M3Select from '@/components/M3Select.vue'
 import { api, type BuildType, type Detection, type EnvVar, type GitHubStatus, type Repo } from '@/lib/api'
 import { BUILD_LABEL, slugify, suggestDomain } from '@/lib/deploys'
 import { ago } from '@/lib/format'
@@ -38,6 +39,7 @@ const shown = computed(() => {
 const effectiveBuild = computed(() => (build.value === 'auto' ? detection.value?.build || '' : build.value))
 const needsPort = computed(() => effectiveBuild.value === 'dockerfile' && !port.value)
 const step = computed(() => (repo.value ? 2 : 1))
+const buildOptions = (Object.keys(BUILD_LABEL) as BuildType[]).map((k) => ({ value: k, label: BUILD_LABEL[k]! }))
 
 function pick(r: Repo) {
   repo.value = r
@@ -198,20 +200,18 @@ onMounted(async () => {
             <div class="tile-title">{{ detecting ? 'Looking at the repository…' : detection?.build ? `Detected: ${BUILD_LABEL[detection.build]}` : 'Build' }}</div>
             <div class="muted small">{{ detection?.reason }}</div>
           </div>
-          <select v-model="build" aria-label="Build type">
-            <option v-for="(label, k) in BUILD_LABEL" :key="k" :value="k">{{ label }}</option>
-          </select>
+          <M3Select v-model="build" class="build-sel" label="Build" :options="buildOptions" />
         </div>
 
         <div class="grid">
           <label class="tf">
             <span>{{ effectiveBuild === 'compose' ? 'Published port to route the domain to' : 'Port the app listens on' }}</span>
-            <input v-model.number="port" type="number" min="0" max="65535" :class="{ warn: needsPort }" />
+            <input v-model.number="port" inputmode="numeric" :class="{ warn: needsPort }" />
             <small>{{ effectiveBuild === 'compose' ? 'A port your compose file publishes on 127.0.0.1' : needsPort ? 'Required: the Dockerfile has no EXPOSE line' : 'Inside the container' }}</small>
           </label>
           <label class="tf">
             <span>Memory limit (MiB)</span>
-            <input v-model.number="memoryMb" type="number" min="0" placeholder="0" />
+            <input v-model.number="memoryMb" inputmode="numeric" placeholder="0" />
             <small>0 for no limit</small>
           </label>
         </div>
@@ -233,7 +233,7 @@ onMounted(async () => {
             <div>Versions kept for rollback</div>
             <div class="muted small">Older images are removed after each deploy</div>
           </div>
-          <input v-model.number="keep" class="num" type="number" min="1" max="20" aria-label="Versions kept" />
+          <input v-model.number="keep" class="num" inputmode="numeric" aria-label="Versions kept" />
         </div>
 
         <div class="actions">
@@ -392,7 +392,9 @@ onMounted(async () => {
 .tile-title {
   font-weight: 500;
 }
-select,
+.build-sel {
+  min-width: 230px;
+}
 .num {
   height: 40px;
   padding: 0 12px;
@@ -403,6 +405,7 @@ select,
 }
 .num {
   width: 80px;
+  text-align: center;
 }
 .sub {
   font-size: 16px;

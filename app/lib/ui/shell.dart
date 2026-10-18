@@ -77,9 +77,9 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
     // Keyed by server: switching rebuilds every tab against the new one.
     final pages = [
       OverviewScreen(key: ValueKey('o${server.id}'), onOpenTab: (i) => setState(() => _tab = i)),
+      ServicesScreen(key: ValueKey('s${server.id}')),
       AppsScreen(key: ValueKey('a${server.id}')),
       AssistantScreen(key: ValueKey('c${server.id}')),
-      ServicesScreen(key: ValueKey('s${server.id}')),
       SettingsScreen(key: ValueKey('t${server.id}')),
     ];
     return Scaffold(
@@ -114,9 +114,9 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Overview'),
+          NavigationDestination(icon: Icon(Icons.view_in_ar_outlined), selectedIcon: Icon(Icons.view_in_ar), label: 'Server'),
           NavigationDestination(icon: Icon(Icons.rocket_launch_outlined), selectedIcon: Icon(Icons.rocket_launch), label: 'Apps'),
           NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome), label: 'Assistant'),
-          NavigationDestination(icon: Icon(Icons.view_list_outlined), selectedIcon: Icon(Icons.view_list), label: 'Services'),
           NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Settings'),
         ],
       ),

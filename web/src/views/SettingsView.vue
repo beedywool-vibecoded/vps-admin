@@ -146,14 +146,10 @@ onMounted(async () => {
             :class="{ on: seed.toLowerCase() === s.hex.toLowerCase() }"
             :aria-checked="seed.toLowerCase() === s.hex.toLowerCase()"
             :aria-label="s.name"
-            :title="s.name"
+            v-tip="s.name"
             :style="{ background: s.hex }"
             @click="seed = s.hex"
           />
-          <label class="seed custom" title="Custom color">
-            <input v-model="seed" type="color" aria-label="Custom seed color" />
-            <Icon name="plus" :size="18" />
-          </label>
         </div>
       </div>
     </section>
@@ -258,20 +254,6 @@ onMounted(async () => {
   box-shadow:
     0 0 0 3px var(--sc),
     0 0 0 5px var(--on-surface);
-}
-.custom {
-  position: relative;
-  display: grid;
-  place-items: center;
-  background: var(--sch);
-  color: var(--on-sv);
-  cursor: pointer;
-}
-.custom input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
 }
 .dev-icon {
   width: 40px;

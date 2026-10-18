@@ -6,6 +6,8 @@ import M3Shape from '@/components/M3Shape.vue'
 import M3Switch from '@/components/M3Switch.vue'
 import StatusDot from '@/components/StatusDot.vue'
 import EnvEditor from '@/components/EnvEditor.vue'
+import M3Select from '@/components/M3Select.vue'
+import M3Checkbox from '@/components/M3Checkbox.vue'
 import { api, streamDeployment, type AppView, type BuildType, type Deployment, type EnvVar } from '@/lib/api'
 import { BUILD_LABEL, STATUS_LABEL, appTone, depTone } from '@/lib/deploys'
 import { ago, dateTime } from '@/lib/format'
@@ -31,6 +33,7 @@ let closeStream: (() => void) | undefined
 // Settings form
 const form = ref({ branch: '', rootDir: '', build: 'auto' as BuildType, port: 0, domain: '', autoDeploy: true, keep: 5, memoryMb: 0 })
 const deleteVolumes = ref(false)
+const buildOptions = (Object.keys(BUILD_LABEL) as BuildType[]).map((k) => ({ value: k, label: BUILD_LABEL[k]! }))
 
 const running = computed(() => deployments.value.some((d) => ['queued', 'building', 'starting'].includes(d.status)))
 const selectedDep = computed(() => deployments.value.find((d) => d.id === selected.value))
@@ -200,7 +203,7 @@ onBeforeUnmount(() => {
             <span class="status" :class="d.status"><StatusDot :tone="depTone(d)" :label="d.status" /> {{ STATUS_LABEL[d.status] }}</span>
             <code>{{ d.sha.slice(0, 7) || '…' }}</code>
             <span class="msg ellipsis">{{ d.message || d.trigger }}</span>
-            <span class="when muted small" :title="dateTime(d.createdAt)">{{ ago(d.createdAt) }}</span>
+            <span class="when muted small" v-tip="dateTime(d.createdAt)">{{ ago(d.createdAt) }}</span>
           </button>
           <button v-if="d.status === 'superseded'" type="button" class="btn btn-outlined st rb" :disabled="busy || running" @click="rollback(d)">Roll back</button>
         </div>
@@ -234,15 +237,10 @@ onBeforeUnmount(() => {
           <label class="tf"><span>Branch</span><input v-model.trim="form.branch" /></label>
           <label class="tf"><span>Root folder</span><input v-model.trim="form.rootDir" placeholder="/" /></label>
           <label class="tf"><span>Domain</span><input v-model.trim="form.domain" :disabled="!domains" :placeholder="domains ? 'app.example.com' : 'needs Caddy'" /></label>
-          <label class="tf"><span>Port</span><input v-model.number="form.port" type="number" min="0" max="65535" /></label>
-          <label class="tf"><span>Memory limit (MiB, 0 for none)</span><input v-model.number="form.memoryMb" type="number" min="0" /></label>
-          <label class="tf"><span>Versions kept</span><input v-model.number="form.keep" type="number" min="1" max="20" /></label>
-          <label class="tf">
-            <span>Build</span>
-            <select v-model="form.build">
-              <option v-for="(label, k) in BUILD_LABEL" :key="k" :value="k">{{ label }}</option>
-            </select>
-          </label>
+          <label class="tf"><span>Port</span><input v-model.number="form.port" inputmode="numeric" /></label>
+          <label class="tf"><span>Memory limit (MiB, 0 for none)</span><input v-model.number="form.memoryMb" inputmode="numeric" /></label>
+          <label class="tf"><span>Versions kept</span><input v-model.number="form.keep" inputmode="numeric" /></label>
+          <M3Select v-model="form.build" label="Build" :options="buildOptions" />
         </div>
         <div class="setting">
           <div class="grow">
@@ -259,7 +257,7 @@ onBeforeUnmount(() => {
       <section class="card danger stack">
         <h2>Delete app</h2>
         <p class="muted small">Stops and removes the containers, images, the Caddy site and the source folder. Named volumes are kept unless you tick the box.</p>
-        <label class="check small"><input v-model="deleteVolumes" type="checkbox" /> Also delete its data volumes</label>
+        <M3Checkbox v-model="deleteVolumes" class="check" label="Also delete its data volumes" />
         <button class="btn btn-danger st" type="button" :disabled="busy || running" @click="remove">Delete {{ app.id }}</button>
       </section>
     </template>

@@ -100,6 +100,7 @@ export interface Container {
   created: string
   ports: PortBinding[]
   project?: string
+  workDir?: string
   exposed: boolean
 }
 

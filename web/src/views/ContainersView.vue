@@ -107,7 +107,7 @@ onBeforeUnmount(() => clearInterval(timer))
     <section v-for="([name, items], gi) in groups" :key="name" class="card">
       <div class="card-head">
         <M3Shape :kind="SHAPES[gi % SHAPES.length]!" :size="28" :fill="gi % 2 ? 'var(--secc)' : 'var(--pc)'" />
-        <h2>{{ name }}</h2>
+        <h2 class="gname">{{ name }}<code v-if="items[0]?.workDir" class="path">{{ items[0].workDir }}</code></h2>
         <span class="chip">{{ items.length }}</span>
       </div>
       <div v-for="c in items" :key="c.id" class="row">
@@ -116,7 +116,7 @@ onBeforeUnmount(() => clearInterval(timer))
           <div class="name">{{ c.name }}</div>
           <div class="muted small ellipsis">{{ image(c.image) }}<template v-if="ports(c)"> · {{ ports(c) }}</template></div>
         </div>
-        <span v-if="c.exposed" class="chip chip-outline" title="Docker bypasses ufw for ports published on every interface">public</span>
+        <span v-if="c.exposed" class="chip chip-outline" v-tip="'Docker bypasses ufw for ports published on every interface'">public</span>
         <span class="muted small stat">
           <template v-if="stats[c.id]">{{ stats[c.id]!.cpu.toFixed(1) }}% · {{ bytes(stats[c.id]!.memUsed) }}</template>
           <template v-else>{{ c.status }}</template>
@@ -150,6 +150,19 @@ onBeforeUnmount(() => clearInterval(timer))
 <style scoped>
 .search {
   width: min(380px, 100%);
+}
+.gname {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  min-width: 0;
+}
+.path {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--on-sv);
+  word-break: break-all;
 }
 .name {
   font-size: 16px;

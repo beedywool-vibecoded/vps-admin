@@ -14,11 +14,11 @@ const route = useRoute()
 
 const NAV: { to: string; label: string; icon: IconName; mobile: boolean }[] = [
   { to: '/', label: 'Overview', icon: 'overview', mobile: true },
+  { to: '/containers', label: 'Containers', icon: 'containers', mobile: true },
+  { to: '/services', label: 'Services', icon: 'services', mobile: true },
+  { to: '/security', label: 'Security', icon: 'security', mobile: false },
   { to: '/apps', label: 'Apps', icon: 'apps', mobile: true },
   { to: '/assistant', label: 'Assistant', icon: 'assistant', mobile: true },
-  { to: '/services', label: 'Services', icon: 'services', mobile: true },
-  { to: '/containers', label: 'Containers', icon: 'containers', mobile: false },
-  { to: '/security', label: 'Security', icon: 'security', mobile: false },
   { to: '/updates', label: 'Updates', icon: 'updates', mobile: false },
   { to: '/settings', label: 'Settings', icon: 'settings', mobile: true },
 ]
@@ -115,9 +115,6 @@ onBeforeUnmount(() => {
           {{ session.host.os }} · up {{ duration(session.snapshot.uptime) }}
         </span>
         <span class="spacer" />
-        <RouterLink to="/settings" class="account st" aria-label="Settings and devices">
-          {{ (session.host?.hostname ?? 'V').charAt(0).toUpperCase() }}
-        </RouterLink>
       </header>
 
       <main class="content">
@@ -276,18 +273,6 @@ onBeforeUnmount(() => {
 .spacer {
   flex: 1;
 }
-.account {
-  width: 48px;
-  height: 48px;
-  border-radius: 24px;
-  display: grid;
-  place-items: center;
-  background: var(--pc);
-  color: var(--on-pc);
-  font-size: 18px;
-  font-weight: 600;
-  text-decoration: none;
-}
 .install {
   display: block;
   padding: 12px;
@@ -324,6 +309,11 @@ onBeforeUnmount(() => {
   .nav-item {
     width: auto;
     flex: 1;
+    min-width: 0;
+    font-size: 11px;
+  }
+  .pill {
+    width: 48px;
   }
   .main-col {
     padding: 16px 16px 112px;

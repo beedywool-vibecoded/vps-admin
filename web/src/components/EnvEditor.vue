@@ -2,6 +2,7 @@
 // Environment variables. Secrets never come back from the server: an existing secret
 // shows as "unchanged" until the user types a new value.
 import Icon from './Icon.vue'
+import M3Checkbox from './M3Checkbox.vue'
 import type { EnvVar } from '@/lib/api'
 
 const vars = defineModel<EnvVar[]>({ required: true })
@@ -56,9 +57,7 @@ function onPaste(i: number, e: ClipboardEvent) {
         autocomplete="off"
         @input="onValue(v, ($event.target as HTMLInputElement).value)"
       />
-      <label class="secret small muted" title="Hidden in the panel once saved">
-        <input v-model="v.secret" type="checkbox" /> secret
-      </label>
+      <M3Checkbox v-model="v.secret" v-tip="'Hidden in the panel once saved'" class="secret small" label="secret" />
       <button class="icon-btn st" type="button" :aria-label="`Remove ${v.key || 'variable'}`" @click="remove(i)">
         <Icon name="close" :size="18" />
       </button>

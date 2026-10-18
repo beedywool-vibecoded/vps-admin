@@ -16,6 +16,10 @@ export const SEEDS = [
   { name: 'Pink', hex: '#984061' },
   { name: 'Green', hex: '#386A20' },
   { name: 'Orange', hex: '#8B5000' },
+  { name: 'Red', hex: '#B3261E' },
+  { name: 'Indigo', hex: '#4355B9' },
+  { name: 'Olive', hex: '#5B6300' },
+  { name: 'Slate', hex: '#5B5F72' },
 ] as const
 
 export type ThemeMode = 'system' | 'dark' | 'light'

@@ -61,7 +61,7 @@ class OverviewScreen extends StatelessWidget {
               child: ListTile(
                 leading: Icon(Icons.warning_amber_rounded, color: cs.onErrorContainer),
                 title: Text(alert, style: TextStyle(color: cs.onErrorContainer)),
-                onTap: () => onOpenTab(3),
+                onTap: () => onOpenTab(1),
               ),
             ),
           GridView.count(

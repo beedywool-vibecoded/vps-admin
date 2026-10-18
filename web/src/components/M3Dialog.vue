@@ -1,18 +1,29 @@
 <script setup lang="ts">
 // Native <dialog>: focus trap, Escape and the top layer for free.
-import { onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { lockScroll, unlockScroll } from '@/lib/scrollLock'
 
 const open = defineModel<boolean>({ required: true })
 defineProps<{ title: string; wide?: boolean }>()
 const el = ref<HTMLDialogElement>()
 
+let locked = false
 function sync() {
   if (!el.value) return
   if (open.value && !el.value.open) el.value.showModal()
   if (!open.value && el.value.open) el.value.close()
+  // The page behind a modal must not scroll.
+  if (open.value && !locked) {
+    lockScroll()
+    locked = true
+  } else if (!open.value && locked) {
+    unlockScroll()
+    locked = false
+  }
 }
 watch(open, sync)
 onMounted(sync)
+onBeforeUnmount(() => locked && unlockScroll())
 </script>
 
 <template>
@@ -46,6 +57,9 @@ dialog.wide {
 }
 dialog::backdrop {
   background: rgba(0, 0, 0, 0.5);
+}
+.body {
+  overscroll-behavior: contain;
 }
 dialog[open] {
   animation: pop 0.3s var(--ease-decel);

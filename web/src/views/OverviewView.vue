@@ -252,7 +252,7 @@ onBeforeUnmount(() => clearInterval(timer))
     <section v-for="g in groups" :key="g.name" class="card" :aria-label="g.name">
       <div class="card-head">
         <StatusDot :tone="groupTone(g)" :label="groupTone(g) === 'ok' ? 'Running' : 'Needs attention'" />
-        <h2>{{ g.name }}</h2>
+        <h2 class="gname">{{ g.name }}<code v-if="g.items[0]?.workDir" class="path">{{ g.items[0].workDir }}</code></h2>
         <span class="chip">{{ g.items.length }}</span>
         <RouterLink to="/containers" class="btn btn-text st">Manage</RouterLink>
       </div>
@@ -262,7 +262,7 @@ onBeforeUnmount(() => clearInterval(timer))
           <div class="name">{{ c.name }}</div>
           <div class="muted small ellipsis">{{ image(c.image) }}</div>
         </div>
-        <span v-if="c.exposed" class="chip chip-outline" title="Published on every interface">public port</span>
+        <span v-if="c.exposed" class="chip chip-outline" v-tip="'Published on every interface'">public port</span>
         <span class="muted small status">{{ c.status }}</span>
       </div>
     </section>
@@ -272,6 +272,19 @@ onBeforeUnmount(() => clearInterval(timer))
 </template>
 
 <style scoped>
+.gname {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  min-width: 0;
+}
+.path {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--on-sv);
+  word-break: break-all;
+}
 .banner {
   display: flex;
   flex-wrap: wrap;
