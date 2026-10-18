@@ -18,7 +18,10 @@ import (
 	"github.com/beedywool/vps-admin/internal/auth"
 	"github.com/beedywool/vps-admin/internal/buildinfo"
 	"github.com/beedywool/vps-admin/internal/config"
+	"github.com/beedywool/vps-admin/internal/deploy"
 	"github.com/beedywool/vps-admin/internal/docker"
+	"github.com/beedywool/vps-admin/internal/github"
+	"github.com/beedywool/vps-admin/internal/secret"
 	"github.com/beedywool/vps-admin/internal/store"
 	"github.com/beedywool/vps-admin/internal/system"
 	"github.com/beedywool/vps-admin/internal/update"
@@ -33,6 +36,9 @@ type Server struct {
 	Runner    *system.Runner
 	Docker    *docker.Client
 	Updater   *update.Updater
+	Box       *secret.Box
+	GitHub    *github.Client
+	Deploy    *deploy.Engine
 	Host      system.Host
 	// Restart is called after an update is installed; the process exits and systemd
 	// starts the new binary.
@@ -40,6 +46,7 @@ type Server struct {
 
 	secMu    sync.Mutex
 	security *system.Security
+	manifest manifestStates
 }
 
 func (s *Server) Handler() http.Handler {
@@ -78,6 +85,26 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PUT /api/settings/update", full(s.updateSettings))
 
 	mux.Handle("GET /api/audit", full(s.auditLog))
+
+	mux.Handle("GET /api/github", full(s.githubStatus))
+	mux.Handle("POST /api/github/manifest", full(s.githubManifest))
+	mux.HandleFunc("GET /api/github/manifest/callback", s.githubCallback)
+	mux.HandleFunc("POST /api/github/webhook", s.githubWebhook)
+	mux.Handle("DELETE /api/github", full(s.githubDisconnect))
+	mux.Handle("GET /api/github/repos", full(s.githubRepos))
+	mux.Handle("GET /api/github/detect", full(s.githubDetect))
+
+	mux.Handle("GET /api/apps", full(s.appsList))
+	mux.Handle("POST /api/apps", full(s.appCreate))
+	mux.Handle("GET /api/apps/{id}", full(s.appGet))
+	mux.Handle("PUT /api/apps/{id}", full(s.appUpdate))
+	mux.Handle("DELETE /api/apps/{id}", full(s.appDelete))
+	mux.Handle("PUT /api/apps/{id}/env", full(s.appSetEnv))
+	mux.Handle("POST /api/apps/{id}/deploy", full(s.appDeploy))
+	mux.Handle("POST /api/apps/{id}/restart", full(s.appRestart))
+	mux.Handle("POST /api/apps/{id}/rollback/{dep}", full(s.appRollback))
+	mux.Handle("GET /api/apps/{id}/deployments/{dep}", full(s.deploymentLog))
+	mux.Handle("GET /api/apps/{id}/deployments/{dep}/stream", full(s.deploymentStream))
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found")

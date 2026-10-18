@@ -66,6 +66,45 @@ var migrations = []string{
 		detail    TEXT NOT NULL DEFAULT ''
 	);
 	CREATE INDEX audit_at ON audit(at);`,
+
+	`CREATE TABLE apps (
+		id              TEXT PRIMARY KEY,         -- slug, also the container and project name
+		repo            TEXT NOT NULL,            -- owner/name
+		installation_id INTEGER NOT NULL,
+		branch          TEXT NOT NULL,
+		root_dir        TEXT NOT NULL DEFAULT '',
+		build           TEXT NOT NULL,            -- auto | dockerfile | compose | node | static
+		port            INTEGER NOT NULL DEFAULT 0, -- container port, or host port for compose
+		domain          TEXT NOT NULL DEFAULT '',
+		auto_deploy     INTEGER NOT NULL DEFAULT 1,
+		keep            INTEGER NOT NULL DEFAULT 5,
+		memory_mb       INTEGER NOT NULL DEFAULT 0,
+		created_at      INTEGER NOT NULL
+	);
+	CREATE TABLE app_env (
+		app_id TEXT NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+		key    TEXT NOT NULL,
+		value  TEXT NOT NULL,                     -- sealed with internal/secret
+		secret INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (app_id, key)
+	);
+	CREATE TABLE deployments (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		app_id      TEXT NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+		sha         TEXT NOT NULL DEFAULT '',
+		message     TEXT NOT NULL DEFAULT '',
+		trigger     TEXT NOT NULL,                -- manual | push | rollback | create
+		status      TEXT NOT NULL,                -- queued | building | starting | live | failed | superseded | cancelled
+		build       TEXT NOT NULL DEFAULT '',     -- resolved build type
+		image       TEXT NOT NULL DEFAULT '',
+		container   TEXT NOT NULL DEFAULT '',
+		host_port   INTEGER NOT NULL DEFAULT 0,
+		error       TEXT NOT NULL DEFAULT '',
+		log         TEXT NOT NULL DEFAULT '',
+		created_at  INTEGER NOT NULL,
+		finished_at INTEGER
+	);
+	CREATE INDEX deployments_app ON deployments(app_id, id);`,
 }
 
 func Open(dataDir string) (*Store, error) {

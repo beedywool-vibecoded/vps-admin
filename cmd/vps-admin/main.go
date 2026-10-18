@@ -17,7 +17,10 @@ import (
 	"github.com/beedywool/vps-admin/internal/auth"
 	"github.com/beedywool/vps-admin/internal/buildinfo"
 	"github.com/beedywool/vps-admin/internal/config"
+	"github.com/beedywool/vps-admin/internal/deploy"
 	"github.com/beedywool/vps-admin/internal/docker"
+	"github.com/beedywool/vps-admin/internal/github"
+	"github.com/beedywool/vps-admin/internal/secret"
 	"github.com/beedywool/vps-admin/internal/store"
 	"github.com/beedywool/vps-admin/internal/system"
 	"github.com/beedywool/vps-admin/internal/update"
@@ -112,14 +115,33 @@ func serve(cfgPath string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	box, err := secret.Open(cfg.DataDir)
+	if err != nil {
+		return err
+	}
+
 	collector := system.NewCollector()
 	go collector.Run(ctx)
 
+	runner := system.NewRunner()
+	gh := github.New()
+	engine := &deploy.Engine{
+		Store: st, Box: box, GitHub: gh, DataDir: cfg.DataDir, SitesDir: cfg.CaddySitesDir,
+		ReloadCaddy: func(ctx context.Context) error {
+			_, err := runner.Sudo(ctx, time.Minute, "systemctl", "reload", "caddy.service")
+			return err
+		},
+	}
+	engine.Init()
+	go engine.Run(ctx)
+
 	srv := &api.Server{
-		Cfg: cfg, Store: st, Auth: a, Collector: collector, Runner: system.NewRunner(),
+		Cfg: cfg, Store: st, Auth: a, Collector: collector, Runner: runner,
 		Docker: docker.New(cfg.DockerSocket), Updater: up, Host: system.ReadHost(),
+		Box: box, GitHub: gh, Deploy: engine,
 		Restart: stop,
 	}
+	srv.LoadGitHub(ctx)
 	httpSrv := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           srv.Handler(),

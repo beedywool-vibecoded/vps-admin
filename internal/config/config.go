@@ -25,6 +25,9 @@ type Config struct {
 	// TrustedProxies are the peers allowed to set X-Forwarded-For.
 	TrustedProxies []string `json:"trusted_proxies"`
 	DockerSocket   string   `json:"docker_socket"`
+	// CaddySitesDir receives one snippet per deployed app with a domain; the installer
+	// imports it from the Caddyfile. Domains are disabled when it does not exist.
+	CaddySitesDir string `json:"caddy_sites_dir"`
 	// Update holds the defaults; the panel stores overrides in the database.
 	Update Update `json:"update"`
 
@@ -48,6 +51,7 @@ func Default() Config {
 		DataDir:        "/var/lib/vps-admin",
 		TrustedProxies: []string{"127.0.0.1/32", "::1/128"},
 		DockerSocket:   "/var/run/docker.sock",
+		CaddySitesDir:  "/etc/caddy/vps-admin-apps",
 		Update:         Update{Auto: true},
 	}
 }
