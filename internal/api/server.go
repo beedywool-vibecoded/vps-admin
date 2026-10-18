@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/beedywool/vps-admin/internal/assistant"
 	"github.com/beedywool/vps-admin/internal/auth"
 	"github.com/beedywool/vps-admin/internal/buildinfo"
 	"github.com/beedywool/vps-admin/internal/config"
@@ -39,6 +40,7 @@ type Server struct {
 	Box       *secret.Box
 	GitHub    *github.Client
 	Deploy    *deploy.Engine
+	Assistant *assistant.Engine
 	Host      system.Host
 	// Restart is called after an update is installed; the process exits and systemd
 	// starts the new binary.
@@ -105,6 +107,17 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/apps/{id}/rollback/{dep}", full(s.appRollback))
 	mux.Handle("GET /api/apps/{id}/deployments/{dep}", full(s.deploymentLog))
 	mux.Handle("GET /api/apps/{id}/deployments/{dep}/stream", full(s.deploymentStream))
+
+	mux.Handle("GET /api/assistant", full(s.assistantSettings))
+	mux.Handle("PUT /api/assistant", full(s.assistantUpdate))
+	mux.Handle("GET /api/assistant/conversations", full(s.conversations))
+	mux.Handle("POST /api/assistant/conversations", full(s.conversationCreate))
+	mux.Handle("GET /api/assistant/conversations/{id}", full(s.conversationGet))
+	mux.Handle("DELETE /api/assistant/conversations/{id}", full(s.conversationDelete))
+	mux.Handle("POST /api/assistant/conversations/{id}/messages", full(s.conversationSend))
+	mux.Handle("POST /api/assistant/conversations/{id}/stop", full(s.conversationStop))
+	mux.Handle("GET /api/assistant/conversations/{id}/stream", full(s.conversationStream))
+	mux.Handle("POST /api/assistant/tools/{call}", full(s.toolDecide))
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found")

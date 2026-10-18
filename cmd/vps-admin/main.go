@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/beedywool/vps-admin/internal/api"
+	"github.com/beedywool/vps-admin/internal/assistant"
 	"github.com/beedywool/vps-admin/internal/auth"
 	"github.com/beedywool/vps-admin/internal/buildinfo"
 	"github.com/beedywool/vps-admin/internal/config"
@@ -139,10 +140,20 @@ func serve(cfgPath string) error {
 	engine.Init()
 	go engine.Run(ctx)
 
+	dockerClient := docker.New(cfg.DockerSocket)
+	host := system.ReadHost()
+	asst := &assistant.Engine{
+		Deps: assistant.Deps{Store: st, Runner: runner, Docker: dockerClient, Collector: collector, Deploy: engine, Host: host, DataDir: cfg.DataDir},
+		Box:  box,
+		// For tests against a fake API; never set in production.
+		BaseURL: os.Getenv("VPS_ADMIN_ANTHROPIC_URL"),
+	}
+	asst.Init(ctx)
+
 	srv := &api.Server{
 		Cfg: cfg, Store: st, Auth: a, Collector: collector, Runner: runner,
-		Docker: docker.New(cfg.DockerSocket), Updater: up, Host: system.ReadHost(),
-		Box: box, GitHub: gh, Deploy: engine,
+		Docker: dockerClient, Updater: up, Host: host,
+		Box: box, GitHub: gh, Deploy: engine, Assistant: asst,
 		Restart: stop,
 	}
 	srv.LoadGitHub(ctx)

@@ -4,8 +4,12 @@ Panneau d'administration auto-hébergé pour n'importe quel VPS Linux : un agent
 
 > Statut :
 >
-> - Fonctionnel : l'agent (API, appairage, passkeys, métriques, services, Docker, audit de sécurité, mise à jour automatique) et le panneau web.
-> - À venir : les déploiements depuis GitHub, l'assistant et l'app.
+> - Fonctionnel :
+>   - l'agent (API, appairage, passkeys, métriques, services, Docker, audit de sécurité, mise à jour automatique) ;
+>   - le panneau web ;
+>   - les déploiements depuis GitHub ;
+>   - l'assistant.
+> - À venir : l'app Android.
 
 ## Fonctionnalités
 
@@ -19,6 +23,15 @@ Panneau d'administration auto-hébergé pour n'importe quel VPS Linux : un agent
   - LLMNR, ports ouverts, ports Docker publiés qui contournent ufw.
 - **Journal d'audit** de chaque action, avec l'appareil et l'IP.
 - **Mise à jour automatique** signée, avec retour arrière tout seul si la nouvelle version ne démarre pas.
+- **Déploiements depuis GitHub** :
+  - une GitHub App est créée en un clic depuis le panneau, en lecture seule sur les repos choisis ;
+  - le type de build est détecté tout seul : Dockerfile, Compose, Node ou site statique ;
+  - redéploiement à chaque push, sans coupure, avec un contrôle HTTP avant de basculer ;
+  - retour arrière instantané, variables d'environnement chiffrées, domaine HTTPS via Caddy.
+- **Assistant** :
+  - avec ta clé API Anthropic, Claude examine le serveur avec les outils du panneau ;
+  - chaque modification attend ton approbation ;
+  - certaines actions sont toujours bloquées : supprimer des volumes, toucher à SSH ou au pare-feu, lire des clés, éteindre le serveur.
 
 ## Installation
 
@@ -91,6 +104,9 @@ go run ./cmd/vps-admin pair -config dev.json
 | `internal/system` | métriques `/proc`, services, audit de sécurité |
 | `internal/docker` | client minimal de l'API Docker |
 | `internal/update` | releases signées, installation, retour arrière |
+| `internal/deploy` | build et lancement des apps, bascule Caddy, retour arrière |
+| `internal/github` | GitHub App (manifest), jetons d'installation, webhooks |
+| `internal/assistant` | boucle de conversation, outils, politique d'approbation |
 | `internal/store` | SQLite (pur Go, binaire statique) |
 | `deploy/` | installeur, unité systemd, `preflight.sh` |
 | `web/` | panneau Vue 3, Material 3 Expressive, couleurs Material You générées depuis une couleur de base |

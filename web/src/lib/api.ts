@@ -240,6 +240,52 @@ export interface AppInput {
   deploy?: boolean
 }
 
+export interface AssistantSettings {
+  configured: boolean
+  keyHint?: string
+  model: string
+  effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  autoRead: boolean
+}
+
+export interface Conversation {
+  id: string
+  title: string
+  state: 'idle' | 'running' | 'awaiting' | 'error'
+  error?: string
+  createdAt: string
+  updatedAt: string
+}
+
+// Content blocks as the Anthropic API sends them; only the fields the panel shows.
+export type Block =
+  | { type: 'text'; text: string }
+  | { type: 'thinking'; thinking: string }
+  | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
+  | { type: 'tool_result'; tool_use_id: string }
+  | { type: string; [k: string]: unknown }
+
+export interface ConvMessage {
+  seq: number
+  role: 'user' | 'assistant'
+  content: { role: string; content: Block[] | string }
+}
+
+export interface ToolCall {
+  id: string
+  convId: string
+  batch: number
+  ord: number
+  name: string
+  input: string
+  summary: string
+  kind: 'read' | 'change' | 'blocked'
+  status: 'pending' | 'running' | 'done' | 'denied' | 'blocked'
+  result: string
+  isError: boolean
+  createdAt: string
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -333,6 +379,17 @@ export const api = {
   deploy: (id: string) => request<Deployment>('POST', `/api/apps/${id}/deploy`),
   rollback: (id: string, dep: number) => request<Deployment>('POST', `/api/apps/${id}/rollback/${dep}`),
   restartApp: (id: string) => request<void>('POST', `/api/apps/${id}/restart`),
+  assistant: () => request<{ settings: AssistantSettings; models: { id: string; label: string }[] }>('GET', '/api/assistant'),
+  assistantUpdate: (s: { apiKey?: string; model?: string; effort?: string; autoRead?: boolean }) =>
+    request<{ settings: AssistantSettings; models: { id: string; label: string }[] }>('PUT', '/api/assistant', s),
+  conversations: () => request<{ conversations: Conversation[] }>('GET', '/api/assistant/conversations'),
+  conversation: (id: string) =>
+    request<{ conversation: Conversation; messages: ConvMessage[]; toolCalls: ToolCall[]; running: boolean }>('GET', `/api/assistant/conversations/${id}`),
+  newConversation: (message: string) => request<{ conversation: Conversation }>('POST', '/api/assistant/conversations', { message }),
+  sendMessage: (id: string, message: string) => request<void>('POST', `/api/assistant/conversations/${id}/messages`, { message }),
+  stopConversation: (id: string) => request<void>('POST', `/api/assistant/conversations/${id}/stop`),
+  deleteConversation: (id: string) => request<void>('DELETE', `/api/assistant/conversations/${id}`),
+  decide: (call: string, approve: boolean) => request<ToolCall>('POST', `/api/assistant/tools/${call}`, { approve }),
   deploymentLog: (id: string, dep: number) =>
     request<{ deployment: Deployment; log: string }>('GET', `/api/apps/${id}/deployments/${dep}`),
 }
@@ -357,5 +414,21 @@ export function streamDeployment(
     on.end(JSON.parse((e as MessageEvent).data))
     es.close()
   })
+  return () => es.close()
+}
+
+export interface AssistantEvents {
+  message: (m: ConvMessage) => void
+  text: (d: { index: number; text: string }) => void
+  thinking: (d: { index: number; text: string }) => void
+  tool: (t: ToolCall) => void
+  state: (s: { state: Conversation['state']; error: string }) => void
+}
+
+export function streamConversation(id: string, on: AssistantEvents): () => void {
+  const es = new EventSource(`/api/assistant/conversations/${id}/stream`)
+  for (const type of ['message', 'text', 'thinking', 'tool', 'state'] as const) {
+    es.addEventListener(type, (e) => (on[type] as (v: unknown) => void)(JSON.parse((e as MessageEvent).data)))
+  }
   return () => es.close()
 }

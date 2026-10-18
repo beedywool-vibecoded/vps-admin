@@ -105,6 +105,40 @@ var migrations = []string{
 		finished_at INTEGER
 	);
 	CREATE INDEX deployments_app ON deployments(app_id, id);`,
+
+	`CREATE TABLE conversations (
+		id         TEXT PRIMARY KEY,
+		title      TEXT NOT NULL,
+		state      TEXT NOT NULL,                 -- idle | running | awaiting | error
+		error      TEXT NOT NULL DEFAULT '',
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL
+	);
+	CREATE TABLE conv_messages (
+		conv_id    TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+		seq        INTEGER NOT NULL,
+		role       TEXT NOT NULL,
+		content    TEXT NOT NULL,                 -- the API message param, as sent: never edited
+		created_at INTEGER NOT NULL,
+		PRIMARY KEY (conv_id, seq)
+	);
+	CREATE TABLE tool_calls (
+		id          TEXT PRIMARY KEY,             -- tool_use id
+		conv_id     TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+		batch       INTEGER NOT NULL,             -- seq of the assistant message that asked
+		ord         INTEGER NOT NULL,
+		name        TEXT NOT NULL,
+		input       TEXT NOT NULL,
+		summary     TEXT NOT NULL DEFAULT '',
+		kind        TEXT NOT NULL,                -- read | change | blocked
+		status      TEXT NOT NULL,                -- pending | running | done | denied | blocked
+		result      TEXT NOT NULL DEFAULT '',
+		is_error    INTEGER NOT NULL DEFAULT 0,
+		device_id   TEXT,
+		created_at  INTEGER NOT NULL,
+		decided_at  INTEGER
+	);
+	CREATE INDEX tool_calls_conv ON tool_calls(conv_id, batch, ord);`,
 }
 
 func Open(dataDir string) (*Store, error) {
