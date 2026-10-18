@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -363,4 +364,42 @@ func (s *Server) auditLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"entries": list})
+}
+
+// Android app updates, for paired phones.
+
+func (s *Server) appLatest(w http.ResponseWriter, r *http.Request) {
+	meta, _, err := s.Updater.AppLatest(r.Context())
+	if errors.Is(err, update.ErrNoRelease) {
+		writeError(w, http.StatusNotFound, "no_release")
+		return
+	}
+	if err != nil {
+		writeErrorMsg(w, http.StatusBadGateway, "check_failed", err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(meta)
+}
+
+func (s *Server) appAPK(w http.ResponseWriter, r *http.Request) {
+	_, rel, err := s.Updater.AppLatest(r.Context())
+	if err != nil {
+		writeError(w, http.StatusNotFound, "no_release")
+		return
+	}
+	res, err := s.Updater.AppAPK(r.Context(), rel)
+	if err != nil {
+		writeErrorMsg(w, http.StatusBadGateway, "download_failed", err.Error())
+		return
+	}
+	defer res.Body.Close()
+	rc := http.NewResponseController(w)
+	rc.SetWriteDeadline(time.Time{}) // large file on a slow phone connection
+	w.Header().Set("Content-Type", "application/vnd.android.package-archive")
+	w.Header().Set("Content-Disposition", `attachment; filename="vps-admin-`+rel.Tag+`.apk"`)
+	if res.ContentLength > 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(res.ContentLength, 10))
+	}
+	io.Copy(w, res.Body)
 }

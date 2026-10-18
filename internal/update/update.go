@@ -128,6 +128,11 @@ func (u *Updater) Check(ctx context.Context, prerelease bool) (Status, error) {
 }
 
 func (u *Updater) latest(ctx context.Context, prerelease bool) (*Release, error) {
+	return u.latestWith(ctx, prerelease, func(*Release) bool { return true })
+}
+
+// latestWith returns the highest release accepted by keep.
+func (u *Updater) latestWith(ctx context.Context, prerelease bool, keep func(*Release) bool) (*Release, error) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/repos/%s/releases?per_page=20", u.API, u.Repo), nil)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	u.auth(req)
@@ -171,7 +176,9 @@ func (u *Updater) latest(ctx context.Context, prerelease bool) (*Release, error)
 				rel.assets[a.Name] = a.APIURL
 			}
 		}
-		best = rel
+		if keep(rel) {
+			best = rel
+		}
 	}
 	return best, nil
 }
@@ -415,4 +422,60 @@ func comparePre(a, b string) int {
 		}
 	}
 	return len(pa) - len(pb)
+}
+
+// App release assets: the Android app is attached to the same GitHub releases. The
+// agent serves it to paired phones, which cannot read a private repository themselves.
+const (
+	apkAsset     = "vps-admin.apk"
+	apkMetaAsset = "vps-admin-apk.json"
+)
+
+type appCache struct {
+	at   time.Time
+	rel  *Release
+	meta []byte
+}
+
+var (
+	appMu     sync.Mutex
+	appCached appCache
+)
+
+// AppLatest returns the metadata of the newest app build ({versionCode, versionName,
+// sha256, size}), cached for ten minutes. ErrNoRelease when no release carries one.
+func (u *Updater) AppLatest(ctx context.Context) ([]byte, *Release, error) {
+	appMu.Lock()
+	defer appMu.Unlock()
+	if time.Since(appCached.at) < 10*time.Minute && appCached.rel != nil {
+		return appCached.meta, appCached.rel, nil
+	}
+	rel, err := u.latestWith(ctx, false, func(r *Release) bool { return r.assets[apkAsset] != "" && r.assets[apkMetaAsset] != "" })
+	if err != nil {
+		return nil, nil, err
+	}
+	if rel == nil {
+		return nil, nil, ErrNoRelease
+	}
+	meta, err := u.fetch(ctx, rel.assets[apkMetaAsset], 64<<10)
+	if err != nil {
+		return nil, nil, err
+	}
+	appCached = appCache{time.Now(), rel, meta}
+	return meta, rel, nil
+}
+
+// AppAPK opens the APK of rel for streaming. The caller closes the body.
+func (u *Updater) AppAPK(ctx context.Context, rel *Release) (*http.Response, error) {
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, rel.assets[apkAsset], nil)
+	u.auth(req)
+	res, err := u.HTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode != http.StatusOK {
+		res.Body.Close()
+		return nil, fmt.Errorf("download app: HTTP %d", res.StatusCode)
+	}
+	return res, nil
 }

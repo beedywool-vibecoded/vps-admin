@@ -85,6 +85,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/update/check", full(s.updateCheck))
 	mux.Handle("POST /api/update/apply", full(s.updateApply))
 	mux.Handle("PUT /api/settings/update", full(s.updateSettings))
+	mux.Handle("GET /api/app/latest", full(s.appLatest))
+	mux.Handle("GET /api/app/apk", full(s.appAPK))
 
 	mux.Handle("GET /api/audit", full(s.auditLog))
 

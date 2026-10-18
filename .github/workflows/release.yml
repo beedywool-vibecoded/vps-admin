@@ -47,6 +47,43 @@ jobs:
           cp deploy/install.sh deploy/preflight.sh deploy/vps-admin.service dist/
           cd dist && sha256sum vps-admin_linux_* > SHA256SUMS
 
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.9
+          channel: stable
+          cache: true
+
+      # The Android app ships with every release; agents serve it to paired phones.
+      - name: Build the app
+        working-directory: app
+        env:
+          KEYSTORE_B64: ${{ secrets.VPSADMIN_KEYSTORE_B64 }}
+          VPSADMIN_KEYSTORE_PASSWORD: ${{ secrets.VPSADMIN_KEYSTORE_PASSWORD }}
+          VPSADMIN_KEY_PASSWORD: ${{ secrets.VPSADMIN_KEYSTORE_PASSWORD }}
+          VPSADMIN_KEY_ALIAS: vpsadmin
+        run: |
+          test -n "$KEYSTORE_B64" || { echo "VPSADMIN_KEYSTORE_B64 secret missing"; exit 1; }
+          export VPSADMIN_KEYSTORE="$RUNNER_TEMP/release.jks"
+          echo "$KEYSTORE_B64" | base64 -d > "$VPSADMIN_KEYSTORE"
+          flutter pub get
+          flutter analyze
+          flutter test
+          name="${GITHUB_REF_NAME#v}"
+          code=$((GITHUB_RUN_NUMBER + 100))
+          flutter build apk --release --target-platform android-arm64 --build-name "$name" --build-number "$code"
+          rm "$VPSADMIN_KEYSTORE"
+          cp build/app/outputs/flutter-apk/app-release.apk ../dist/vps-admin.apk
+          jq -n --argjson code "$code" --arg name "$name" \
+            --arg sha "$(sha256sum ../dist/vps-admin.apk | cut -d' ' -f1)" \
+            --argjson size "$(stat -c %s ../dist/vps-admin.apk)" \
+            '{versionCode: $code, versionName: $name, sha256: $sha, size: $size}' > ../dist/vps-admin-apk.json
+          cat ../dist/vps-admin-apk.json
+
       - name: Sign
         env:
           RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
