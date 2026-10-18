@@ -1,7 +1,9 @@
 package api
 
 import (
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/beedywool/vps-admin/internal/config"
@@ -29,5 +31,16 @@ func TestClientIP(t *testing.T) {
 		if got := s.clientIP(r); got != c.want {
 			t.Errorf("remote %s xff %q: got %s, want %s", c.remote, c.xff, got, c.want)
 		}
+	}
+}
+
+// Connecting GitHub posts a form to github.com; a stricter form-action breaks it
+// (Firefox reports NS_ERROR 0x805a0061).
+func TestCSPAllowsGitHubForm(t *testing.T) {
+	h := securityHeaders(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "form-action 'self' https://github.com") {
+		t.Fatalf("CSP blocks the GitHub App form: %s", csp)
 	}
 }
