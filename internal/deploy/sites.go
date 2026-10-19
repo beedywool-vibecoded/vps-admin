@@ -154,13 +154,13 @@ func (e *Engine) caddySite(ctx context.Context, l *logger, app store.App, port i
 		fmt.Fprintf(&b, "\t@outside not remote_ip %s\n\trespond @outside 403\n", strings.Join(nets, " "))
 	}
 	fmt.Fprintf(&b, "\treverse_proxy 127.0.0.1:%d\n}\n", port)
-	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+	if err := writeShared(path, []byte(b.String())); err != nil {
 		return err
 	}
 	l.Printf("Routing %s to 127.0.0.1:%d (Caddy%s)", app.Domain, port, vpnNote(app))
 	if err := e.ReloadCaddy(ctx); err != nil {
 		if readErr == nil {
-			os.WriteFile(path, prev, 0o644)
+			writeShared(path, prev)
 		} else {
 			os.Remove(path)
 		}
@@ -203,13 +203,13 @@ server {
 	}
 }
 `, app.ID, app.Domain, allow, port)
-	if err := os.WriteFile(path, []byte(conf), 0o644); err != nil {
+	if err := writeShared(path, []byte(conf)); err != nil {
 		return err
 	}
 	l.Printf("Routing %s to 127.0.0.1:%d (nginx%s)", app.Domain, port, vpnNote(app))
 	if out, err := e.Helper(ctx, "nginx-reload"); err != nil {
 		if readErr == nil {
-			os.WriteFile(path, prev, 0o644)
+			writeShared(path, prev)
 		} else {
 			os.Remove(path)
 		}
@@ -272,4 +272,13 @@ func (e *Engine) tailscaleOff(ctx context.Context, app store.App) {
 	if app.TSPort != 0 && e.Helper != nil {
 		e.Helper(ctx, "ts-off", fmt.Sprint(app.TSPort))
 	}
+}
+
+// writeShared writes a proxy site readable by the proxy, which runs as another user:
+// the agent's own umask (0077) would otherwise make it private.
+func writeShared(path string, data []byte) error {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o644)
 }

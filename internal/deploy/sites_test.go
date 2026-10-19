@@ -55,6 +55,9 @@ func TestCaddySiteVPN(t *testing.T) {
 		t.Fatal(err)
 	}
 	conf, _ := os.ReadFile(filepath.Join(dir, "web.caddy"))
+	if st, _ := os.Stat(filepath.Join(dir, "web.caddy")); st.Mode().Perm() != 0o644 {
+		t.Errorf("site mode %v, the proxy could not read it", st.Mode().Perm())
+	}
 	if !strings.Contains(string(conf), "@outside not remote_ip 10.8.0.0/24") || !strings.Contains(string(conf), "respond @outside 403") {
 		t.Errorf("caddy site:\n%s", conf)
 	}
