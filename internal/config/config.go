@@ -21,6 +21,9 @@ type Config struct {
 	// PublicURL is the origin the panel is reached at, e.g. https://admin.example.com.
 	// It is the WebAuthn relying party, so changing it invalidates registered passkeys.
 	PublicURL string `json:"public_url"`
+	// WebhookURL is the public origin GitHub sends pushes to, when the panel itself is
+	// private (reachable through Tailscale only, for instance). Empty means PublicURL.
+	WebhookURL string `json:"webhook_url,omitempty"`
 	DataDir   string `json:"data_dir"`
 	// TrustedProxies are the peers allowed to set X-Forwarded-For.
 	TrustedProxies []string `json:"trusted_proxies"`
@@ -85,6 +88,12 @@ func (c *Config) validate() error {
 		return fmt.Errorf("public_url must be an absolute http(s) URL, got %q", c.PublicURL)
 	}
 	c.PublicURL = strings.TrimRight(c.PublicURL, "/")
+	if c.WebhookURL != "" {
+		if u, err := url.Parse(c.WebhookURL); err != nil || u.Scheme != "https" || u.Host == "" {
+			return fmt.Errorf("webhook_url must be an absolute https URL, got %q", c.WebhookURL)
+		}
+		c.WebhookURL = strings.TrimRight(c.WebhookURL, "/")
+	}
 	if !filepath.IsAbs(c.DataDir) {
 		return fmt.Errorf("data_dir must be absolute, got %q", c.DataDir)
 	}

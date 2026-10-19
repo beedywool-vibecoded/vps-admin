@@ -112,7 +112,7 @@ func (s *Server) githubManifest(w http.ResponseWriter, r *http.Request) {
 	if body.Org != "" {
 		target = "https://github.com/organizations/" + url.PathEscape(body.Org) + "/settings/apps/new"
 	}
-	manifest, _ := json.Marshal(github.Manifest(s.Cfg.PublicURL, name))
+	manifest, _ := json.Marshal(github.Manifest(s.Cfg.PublicURL, s.Cfg.WebhookURL, name))
 	writeJSON(w, http.StatusOK, map[string]string{"url": target + "?state=" + s.manifest.add(), "manifest": string(manifest)})
 }
 

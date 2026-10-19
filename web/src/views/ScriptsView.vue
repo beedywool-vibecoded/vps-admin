@@ -138,7 +138,7 @@ onBeforeUnmount(() => closeStream?.())
       <h2>No script yet</h2>
       <p class="muted">Link any executable file from the server, it shows up here with a Run button:</p>
       <code class="cmd">sudo vps-admin link /path/to/update-app.sh</code>
-      <p class="muted small">Add <code>-name</code> to choose its name and <code>-dir</code> to attach it to a compose folder (found automatically when the script sits in one). A comment on the second line becomes its description.</p>
+      <p class="muted small">Add <code>-name</code> to choose its name and <code>-dir</code> to attach it to a compose folder (found automatically when the script sits in one).</p>
     </section>
 
     <div v-else class="cols">
@@ -155,7 +155,6 @@ onBeforeUnmount(() => closeStream?.())
                 <span v-if="s.missing" class="chip bad-chip">file missing</span>
                 <span v-else-if="!s.executable" class="chip bad-chip">not executable</span>
               </div>
-              <div v-if="s.description" class="muted small">{{ s.description }}</div>
               <code class="target plain">{{ s.target }}</code>
               <div v-if="s.dir" class="muted small folder">Shown with the containers of <code class="plain">{{ s.dir }}</code></div>
             </div>

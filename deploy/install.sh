@@ -12,6 +12,13 @@
 #   --no-caddy        same as --proxy none (kept for older commands)
 #   --email ADDRESS   for Let's Encrypt with nginx (certbot); asked when needed otherwise
 #   --no-tls          with nginx, do not request a certificate
+#   --tailscale       serve the panel only on this machine's Tailscale name
+#                     (https://NAME.TAILNET.ts.net, tailscale serve); offered when Tailscale
+#                     runs. The --domain then only receives GitHub webhooks.
+#   --public          keep the panel public even if Tailscale runs (no question)
+#   --allow CIDRS     comma separated networks allowed to reach the panel through the
+#                     proxy (a WireGuard subnet, an office IP); others get 403. GitHub
+#                     webhooks and certificate renewals stay reachable.
 #   --token TOKEN     GitHub token for a private repository (read-only Contents access);
 #                     also saved in the config so self-update keeps working
 #
@@ -28,10 +35,21 @@ LOCAL_BINARY=""
 PROXY=auto
 EMAIL=""
 TLS=1
+TAILSCALE=ask
+ALLOW=""
+TS_NAME=""
 TOKEN="${VPS_ADMIN_GITHUB_TOKEN:-}"
 
 say() { printf '\033[1;35m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+# Questions go to the terminal even when the script is piped into bash.
+ask() {
+	local reply=""
+	# No terminal (cron, CI, a pipe without tty): no question, the caller's default.
+	{ printf '%s ' "$1" >/dev/tty; } 2>/dev/null || return 1
+	{ read -r reply </dev/tty; } 2>/dev/null || return 1
+	printf '%s' "$reply"
+}
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -42,8 +60,11 @@ while [ $# -gt 0 ]; do
 		--no-caddy) PROXY=none; shift ;;
 		--email) EMAIL="${2:-}"; shift 2 ;;
 		--no-tls) TLS=0; shift ;;
+		--tailscale) TAILSCALE=yes; shift ;;
+		--public) TAILSCALE=no; shift ;;
+		--allow) ALLOW="${2:-}"; shift 2 ;;
 		--token) TOKEN="${2:-}"; shift 2 ;;
-		-h|--help) sed -n '2,19p' "$0"; exit 0 ;;
+		-h|--help) sed -n '2,26p' "$0"; exit 0 ;;
 		*) die "unknown option $1" ;;
 	esac
 done
@@ -51,6 +72,9 @@ done
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo bash install.sh)"
 command -v systemctl >/dev/null || die "systemd is required"
 case "$PROXY" in auto|caddy|nginx|none) ;; *) die "--proxy takes auto, caddy, nginx or none" ;; esac
+if [ -n "$ALLOW" ] && ! [[ "$ALLOW" =~ ^[0-9a-fA-F:./,]+$ ]]; then
+	die "--allow takes networks like 10.8.0.0/24,192.168.1.0/24"
+fi
 if [ -n "$DOMAIN" ] && ! [[ "$DOMAIN" =~ ^[A-Za-z0-9.-]+$ ]]; then
 	die "--domain takes a hostname, like admin.example.com"
 fi
@@ -129,8 +153,28 @@ install -d -o root -g vps-admin -m 750 /etc/vps-admin
 # Scripts linked with `sudo vps-admin link`: root-owned, so the agent cannot add any.
 install -d -o root -g root -m 755 /etc/vps-admin/scripts
 
+# Private panel through Tailscale: its MagicDNS name with a certificate from the tailnet.
+if [ "$TAILSCALE" != no ] && command -v tailscale >/dev/null && tailscale status >/dev/null 2>&1; then
+	TS_NAME=$(tailscale status --json 2>/dev/null | sed -n 's/^ *"DNSName": *"\([^"]*\)\.",*$/\1/p' | head -1)
+	if [ "$TAILSCALE" = ask ] && [ -n "$TS_NAME" ]; then
+		reply=$(ask "Tailscale runs here. Make the panel reachable only through it, at https://$TS_NAME? [y/N]" || echo n)
+		[ "$reply" = y ] || [ "$reply" = Y ] && TAILSCALE=yes
+	fi
+fi
+if [ "$TAILSCALE" = yes ]; then
+	[ -n "$TS_NAME" ] || die "--tailscale: Tailscale is not running here (tailscale up first)"
+	if ! tailscale status --json 2>/dev/null | grep -q '"CertDomains": *\[ *"'; then
+		die "--tailscale needs HTTPS certificates in your tailnet: Tailscale admin console, DNS, enable HTTPS. Then rerun."
+	fi
+fi
+
 PUBLIC_URL="http://localhost:$PORT"
 [ -n "$DOMAIN" ] && PUBLIC_URL="https://$DOMAIN"
+WEBHOOK_URL=""
+if [ "$TAILSCALE" = yes ]; then
+	PUBLIC_URL="https://$TS_NAME"
+	[ -n "$DOMAIN" ] && WEBHOOK_URL="https://$DOMAIN"
+fi
 if [ ! -f /etc/vps-admin/config.json ]; then
 	cat > /etc/vps-admin/config.json <<EOF
 {
@@ -143,7 +187,7 @@ if [ ! -f /etc/vps-admin/config.json ]; then
 }
 EOF
 else
-	[ -n "$DOMAIN" ] && sed -i "s#\"public_url\": *\"[^\"]*\"#\"public_url\": \"$PUBLIC_URL\"#" /etc/vps-admin/config.json
+	{ [ -n "$DOMAIN" ] || [ "$TAILSCALE" = yes ]; } && sed -i "s#\"public_url\": *\"[^\"]*\"#\"public_url\": \"$PUBLIC_URL\"#" /etc/vps-admin/config.json
 	if [ -n "$TOKEN" ]; then
 		if grep -q '"github_token"' /etc/vps-admin/config.json; then
 			sed -i "s#\"github_token\": *\"[^\"]*\"#\"github_token\": \"$TOKEN\"#" /etc/vps-admin/config.json
@@ -151,6 +195,11 @@ else
 			sed -i "s#\"update\": *{#\"update\": { \"github_token\": \"$TOKEN\",#" /etc/vps-admin/config.json
 		fi
 	fi
+fi
+# GitHub pushes reach a private panel through the public domain.
+sed -i '/"webhook_url"/d' /etc/vps-admin/config.json
+if [ -n "$WEBHOOK_URL" ]; then
+	sed -i "s#\"public_url\": *\"[^\"]*\",#&\n  \"webhook_url\": \"$WEBHOOK_URL\",#" /etc/vps-admin/config.json
 fi
 chown root:vps-admin /etc/vps-admin/config.json
 chmod 640 /etc/vps-admin/config.json
@@ -214,14 +263,6 @@ done
 curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 || die "the agent did not start, see: journalctl -u vps-admin"
 
 # 5. Reverse proxy --------------------------------------------------------------------
-# Questions go to the terminal even when the script is piped into bash.
-ask() {
-	local reply=""
-	# No terminal (cron, CI, a pipe without tty): no question, the caller's default.
-	{ printf '%s ' "$1" >/dev/tty; } 2>/dev/null || return 1
-	{ read -r reply </dev/tty; } 2>/dev/null || return 1
-	printf '%s' "$reply"
-}
 
 if [ "$PROXY" = auto ]; then
 	if command -v caddy >/dev/null && [ -f /etc/caddy/Caddyfile ]; then
@@ -241,15 +282,37 @@ setup_caddy() {
 	# Deployed apps get one snippet each in this folder, written by the agent.
 	install -d -o vps-admin -g vps-admin -m 755 /etc/caddy/vps-admin-apps
 	if [ -n "$DOMAIN" ]; then
-		cat > /etc/caddy/conf.d/vps-admin.caddy <<CADDY
+		if [ "$TAILSCALE" = yes ]; then
+			# The panel lives on Tailscale; the domain only takes GitHub webhooks.
+			cat > /etc/caddy/conf.d/vps-admin.caddy <<CADDY
 # Managed by the VPS Admin installer
 $DOMAIN {
-	encode zstd gzip
-	reverse_proxy 127.0.0.1:$PORT {
-		flush_interval -1
+	handle /api/github/webhook {
+		reverse_proxy 127.0.0.1:$PORT
+	}
+	handle {
+		respond 404
 	}
 }
 CADDY
+		else
+			{
+				echo "# Managed by the VPS Admin installer"
+				echo "$DOMAIN {"
+				echo "	encode zstd gzip"
+				if [ -n "$ALLOW" ]; then
+					echo "	@outside {"
+					echo "		not remote_ip ${ALLOW//,/ }"
+					echo "		not path /api/github/webhook"
+					echo "	}"
+					echo "	respond @outside 403"
+				fi
+				echo "	reverse_proxy 127.0.0.1:$PORT {"
+				echo "		flush_interval -1"
+				echo "	}"
+				echo "}"
+			} > /etc/caddy/conf.d/vps-admin.caddy
+		fi
 		grep -q '^import conf.d/\*.caddy' /etc/caddy/Caddyfile || printf '\nimport conf.d/*.caddy\n' >> /etc/caddy/Caddyfile
 	fi
 	grep -q '^import vps-admin-apps/\*.caddy' /etc/caddy/Caddyfile || printf '\nimport vps-admin-apps/*.caddy\n' >> /etc/caddy/Caddyfile
@@ -280,19 +343,10 @@ setup_nginx() {
 		say "$conf already has a server block for $DOMAIN: remove it (or rerun with --proxy none) so the installer can manage it."
 		return
 	fi
-	if [ -f "$site" ] && grep -q 'managed by Certbot' "$site"; then
-		say "Keeping $site, it already has its certificate"
-	else
-		cat > "$site" <<NGINX
-# Managed by the VPS Admin installer
-server {
-	listen 80;
-	listen [::]:80;
-	server_name $DOMAIN;
-	client_max_body_size 16m;
-
-	location / {
-		proxy_pass http://127.0.0.1:$PORT;
+	# Rewritten on every run (certbot puts its HTTPS lines back below, keeping the
+	# certificate), so switching between public, --allow and --tailscale is a rerun.
+	local proxy allow="" panel
+	proxy="		proxy_pass http://127.0.0.1:$PORT;
 		proxy_http_version 1.1;
 		proxy_set_header Host \$host;
 		proxy_set_header X-Real-IP \$remote_addr;
@@ -301,11 +355,35 @@ server {
 		# Live views (metrics, logs, builds, the assistant) stream: no buffering.
 		proxy_buffering off;
 		proxy_cache off;
-		proxy_read_timeout 1h;
+		proxy_read_timeout 1h;"
+	if [ -n "$ALLOW" ]; then
+		for net in ${ALLOW//,/ }; do allow+="		allow $net;
+"; done
+		allow+="		deny all;
+"
+	fi
+	if [ "$TAILSCALE" = yes ]; then
+		panel="		return 404;"
+	else
+		panel="$allow$proxy"
+	fi
+	cat > "$site" <<NGINX
+# Managed by the VPS Admin installer
+server {
+	listen 80;
+	listen [::]:80;
+	server_name $DOMAIN;
+	client_max_body_size 16m;
+
+	# GitHub pushes, always public (signed by GitHub, checked by the agent).
+	location = /api/github/webhook {
+$proxy
+	}
+	location / {
+$panel
 	}
 }
 NGINX
-	fi
 	[ -n "$link" ] && ln -sf "$site" "$link"
 	if ! nginx -t >/dev/null 2>&1; then
 		rm -f "$site" ${link:+"$link"}
@@ -315,7 +393,6 @@ NGINX
 	systemctl reload nginx
 
 	[ "$TLS" = 1 ] || { say "No certificate requested (--no-tls): passkeys need HTTPS."; return; }
-	if [ -f "$site" ] && grep -q 'managed by Certbot' "$site"; then return; fi
 	if ! command -v certbot >/dev/null || ! certbot plugins 2>/dev/null | grep -q nginx; then
 		if command -v apt-get >/dev/null && [ "$(ask "HTTPS needs certbot. Install certbot and its nginx plugin now? [Y/n]" || echo n)" != n ]; then
 			apt-get install -y certbot python3-certbot-nginx >/dev/null
@@ -324,14 +401,15 @@ NGINX
 			return
 		fi
 	fi
-	local args=(--nginx -d "$DOMAIN" --non-interactive --agree-tos --redirect)
+	# An existing certificate is reinstalled as is, a new one requested otherwise.
+	local args=(--nginx -d "$DOMAIN" --non-interactive --agree-tos --redirect --keep-until-expiring)
 	if [ -n "$EMAIL" ]; then
 		args+=(-m "$EMAIL")
 	elif [ -z "$(ls -A /etc/letsencrypt/accounts 2>/dev/null)" ]; then
 		EMAIL=$(ask "Email for Let's Encrypt (expiry notices), empty for none:" || true)
 		if [ -n "$EMAIL" ]; then args+=(-m "$EMAIL"); else args+=(--register-unsafely-without-email); fi
 	fi
-	say "Requesting a certificate for $DOMAIN"
+	say "Setting up HTTPS for $DOMAIN"
 	if certbot "${args[@]}" >/dev/null 2>&1; then
 		systemctl reload nginx
 	else
@@ -339,13 +417,21 @@ NGINX
 	fi
 }
 
+if [ "$TAILSCALE" = yes ]; then
+	say "Serving the panel on https://$TS_NAME (Tailscale only)"
+	tailscale serve --bg --https=443 "http://127.0.0.1:$PORT" >/dev/null || die "tailscale serve failed, see: tailscale serve status"
+elif command -v tailscale >/dev/null && tailscale serve status 2>/dev/null | grep -q "127.0.0.1:$PORT"; then
+	# Back to public: stop the private address a previous run set up.
+	tailscale serve --https=443 off >/dev/null 2>&1 || true
+fi
+
 case "$PROXY" in
 	caddy) setup_caddy ;;
 	nginx)
 		setup_nginx
 		say "With nginx, deployed apps get no domain yet (reachable on 127.0.0.1 only)."
 		;;
-	none) [ -n "$DOMAIN" ] && say "Point your reverse proxy for $DOMAIN to 127.0.0.1:$PORT (TLS is required for passkeys, disable response buffering)." ;;
+	none) [ -n "$DOMAIN" ] && [ "$TAILSCALE" != yes ] && say "Point your reverse proxy for $DOMAIN to 127.0.0.1:$PORT (TLS is required for passkeys, disable response buffering)." ;;
 esac
 
 # 6. Pairing --------------------------------------------------------------------------

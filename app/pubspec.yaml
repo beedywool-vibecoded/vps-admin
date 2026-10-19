@@ -25,3 +25,25 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # Google Sans Flex (OFL), the panel's font, as static weights (tools/gen-app-fonts.py)
+  fonts:
+    - family: GoogleSansFlex
+      fonts:
+        - asset: assets/fonts/GoogleSansFlex-400.ttf
+          weight: 400
+        - asset: assets/fonts/GoogleSansFlex-500.ttf
+          weight: 500
+        - asset: assets/fonts/GoogleSansFlex-600.ttf
+          weight: 600
+        - asset: assets/fonts/GoogleSansFlex-700.ttf
+          weight: 700
+    - family: GoogleSansFlexExt
+      fonts:
+        - asset: assets/fonts/GoogleSansFlexExt-400.ttf
+          weight: 400
+        - asset: assets/fonts/GoogleSansFlexExt-500.ttf
+          weight: 500
+        - asset: assets/fonts/GoogleSansFlexExt-600.ttf
+          weight: 600
+        - asset: assets/fonts/GoogleSansFlexExt-700.ttf
+          weight: 700

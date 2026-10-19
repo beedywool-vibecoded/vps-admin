@@ -17,6 +17,20 @@ const devices = ref<Device[]>([])
 const current = ref('')
 const audit = ref<AuditEntry[]>([])
 const moreAudit = ref(true)
+// Activity: the latest few, the rest on demand in a scrolling list.
+const auditOpen = ref(false)
+const shownAudit = computed(() => (auditOpen.value ? audit.value : audit.value.slice(0, 5)))
+const loadingAudit = ref(false)
+async function olderAudit() {
+  loadingAudit.value = true
+  try {
+    await loadAudit(true)
+  } catch (e) {
+    toastError(e)
+  } finally {
+    loadingAudit.value = false
+  }
+}
 const addingKey = ref(false)
 const fileInput = ref<HTMLInputElement>()
 const uploading = ref(false)
@@ -329,7 +343,8 @@ onMounted(async () => {
         <h2>Activity</h2>
         <span class="muted small">Every sign-in and action, kept for a year</span>
       </div>
-      <div v-for="e in audit" :key="e.id" class="row audit">
+      <div class="audit-list" :class="{ open: auditOpen }">
+      <div v-for="e in shownAudit" :key="e.id" class="row audit">
         <span class="mark" :class="e.ok ? 'ok' : 'fail'" :aria-label="e.ok ? 'Succeeded' : 'Failed'">{{ e.ok ? '✓' : '!' }}</span>
         <div class="grow">
           <div>{{ describe(e) }}<template v-if="e.target"> · <code>{{ e.target }}</code></template></div>
@@ -338,7 +353,16 @@ onMounted(async () => {
           </div>
         </div>
       </div>
-      <button v-if="moreAudit && audit.length" class="btn btn-text st" type="button" @click="loadAudit(true)">Show older</button>
+      </div>
+      <div class="audit-actions">
+        <button v-if="audit.length > 5" class="btn btn-text st" type="button" :aria-expanded="auditOpen" @click="auditOpen = !auditOpen">
+          {{ auditOpen ? 'Show less' : `Show more (${audit.length - 5})` }}
+          <Icon name="chevron" :size="18" :class="{ flip: auditOpen }" />
+        </button>
+        <button v-if="auditOpen && moreAudit" class="btn btn-tonal st" type="button" :disabled="loadingAudit" @click="olderAudit">
+          {{ loadingAudit ? 'Loading…' : 'Load older' }}
+        </button>
+      </div>
     </section>
   </div>
 </template>
@@ -502,6 +526,20 @@ onMounted(async () => {
   gap: 8px;
   font-size: 16px;
   font-weight: 500;
+}
+.audit-list.open {
+  max-height: 560px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.audit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.flip {
+  rotate: 180deg;
 }
 .audit {
   padding: 10px 4px;

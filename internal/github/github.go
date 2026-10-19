@@ -98,12 +98,17 @@ func (c *Client) Creds() *Creds {
 }
 
 // Manifest describes the App GitHub creates for this server.
-func Manifest(publicURL, name string) map[string]any {
+// webhookURL is where GitHub can reach the server, which may differ from the panel's
+// own (private) address.
+func Manifest(publicURL, webhookURL, name string) map[string]any {
+	if webhookURL == "" {
+		webhookURL = publicURL
+	}
 	return map[string]any{
 		"name": name,
 		"url":  publicURL,
 		"hook_attributes": map[string]any{
-			"url":    publicURL + "/api/github/webhook",
+			"url":    webhookURL + "/api/github/webhook",
 			"active": true,
 		},
 		"redirect_url":    publicURL + "/api/github/manifest/callback",

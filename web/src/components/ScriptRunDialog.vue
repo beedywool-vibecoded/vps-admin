@@ -60,7 +60,6 @@ async function run() {
       <span v-if="state === 'running'" class="chip">running</span>
       <span v-else-if="state === 'done'" class="chip" :class="result.exitCode === 0 && !result.error ? 'ok' : 'bad'">exit {{ result.exitCode }}</span>
     </template>
-    <p v-if="script?.description" class="muted small" style="margin: 0">{{ script.description }}</p>
     <div v-if="state === 'ready'" class="run-row">
       <label class="field grow"><input v-model="args" placeholder="Arguments (optional)" aria-label="Arguments" spellcheck="false" @keydown.enter="run" /></label>
       <button class="btn btn-filled st" type="button" @click="run"><Icon name="play" :size="18" /> Run</button>

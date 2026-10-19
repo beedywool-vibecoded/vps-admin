@@ -68,15 +68,10 @@ class ScriptsTab extends StatelessWidget {
                     ],
                   ),
                   subtitle: Text(
-                    [
-                      if ((s['description'] as String? ?? '').isNotEmpty)
-                        s['description'] as String,
-                      s['target'] as String,
-                    ].join('\n'),
+                    [s['target'] as String].join('\n'),
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  isThreeLine: (s['description'] as String? ?? '').isNotEmpty,
                   trailing: s['running'] == true
                       ? IconButton(
                           tooltip: 'Output',

@@ -169,7 +169,7 @@ onBeforeUnmount(() => clearInterval(timer))
       <div :id="`grp-${gi}`" class="gbody" :inert="!isOpen(name)">
       <div class="ginner">
       <div v-if="scriptsFor(items[0]?.workDir).length" class="links">
-        <button v-for="sc in scriptsFor(items[0]?.workDir)" :key="sc.name" class="btn btn-outlined st script-btn" type="button" v-tip="sc.description || sc.target" @click="runFor = sc">
+        <button v-for="sc in scriptsFor(items[0]?.workDir)" :key="sc.name" class="btn btn-outlined st script-btn" type="button" v-tip="sc.target" @click="runFor = sc">
           <Icon name="terminal" :size="16" /> {{ sc.title || sc.name }}<span v-if="sc.running" class="dotr" />
         </button>
       </div>

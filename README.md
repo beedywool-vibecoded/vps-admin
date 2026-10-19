@@ -177,6 +177,8 @@ Repo **privé** : ajoute `--token <jeton>`, un jeton GitHub *fine-grained* en le
 | 5 | Configure le reverse proxy trouvé : Caddy (domaine et dossier des apps) ou nginx (site dédié et certificat Let's Encrypt via certbot, proposé à l'installation s'il manque) |
 | 6 | Affiche un **code d'appairage** |
 
+**Panel privé.** Si Tailscale tourne, l'installeur propose de servir le panel **uniquement sur le tailnet** (`--tailscale`, ou `--public` pour ne pas être questionné) : `tailscale serve` le publie sur `https://machine.tailnet.ts.net` avec un certificat du tailnet (active « HTTPS » dans la console Tailscale), et le domaine public ne reçoit plus que les webhooks GitHub. Pour WireGuard ou une IP de bureau : `--allow 10.8.0.0/24,…`, le reste reçoit un 403 (webhooks et renouvellement des certificats restent ouverts). Autres options : `--proxy caddy|nginx|none`, `--email`, `--no-tls`.
+
 Ouvre ensuite le domaine, tape le code, crée ta passkey. Pour l'app ou un autre navigateur : `sudo vps-admin pair`. Relancer l'installeur répare ou met à jour sans toucher aux données.
 
 <br>
