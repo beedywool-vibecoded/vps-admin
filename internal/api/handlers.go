@@ -430,3 +430,17 @@ func (s *Server) appAPK(w http.ResponseWriter, r *http.Request) {
 	}
 	io.Copy(w, res.Body)
 }
+
+// systemEnvironment describes what the server offers for publishing (proxies,
+// certificates, private networks, firewall) and how the panel itself is reached.
+func (s *Server) systemEnvironment(w http.ResponseWriter, r *http.Request) {
+	env := s.Runner.DetectEnvironment(r.Context())
+	panel := map[string]any{"url": s.Cfg.PublicURL, "webhookUrl": s.Cfg.WebhookURL, "access": "public"}
+	switch {
+	case strings.HasSuffix(s.Cfg.RPID(), ".ts.net"):
+		panel["access"] = "tailscale"
+	case !s.Cfg.Secure():
+		panel["access"] = "local"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"environment": env, "panel": panel, "sites": s.Deploy.SitesEnabled()})
+}

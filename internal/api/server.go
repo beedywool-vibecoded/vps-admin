@@ -94,6 +94,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.Handle("GET /api/audit", full(s.auditLog))
 	mux.Handle("POST /api/system/reboot", full(s.reboot))
+	mux.Handle("GET /api/system/environment", full(s.systemEnvironment))
 	mux.Handle("GET /api/appearance", full(s.appearance))
 	mux.Handle("PUT /api/appearance", full(s.setAppearance))
 	mux.Handle("PUT /api/appearance/icons", full(s.setGroupIcon))

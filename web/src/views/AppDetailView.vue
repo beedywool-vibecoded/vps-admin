@@ -9,7 +9,8 @@ import EnvEditor from '@/components/EnvEditor.vue'
 import M3Select from '@/components/M3Select.vue'
 import M3Checkbox from '@/components/M3Checkbox.vue'
 import BuildCommands from '@/components/BuildCommands.vue'
-import { api, streamDeployment, type AppView, type BuildType, type Deployment, type EnvVar, type UpdateCheck } from '@/lib/api'
+import AccessPicker from '@/components/AccessPicker.vue'
+import { api, streamDeployment, type AccessMode, type AppView, type BuildType, type Deployment, type EnvVar, type UpdateCheck } from '@/lib/api'
 import { BUILD_LABEL, STATUS_LABEL, appTone, depTone } from '@/lib/deploys'
 import { ago, dateTime } from '@/lib/format'
 import { confirm, toast, toastError } from '@/lib/ui'
@@ -32,7 +33,7 @@ const logEl = ref<HTMLElement>()
 let closeStream: (() => void) | undefined
 
 // Settings form
-const form = ref({ branch: '', rootDir: '', build: 'auto' as BuildType, port: 0, domain: '', autoDeploy: true, keep: 5, memoryMb: 0 })
+const form = ref({ branch: '', rootDir: '', build: 'auto' as BuildType, port: 0, domain: '', autoDeploy: true, keep: 5, memoryMb: 0, access: 'public' as AccessMode, allow: '' })
 const cmds = ref({ installCmd: '', buildCmd: '', startCmd: '', dockerfile: '', composeFile: '' })
 const checkResult = ref<UpdateCheck | null>(null)
 const branches = ref<string[]>([])
@@ -64,7 +65,7 @@ async function load() {
     const a = res.app
     loadBranches(a)
     if (!formDirty) {
-      form.value = { branch: a.branch, rootDir: a.rootDir, build: a.build, port: a.port, domain: a.domain, autoDeploy: a.autoDeploy, keep: a.keep, memoryMb: a.memoryMb }
+      form.value = { branch: a.branch, rootDir: a.rootDir, build: a.build, port: a.port, domain: a.domain, autoDeploy: a.autoDeploy, keep: a.keep, memoryMb: a.memoryMb, access: a.accessMode, allow: a.allow }
       cmds.value = { installCmd: a.installCmd, buildCmd: a.buildCmd, startCmd: a.startCmd, dockerfile: a.dockerfile, composeFile: a.composeFile }
     }
     if (selected.value === null && res.deployments[0]) select(res.deployments[0].id)
@@ -154,7 +155,7 @@ async function checkUpdates() {
 async function saveSettings() {
   busy.value = true
   try {
-    await api.updateApp(props.id, { ...form.value, ...cmds.value })
+    await api.updateApp(props.id, { ...form.value, ...cmds.value, domain: form.value.access === 'public' || form.value.access === 'vpn' ? form.value.domain : '' })
     formDirty = false
     toast('Settings saved, they apply at the next deployment')
     await load()
@@ -208,7 +209,7 @@ onBeforeUnmount(() => {
         <h1>{{ app.id }}</h1>
         <div class="meta small muted">
           <span class="state"><StatusDot :tone="appTone(app.status, app.latest)" :label="app.status" /> {{ running ? 'Deploying' : app.status }}</span>
-          <a v-if="app.domain" :href="`https://${app.domain}`" target="_blank" rel="noopener">{{ app.domain }}</a>
+          <a v-if="app.url" :href="app.url" target="_blank" rel="noopener">{{ app.url.replace('https://', '') }}</a>
           <span><Icon name="github" :size="14" /> {{ app.repo }} · <Icon name="branch" :size="14" /> {{ app.branch }}</span>
           <span>{{ BUILD_LABEL[app.live?.build || app.latest?.build || app.build] }}</span>
           <span v-if="app.live?.hostPort">127.0.0.1:{{ app.live.hostPort }}</span>
@@ -284,13 +285,16 @@ onBeforeUnmount(() => {
         <div class="grid">
           <M3Select v-model="form.branch" label="Branch" :options="branchOptions" />
           <label class="tf"><span>Root folder</span><input v-model.trim="form.rootDir" placeholder="/" /></label>
-          <label class="tf"><span>Domain</span><input v-model.trim="form.domain" :disabled="!domains" :placeholder="domains ? 'app.example.com' : 'needs Caddy'" /></label>
           <label class="tf"><span>Port</span><input v-model.number="form.port" inputmode="numeric" /></label>
           <template v-if="!app.dir">
             <label class="tf"><span>Memory limit (MiB, 0 for none)</span><input v-model.number="form.memoryMb" inputmode="numeric" /></label>
             <label class="tf"><span>Versions kept</span><input v-model.number="form.keep" inputmode="numeric" /></label>
           </template>
           <M3Select v-if="!app.dir" v-model="form.build" label="Build" :options="buildOptions" />
+        </div>
+        <div>
+          <h3 class="sub">Access</h3>
+          <AccessPicker v-model:access="form.access" v-model:domain="form.domain" v-model:allow="form.allow" :ts-port="app.tsPort" />
         </div>
         <BuildCommands v-model="cmds" :build="app.dir ? 'compose' : effectiveBuild" />
         <div class="setting">
@@ -312,7 +316,7 @@ onBeforeUnmount(() => {
       </section>
       <section v-else class="card danger stack">
         <h2>Delete app</h2>
-        <p class="muted small">Stops and removes the containers, images, the Caddy site and the source folder. Named volumes are kept unless you tick the box.</p>
+        <p class="muted small">Stops and removes the containers, images, the proxy site and the source folder. Named volumes are kept unless you tick the box.</p>
         <M3Checkbox v-model="deleteVolumes" class="check" label="Also delete its data volumes" />
         <button class="btn btn-danger st" type="button" :disabled="busy || running" @click="remove">Delete {{ app.id }}</button>
       </section>
@@ -322,6 +326,11 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.sub {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 500;
+}
 .upd {
   display: flex;
   align-items: center;

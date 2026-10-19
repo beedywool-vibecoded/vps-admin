@@ -102,6 +102,7 @@ export interface Container {
   project?: string
   workDir?: string
   service?: string
+  app?: string // panel app it was deployed for
   exposed: boolean
 }
 
@@ -177,6 +178,40 @@ export interface App {
   startCmd: string
   dockerfile: string
   composeFile: string
+  access: AccessMode | ''
+  allow: string
+  tsPort: number
+}
+
+export type AccessMode = 'public' | 'vpn' | 'tailscale' | 'local'
+
+export interface Tool {
+  installed: boolean
+  running: boolean
+  version?: string
+  nginxPlugin?: boolean
+}
+export interface VPNLink {
+  name: string
+  addresses: string[]
+}
+export interface Environment {
+  caddy: Tool
+  nginx: Tool
+  certbot: Tool
+  traefik: boolean
+  tailscale?: { running: boolean; name: string; ips: string[]; https: boolean; version: string }
+  wireguard: VPNLink[]
+  zerotier: VPNLink[]
+  ufw: string
+  nftables: boolean
+  docker: string
+  checked: string
+}
+export interface ServerSetup {
+  environment: Environment
+  panel: { url: string; webhookUrl: string; access: 'public' | 'tailscale' | 'local' }
+  sites: boolean
 }
 
 export interface Deployment {
@@ -196,6 +231,8 @@ export interface Deployment {
 }
 
 export interface AppView extends App {
+  url?: string
+  accessMode: AccessMode
   status: string
   live?: Deployment
   latest?: Deployment
@@ -245,6 +282,8 @@ export interface AppInput {
   autoDeploy: boolean
   keep: number
   memoryMb: number
+  access?: AccessMode
+  allow?: string
   installCmd?: string
   buildCmd?: string
   startCmd?: string
@@ -400,6 +439,7 @@ export const api = {
 
   devices: () => request<{ devices: Device[]; current: string }>('GET', '/api/devices'),
   revokeDevice: (id: string) => request<void>('DELETE', `/api/devices/${encodeURIComponent(id)}`),
+  environment: () => request<ServerSetup>('GET', '/api/system/environment'),
   reboot: (confirm: string) => request<{ rebooting: boolean }>('POST', '/api/system/reboot', { confirm }),
   scripts: () => request<{ scripts: Script[]; runs: ScriptRun[]; dir: string }>('GET', '/api/scripts'),
   renameScript: (name: string, title: string) => request<void>('PUT', `/api/scripts/${encodeURIComponent(name)}/title`, { title }),

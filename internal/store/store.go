@@ -163,6 +163,10 @@ var migrations = []string{
 	ALTER TABLE apps ADD COLUMN compose_file TEXT NOT NULL DEFAULT '';`,
 	// 6: who uses each device, asked at pairing
 	`ALTER TABLE devices ADD COLUMN owner TEXT NOT NULL DEFAULT '';`,
+	// 7: how each app is reached
+	`ALTER TABLE apps ADD COLUMN access TEXT NOT NULL DEFAULT '';
+	ALTER TABLE apps ADD COLUMN allow TEXT NOT NULL DEFAULT '';
+	ALTER TABLE apps ADD COLUMN ts_port INTEGER NOT NULL DEFAULT 0;`,
 }
 
 func Open(dataDir string) (*Store, error) {

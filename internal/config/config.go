@@ -31,6 +31,8 @@ type Config struct {
 	// CaddySitesDir receives one snippet per deployed app with a domain; the installer
 	// imports it from the Caddyfile. Domains are disabled when it does not exist.
 	CaddySitesDir string `json:"caddy_sites_dir"`
+	// NginxSitesDir is the same for nginx, when the installer found nginx instead.
+	NginxSitesDir string `json:"nginx_sites_dir"`
 	// ScriptsDir holds the links made by `sudo vps-admin link`; root-owned.
 	ScriptsDir string `json:"scripts_dir"`
 	// Update holds the defaults; the panel stores overrides in the database.
@@ -57,6 +59,7 @@ func Default() Config {
 		TrustedProxies: []string{"127.0.0.1/32", "::1/128"},
 		DockerSocket:   "/var/run/docker.sock",
 		CaddySitesDir:  "/etc/caddy/vps-admin-apps",
+		NginxSitesDir:  "/etc/nginx/vps-admin-apps",
 		ScriptsDir:     "/etc/vps-admin/scripts",
 		Update:         Update{Auto: true},
 	}

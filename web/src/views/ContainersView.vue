@@ -58,14 +58,14 @@ const rebuildOpen = ref(false)
 const runFor = ref<Script | null>(null)
 const runOpen = computed({ get: () => runFor.value !== null, set: (v) => !v && (runFor.value = null) })
 
+// Groups that are panel apps link to their page.
+const appIds = ref(new Set<string>())
 const scriptsFor = (dir?: string) => (dir ? scripts.value.filter((s) => s.dir === dir) : [])
 
 async function loadLinks() {
-  try {
-    scripts.value = (await api.scripts()).scripts
-  } catch {
-    // scripts are optional here
-  }
+  const [s, a] = await Promise.allSettled([api.scripts(), api.apps()])
+  if (s.status === 'fulfilled') scripts.value = s.value.scripts
+  if (a.status === 'fulfilled') appIds.value = new Set(a.value.apps.map((x) => x.id))
 }
 
 const groups = computed(() => {
@@ -73,7 +73,8 @@ const groups = computed(() => {
   const map = new Map<string, Container[]>()
   for (const c of list.value) {
     if (q && !c.name.toLowerCase().includes(q) && !c.image.toLowerCase().includes(q) && !(c.project ?? '').includes(q)) continue
-    const key = c.project || 'Standalone'
+    // Deployed apps group under their name; compose stacks under their project.
+    const key = c.app || c.project || 'Standalone'
     map.set(key, [...(map.get(key) ?? []), c])
   }
   return [...map.entries()].sort(([a], [b]) => (a === 'Standalone' ? 1 : b === 'Standalone' ? -1 : a.localeCompare(b)))
@@ -171,6 +172,9 @@ onBeforeUnmount(() => clearInterval(timer))
           <span class="chip">{{ items.length }}</span>
           <Icon name="chevron" :size="20" class="chev" />
         </button>
+        <RouterLink v-if="appIds.has(name)" :to="`/apps/${name}`" class="btn btn-text st app-link" v-tip="'Deployments, settings and logs of this app'">
+          <Icon name="apps" :size="16" /> Open app
+        </RouterLink>
       </div>
       <div :id="`grp-${gi}`" class="gbody" :inert="!isOpen(name)">
       <div class="ginner">

@@ -47,7 +47,7 @@ jobs:
       - run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
       - run: go vet ./...
       - run: go test -race ./...
-      - run: bash -n deploy/install.sh && sh -n deploy/preflight.sh && sh -n deploy/run-script.sh
+      - run: bash -n deploy/install.sh && sh -n deploy/preflight.sh && sh -n deploy/run-script.sh && sh -n deploy/proxy-helper.sh
 
       - name: Installer and agent share the release key
         run: |

@@ -7,7 +7,8 @@ import M3Switch from '@/components/M3Switch.vue'
 import EnvEditor from '@/components/EnvEditor.vue'
 import M3Select from '@/components/M3Select.vue'
 import BuildCommands, { type Commands } from '@/components/BuildCommands.vue'
-import { api, type BuildType, type Detection, type EnvVar, type GitHubStatus, type Repo } from '@/lib/api'
+import AccessPicker from '@/components/AccessPicker.vue'
+import { api, type BuildType, type AccessMode, type Detection, type EnvVar, type GitHubStatus, type Repo } from '@/lib/api'
 import { BUILD_LABEL, slugify, suggestDomain } from '@/lib/deploys'
 import { ago } from '@/lib/format'
 import { toastError } from '@/lib/ui'
@@ -31,6 +32,8 @@ const build = ref<BuildType>('auto')
 const port = ref(0)
 const cmds = ref<Commands>({ installCmd: '', buildCmd: '', startCmd: '', dockerfile: '', composeFile: '' })
 const domain = ref('')
+const access = ref<AccessMode>('public')
+const allow = ref('')
 const autoDeploy = ref(true)
 const keep = ref(5)
 const memoryMb = ref(0)
@@ -96,7 +99,9 @@ async function submit() {
       rootDir: rootDir.value,
       build: build.value,
       port: port.value || 0,
-      domain: domain.value,
+      domain: access.value === 'public' || access.value === 'vpn' ? domain.value : '',
+      access: access.value,
+      allow: allow.value,
       autoDeploy: autoDeploy.value,
       keep: keep.value,
       memoryMb: memoryMb.value || 0,
@@ -193,11 +198,11 @@ onMounted(async () => {
             <input v-model.trim="rootDir" placeholder="/" spellcheck="false" />
             <small>For a monorepo, the folder of this app</small>
           </label>
-          <label class="tf">
-            <span>Domain</span>
-            <input v-model.trim="domain" :disabled="!gh?.domains" :placeholder="gh?.domains ? 'app.example.com' : 'needs Caddy'" spellcheck="false" />
-            <small>Point its DNS to this server; HTTPS is automatic</small>
-          </label>
+        </div>
+
+        <div>
+          <h3 class="sub">Access</h3>
+          <AccessPicker v-model:access="access" v-model:domain="domain" v-model:allow="allow" />
         </div>
 
         <div class="tile">

@@ -113,7 +113,7 @@ onBeforeUnmount(() => clearInterval(timer))
     </section>
 
     <p v-if="gh && !gh.domains" class="muted small">
-      Caddy is not set up for apps on this server, so apps run without a domain (reachable on 127.0.0.1 only).
+      No reverse proxy (Caddy or nginx) was set up by the installer, so apps get no public domain. They can still be served on Tailscale or stay on 127.0.0.1.
     </p>
 
     <p v-if="loading" class="muted">Loading…</p>

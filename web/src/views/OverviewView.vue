@@ -66,7 +66,8 @@ interface Group {
 const groups = computed<Group[]>(() => {
   const map = new Map<string, Container[]>()
   for (const c of containers.value ?? []) {
-    const key = c.project || 'Standalone'
+    // Deployed apps group under their name; compose stacks under their project.
+    const key = c.app || c.project || 'Standalone'
     map.set(key, [...(map.get(key) ?? []), c])
   }
   return [...map.entries()]
@@ -271,7 +272,7 @@ onBeforeUnmount(() => clearInterval(timer))
           <span class="chip">{{ g.items.length }}</span>
           <Icon name="chevron" :size="20" class="chev" />
         </button>
-        <RouterLink to="/containers" class="btn btn-text st">Manage</RouterLink>
+        <RouterLink :to="g.items.some((c) => c.app) ? `/apps/${g.name}` : '/containers'" class="btn btn-text st">{{ g.items.some((c) => c.app) ? 'Open app' : 'Manage' }}</RouterLink>
       </div>
       <div :id="`ov-grp-${gi}`" class="gbody" :inert="!openGroups.has(g.name)">
         <div class="ginner">

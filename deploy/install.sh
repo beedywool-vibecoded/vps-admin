@@ -225,6 +225,8 @@ allow ss "-tulnpH"
 allow systemctl "start *" "stop *" "restart *" "reload *" "reboot"
 # Linked scripts run as their owner through this root-owned helper.
 rules+="vps-admin ALL=(root) NOPASSWD: /opt/vps-admin/run-script *"$'\n'
+# Publishing through nginx, certbot or tailscale serve, with checked arguments.
+rules+="vps-admin ALL=(root) NOPASSWD: /opt/vps-admin/proxy-helper *"$'\n'
 printf '# Managed by the VPS Admin installer, rewritten on every run.\nDefaults:vps-admin !requiretty\n%s' "$rules" > "$TMP/sudoers"
 visudo -cf "$TMP/sudoers" >/dev/null || die "generated sudoers file is invalid"
 install -o root -g root -m 440 "$TMP/sudoers" /etc/sudoers.d/vps-admin
@@ -244,9 +246,11 @@ fetch_asset() { # name, destination
 }
 fetch_asset preflight.sh "$TMP/preflight.sh"
 fetch_asset run-script.sh "$TMP/run-script.sh"
+fetch_asset proxy-helper.sh "$TMP/proxy-helper.sh"
 fetch_asset vps-admin.service "$TMP/vps-admin.service"
 install -o root -g root -m 755 "$TMP/preflight.sh" /opt/vps-admin/preflight.sh
 install -o root -g root -m 755 "$TMP/run-script.sh" /opt/vps-admin/run-script
+install -o root -g root -m 755 "$TMP/proxy-helper.sh" /opt/vps-admin/proxy-helper
 install -o root -g root -m 644 "$TMP/vps-admin.service" /etc/systemd/system/vps-admin.service
 
 systemctl stop vps-admin 2>/dev/null || true
@@ -328,6 +332,11 @@ CADDY
 # nginx: one site file for the panel, then a Let's Encrypt certificate through certbot,
 # which adds the HTTPS part to that same file and keeps it renewed.
 setup_nginx() {
+	# Deployed apps get one server block each in this folder, written by the agent.
+	install -d -o vps-admin -g vps-admin -m 755 /etc/nginx/vps-admin-apps
+	if [ -d /etc/nginx/conf.d ] && [ ! -f /etc/nginx/conf.d/vps-admin-apps.conf ]; then
+		echo "include /etc/nginx/vps-admin-apps/*.conf;" > /etc/nginx/conf.d/vps-admin-apps.conf
+	fi
 	[ -n "$DOMAIN" ] || { say "nginx found; pass --domain to serve the panel through it."; return; }
 	say "Configuring nginx"
 	local site conf link=""
@@ -429,7 +438,6 @@ case "$PROXY" in
 	caddy) setup_caddy ;;
 	nginx)
 		setup_nginx
-		say "With nginx, deployed apps get no domain yet (reachable on 127.0.0.1 only)."
 		;;
 	none) [ -n "$DOMAIN" ] && [ "$TAILSCALE" != yes ] && say "Point your reverse proxy for $DOMAIN to 127.0.0.1:$PORT (TLS is required for passkeys, disable response buffering)." ;;
 esac

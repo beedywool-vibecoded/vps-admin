@@ -250,10 +250,14 @@ type appView struct {
 	Live   *store.Deployment `json:"live,omitempty"`
 	Latest *store.Deployment `json:"latest,omitempty"`
 	Busy   bool              `json:"busy"`
+	// URL is where the app answers; AccessMode the effective mode (Access may be empty
+	// for apps made before access modes).
+	URL        string `json:"url,omitempty"`
+	AccessMode string `json:"accessMode"`
 }
 
 func (s *Server) appView(ctx context.Context, a store.App) appView {
-	v := appView{App: a, Status: s.Deploy.ContainerStatus(ctx, a), Busy: s.Deploy.Busy(a.ID)}
+	v := appView{App: a, Status: s.Deploy.ContainerStatus(ctx, a), Busy: s.Deploy.Busy(a.ID), URL: s.Deploy.URL(ctx, a), AccessMode: deploy.Access(a)}
 	if live, err := s.Store.LiveDeployment(ctx, a.ID); err == nil {
 		v.Live = live
 	}
@@ -301,6 +305,8 @@ type appInput struct {
 	StartCmd    string  `json:"startCmd"`
 	Dockerfile  string  `json:"dockerfile"`
 	ComposeFile string  `json:"composeFile"`
+	Access      string  `json:"access"`
+	Allow       string  `json:"allow"`
 	Env         []envIn `json:"env"`
 	Deploy      bool    `json:"deploy"`
 }
@@ -345,6 +351,44 @@ func (in *appInput) validate() string {
 	for _, c := range []string{in.InstallCmd, in.BuildCmd, in.StartCmd} {
 		if strings.ContainsAny(c, "\n\r") {
 			return "commands fit on one line (chain them with &&)"
+		}
+	}
+	switch in.Access {
+	case "", deploy.AccessPublic, deploy.AccessLocal, deploy.AccessTailscale:
+	case deploy.AccessVPN:
+		nets, err := deploy.AllowList(in.Allow)
+		if err != nil {
+			return err.Error()
+		}
+		if len(nets) == 0 {
+			return "list the networks allowed to reach the app"
+		}
+		if in.Domain == "" {
+			return "a VPN-only app still needs a domain"
+		}
+	default:
+		return "unknown access mode"
+	}
+	return ""
+}
+
+// accessError checks that the server can publish the app the way asked.
+func (s *Server) accessError(ctx context.Context, in *appInput) string {
+	switch in.Access {
+	case deploy.AccessTailscale:
+		ts := s.Runner.DetectEnvironment(ctx).Tailscale
+		if ts == nil || !ts.Running {
+			return "Tailscale is not running on this server"
+		}
+		if !ts.HTTPS {
+			return "enable HTTPS certificates in the Tailscale admin console (DNS page) first"
+		}
+		if !s.Deploy.HasHelper() {
+			return "rerun the installer to let the agent use tailscale serve"
+		}
+	case "", deploy.AccessPublic, deploy.AccessVPN:
+		if in.Domain != "" && !s.Deploy.SitesEnabled() {
+			return deploy.ErrNoDomain.Error()
 		}
 	}
 	return ""
@@ -398,8 +442,8 @@ func (s *Server) appCreate(w http.ResponseWriter, r *http.Request) {
 		writeErrorMsg(w, http.StatusBadRequest, "invalid", msg)
 		return
 	}
-	if in.Domain != "" && !s.Deploy.SitesEnabled() {
-		writeErrorMsg(w, http.StatusBadRequest, "invalid", deploy.ErrNoDomain.Error())
+	if msg := s.accessError(r.Context(), &in); msg != "" {
+		writeErrorMsg(w, http.StatusBadRequest, "invalid", msg)
 		return
 	}
 	// The repository must be one the App can read; that also gives its installation.
@@ -426,7 +470,8 @@ func (s *Server) appCreate(w http.ResponseWriter, r *http.Request) {
 	a := &store.App{ID: in.ID, Repo: in.Repo, InstallationID: inst, Branch: in.Branch, RootDir: in.RootDir, Build: in.Build,
 		Port: in.Port, Domain: in.Domain, AutoDeploy: in.AutoDeploy, Keep: in.Keep, MemoryMB: in.MemoryMB,
 		InstallCmd: strings.TrimSpace(in.InstallCmd), BuildCmd: strings.TrimSpace(in.BuildCmd), StartCmd: strings.TrimSpace(in.StartCmd),
-		Dockerfile: strings.TrimSpace(in.Dockerfile), ComposeFile: strings.TrimSpace(in.ComposeFile)}
+		Dockerfile: strings.TrimSpace(in.Dockerfile), ComposeFile: strings.TrimSpace(in.ComposeFile),
+		Access: in.Access, Allow: strings.TrimSpace(in.Allow)}
 	err = s.Store.AddApp(r.Context(), a)
 	if errors.Is(err, store.ErrExists) {
 		writeErrorMsg(w, http.StatusConflict, "exists", "an app with this name already exists")
@@ -482,8 +527,8 @@ func (s *Server) appUpdate(w http.ResponseWriter, r *http.Request) {
 		writeErrorMsg(w, http.StatusBadRequest, "invalid", msg)
 		return
 	}
-	if in.Domain != "" && !s.Deploy.SitesEnabled() {
-		writeErrorMsg(w, http.StatusBadRequest, "invalid", deploy.ErrNoDomain.Error())
+	if msg := s.accessError(r.Context(), &in); msg != "" {
+		writeErrorMsg(w, http.StatusBadRequest, "invalid", msg)
 		return
 	}
 	// The build type is fixed once the app runs: switching between compose and a single
@@ -498,6 +543,7 @@ func (s *Server) appUpdate(w http.ResponseWriter, r *http.Request) {
 	a.AutoDeploy, a.Keep, a.MemoryMB = in.AutoDeploy, in.Keep, in.MemoryMB
 	a.InstallCmd, a.BuildCmd, a.StartCmd = strings.TrimSpace(in.InstallCmd), strings.TrimSpace(in.BuildCmd), strings.TrimSpace(in.StartCmd)
 	a.Dockerfile, a.ComposeFile = strings.TrimSpace(in.Dockerfile), strings.TrimSpace(in.ComposeFile)
+	a.Access, a.Allow = in.Access, strings.TrimSpace(in.Allow)
 	if a.Dir != "" {
 		a.Build = deploy.BuildCompose // a linked folder is always a compose stack
 	}

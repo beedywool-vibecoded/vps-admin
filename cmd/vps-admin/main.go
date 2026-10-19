@@ -151,8 +151,20 @@ func serve(cfgPath string) error {
 		gh.API = v
 	}
 	engine := &deploy.Engine{
-		Store: st, Box: box, GitHub: gh, DataDir: cfg.DataDir, SitesDir: cfg.CaddySitesDir,
+		Store: st, Box: box, GitHub: gh, DataDir: cfg.DataDir, SitesDir: cfg.CaddySitesDir, NginxDir: cfg.NginxSitesDir,
 		ReloadCaddy: func(ctx context.Context) error { return reloadCaddy(ctx, runner) },
+		TailscaleName: func(ctx context.Context) string {
+			if ts := runner.DetectEnvironment(ctx).Tailscale; ts != nil && ts.Running {
+				return ts.Name
+			}
+			return ""
+		},
+	}
+	// The root helper for nginx, certbot and tailscale serve (installed with the agent).
+	if _, err := os.Stat("/opt/vps-admin/proxy-helper"); err == nil {
+		engine.Helper = func(ctx context.Context, args ...string) (string, error) {
+			return runner.Sudo(ctx, 5*time.Minute, append([]string{"/opt/vps-admin/proxy-helper"}, args...)...)
+		}
 	}
 	engine.Init()
 	go engine.Run(ctx)

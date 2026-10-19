@@ -53,9 +53,15 @@ type Engine struct {
 	Store  *store.Store
 	Box    *secret.Box
 	GitHub *github.Client
-	// DataDir holds sources (apps/, builds/); SitesDir the Caddy snippets, one per app.
+	// DataDir holds sources (apps/, builds/); SitesDir the Caddy snippets and NginxDir
+	// the nginx sites, one per app (whichever proxy the installer set up).
 	DataDir  string
 	SitesDir string
+	NginxDir string
+	// Helper runs the root proxy helper (deploy/proxy-helper.sh) through sudo.
+	Helper func(ctx context.Context, args ...string) (string, error)
+	// TailscaleName is this machine's tailnet name, empty without Tailscale.
+	TailscaleName func(ctx context.Context) string
 	// ReloadCaddy applies the snippets; Caddy refuses a bad config and keeps the old one.
 	ReloadCaddy func(context.Context) error
 	// gitRemote replaces the GitHub clone URL of linked folders in tests.
@@ -90,14 +96,6 @@ func (e *Engine) Run(ctx context.Context) {
 			e.process(ctx, j)
 		}
 	}
-}
-
-func (e *Engine) SitesEnabled() bool {
-	if e.SitesDir == "" {
-		return false
-	}
-	st, err := os.Stat(e.SitesDir)
-	return err == nil && st.IsDir()
 }
 
 // Deploy queues a deployment of app at sha (the branch head when empty). image reuses a
@@ -489,11 +487,9 @@ func (e *Engine) goLiveContainer(ctx context.Context, l *logger, app store.App, 
 		return fmt.Errorf("%w; the previous version keeps running", err)
 	}
 
-	if app.Domain != "" {
-		if err := e.writeSite(ctx, l, app, port); err != nil {
-			e.docker(context.WithoutCancel(ctx), io.Discard, "", nil, "rm", "-f", name)
-			return err
-		}
+	if err := e.publish(ctx, l, app, port); err != nil {
+		e.docker(context.WithoutCancel(ctx), io.Discard, "", nil, "rm", "-f", name)
+		return err
 	}
 	return e.retirePrevious(ctx, l, app, d)
 }
@@ -603,41 +599,12 @@ func (e *Engine) goLiveCompose(ctx context.Context, l *logger, app store.App, d 
 	if len(bad) > 0 {
 		return fmt.Errorf("services not running: %s", strings.Join(bad, ", "))
 	}
-	if app.Domain != "" {
-		if app.Port == 0 {
-			l.Printf("No port set: the domain is not routed. Publish a service on 127.0.0.1:PORT and set that port.")
-		} else if err := e.writeSite(ctx, l, app, app.Port); err != nil {
-			return err
-		}
-	}
-	return e.retirePrevious(ctx, l, app, d)
-}
-
-func (e *Engine) sitePath(appID string) string { return filepath.Join(e.SitesDir, appID+".caddy") }
-
-// writeSite points the app domain at port. If Caddy rejects the result (a domain already
-// used elsewhere, for instance) the previous snippet is restored.
-func (e *Engine) writeSite(ctx context.Context, l *logger, app store.App, port int) error {
-	if !e.SitesEnabled() {
-		return ErrNoDomain
-	}
-	path := e.sitePath(app.ID)
-	prev, readErr := os.ReadFile(path)
-	conf := fmt.Sprintf("# Managed by VPS Admin (app %s), rewritten on every deploy\n%s {\n\tencode zstd gzip\n\treverse_proxy 127.0.0.1:%d\n}\n", app.ID, app.Domain, port)
-	if err := os.WriteFile(path, []byte(conf), 0o644); err != nil {
+	if Access(app) != AccessLocal && app.Port == 0 {
+		l.Printf("No port set: the app is not published. Publish a service on 127.0.0.1:PORT and set that port.")
+	} else if err := e.publish(ctx, l, app, app.Port); err != nil {
 		return err
 	}
-	l.Printf("Routing %s to 127.0.0.1:%d", app.Domain, port)
-	if err := e.ReloadCaddy(ctx); err != nil {
-		if readErr == nil {
-			os.WriteFile(path, prev, 0o644)
-		} else {
-			os.Remove(path)
-		}
-		e.ReloadCaddy(context.WithoutCancel(ctx))
-		return fmt.Errorf("Caddy refused the site for %s (is the domain already used?): %w", app.Domain, err)
-	}
-	return nil
+	return e.retirePrevious(ctx, l, app, d)
 }
 
 // prune keeps the images of the last `keep` successful deployments.
@@ -717,11 +684,8 @@ func (e *Engine) Remove(ctx context.Context, app store.App, volumes bool) error 
 			e.docker(ctx, io.Discard, "", nil, "rmi", "-f", img)
 		}
 	}
-	if _, err := os.Stat(e.sitePath(app.ID)); err == nil {
-		os.Remove(e.sitePath(app.ID))
-		if err := e.ReloadCaddy(ctx); err != nil {
-			errs = append(errs, err)
-		}
+	if err := e.unpublish(ctx, app); err != nil {
+		errs = append(errs, err)
 	}
 	if len(errs) == 0 {
 		os.RemoveAll(filepath.Join(e.DataDir, "apps", app.ID))

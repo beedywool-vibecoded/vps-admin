@@ -5,7 +5,8 @@ import Icon from '@/components/Icon.vue'
 import M3Slider from '@/components/M3Slider.vue'
 import M3Dialog from '@/components/M3Dialog.vue'
 import { appearance, loadAppearance, removeBackground, setOpacity, uploadBackground } from '@/lib/appearance'
-import { api, type AuditEntry, type Device } from '@/lib/api'
+import { api, type AuditEntry, type Device, type ServerSetup } from '@/lib/api'
+import StatusDot from '@/components/StatusDot.vue'
 import { passkeysSupported, registerPasskey } from '@/lib/passkey'
 import { SEEDS, mode, seed, type ThemeMode } from '@/lib/theme'
 import { ago, dateTime } from '@/lib/format'
@@ -35,6 +36,16 @@ const addingKey = ref(false)
 const fileInput = ref<HTMLInputElement>()
 const uploading = ref(false)
 const opacity = ref(appearance.opacity)
+const setup = ref<ServerSetup | null>(null)
+const proxyTools = computed(() =>
+  setup.value
+    ? [
+        { name: 'Caddy', tool: setup.value.environment.caddy },
+        { name: 'nginx', tool: setup.value.environment.nginx },
+        { name: setup.value.environment.certbot.nginxPlugin ? 'certbot (nginx plugin)' : 'certbot', tool: setup.value.environment.certbot },
+      ]
+    : [],
+)
 
 async function pickBackground(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
@@ -197,6 +208,7 @@ const describe = (e: AuditEntry) => {
 
 onMounted(async () => {
   try {
+    api.environment().then((e) => (setup.value = e)).catch(() => {})
     await Promise.all([loadDevices(), loadAudit(), loadAppearance()])
     opacity.value = appearance.opacity
   } catch (e) {
@@ -286,6 +298,63 @@ onMounted(async () => {
 
     <section class="card">
       <div class="card-head">
+        <h2>Server setup</h2>
+        <span class="muted small">What this server offers to publish apps, detected {{ setup ? ago(setup.environment.checked) : '…' }}</span>
+      </div>
+      <p v-if="!setup" class="muted small">Looking at the server…</p>
+      <template v-else>
+        <div class="env">
+          <div class="env-row">
+            <span class="env-k">Panel</span>
+            <span class="grow">
+              <code class="plain">{{ setup.panel.url }}</code>
+              <span class="chip" :class="setup.panel.access === 'public' ? 'chip-outline' : ''">{{ setup.panel.access === 'tailscale' ? 'Tailscale only' : setup.panel.access === 'local' ? 'Local' : 'Public' }}</span>
+              <span v-if="setup.panel.webhookUrl" class="muted small"> · GitHub webhooks via {{ setup.panel.webhookUrl }}</span>
+            </span>
+          </div>
+          <div class="env-row">
+            <span class="env-k">Reverse proxy</span>
+            <span class="grow tools">
+              <span v-for="t in proxyTools" :key="t.name" class="tool" :class="{ off: !t.tool.installed }">
+                <StatusDot :tone="!t.tool.installed ? 'idle' : t.tool.running ? 'ok' : 'warn'" :label="t.tool.installed ? (t.tool.running ? 'running' : 'stopped') : 'not installed'" />
+                {{ t.name }}<span v-if="t.tool.version" class="muted small"> {{ t.tool.version }}</span>
+              </span>
+              <span v-if="setup.environment.traefik" class="tool"><StatusDot tone="ok" label="running" /> Traefik <span class="muted small">(in Docker, managed outside the panel)</span></span>
+            </span>
+          </div>
+          <div class="env-row">
+            <span class="env-k">App domains</span>
+            <span class="grow">{{ setup.sites ? (setup.environment.caddy.installed && setup.environment.caddy.running ? 'Through Caddy, HTTPS by Caddy' : 'Through nginx, HTTPS by certbot') : 'Not set up: rerun the installer with --domain' }}</span>
+          </div>
+          <div class="env-row">
+            <span class="env-k">Private networks</span>
+            <span class="grow tools">
+              <span class="tool" :class="{ off: !setup.environment.tailscale }">
+                <StatusDot :tone="!setup.environment.tailscale ? 'idle' : setup.environment.tailscale.running ? 'ok' : 'warn'" :label="setup.environment.tailscale ? (setup.environment.tailscale.running ? 'running' : 'stopped') : 'not installed'" />
+                Tailscale<template v-if="setup.environment.tailscale?.running"><span class="muted small"> {{ setup.environment.tailscale.name }} · HTTPS {{ setup.environment.tailscale.https ? 'on' : 'off' }}</span></template>
+              </span>
+              <span v-for="l in setup.environment.wireguard" :key="l.name" class="tool"><StatusDot tone="ok" label="up" /> WireGuard {{ l.name }} <span class="muted small">{{ l.addresses.join(', ') }}</span></span>
+              <span v-for="l in setup.environment.zerotier" :key="l.name" class="tool"><StatusDot tone="ok" label="up" /> ZeroTier {{ l.name }} <span class="muted small">{{ l.addresses.join(', ') }}</span></span>
+              <span v-if="!setup.environment.wireguard.length && !setup.environment.zerotier.length" class="tool off"><StatusDot tone="idle" label="none" /> WireGuard, ZeroTier</span>
+            </span>
+          </div>
+          <div class="env-row">
+            <span class="env-k">Firewall</span>
+            <span class="grow">ufw {{ setup.environment.ufw || 'not installed' }} · nftables {{ setup.environment.nftables ? 'active' : 'not active' }}</span>
+          </div>
+          <div class="env-row">
+            <span class="env-k">Docker</span>
+            <span class="grow">{{ setup.environment.docker || 'not reachable' }}</span>
+          </div>
+        </div>
+        <p class="muted small" style="margin: 8px 0 0">
+          Change how the panel is reached by rerunning the installer: <code>--tailscale</code> (private), <code>--allow 10.8.0.0/24</code> (VPN networks), <code>--proxy caddy|nginx</code>.
+        </p>
+      </template>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
         <h2>Devices</h2>
         <button class="btn btn-tonal st" type="button" :disabled="addingKey || !passkeysSupported()" @click="addPasskey">
           <Icon name="key" :size="18" /> Add a passkey
@@ -368,6 +437,38 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.env {
+  display: flex;
+  flex-direction: column;
+}
+.env-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--sch);
+  font-size: 14px;
+}
+.env-row:first-child {
+  border-top: none;
+}
+.env-k {
+  width: 140px;
+  color: var(--on-sv);
+}
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+.tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.tool.off {
+  color: var(--on-sv);
+}
 .setting {
   display: flex;
   align-items: center;
