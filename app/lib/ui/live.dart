@@ -24,6 +24,10 @@ class LiveSession extends ChangeNotifier {
   Uint8List? background;
   double opacity = 0.35;
   Map<String, String> groupIcons = {};
+  Map<String, String> groupTitles = {};
+
+  /// The name shown for a compose project: its title if one was given.
+  String groupTitle(String project) => groupTitles[project] ?? project;
 
   StreamSubscription<(String, dynamic)>? _sub;
   Timer? _retry;
@@ -83,6 +87,10 @@ class LiveSession extends ChangeNotifier {
     opacity = (a['opacity'] as num?)?.toDouble() ?? 0.35;
     groupIcons = {
       for (final e in ((a['groupIcons'] as Map?) ?? {}).entries)
+        e.key as String: e.value as String,
+    };
+    groupTitles = {
+      for (final e in ((a['groupTitles'] as Map?) ?? {}).entries)
         e.key as String: e.value as String,
     };
     notifyListeners();

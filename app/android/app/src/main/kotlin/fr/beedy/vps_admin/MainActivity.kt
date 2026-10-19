@@ -25,6 +25,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "canInstall" -> result.success(canInstall())
                 "model" -> result.success(model())
+                "pickImage" -> pickImage(result)
                 "openInstallSettings" -> {
                     startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
                     result.success(null)
@@ -44,10 +45,48 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    // The server background: the system picker returns a content URI, read here so the
+    // app needs no storage permission.
+    private var pending: MethodChannel.Result? = null
+
+    private fun pickImage(result: MethodChannel.Result) {
+        pending?.error("cancelled", "another pick started", null)
+        pending = result
+        val intent = Intent(Intent.ACTION_GET_CONTENT)
+            .setType("image/*")
+            .putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/jpeg", "image/png", "image/webp"))
+            .addCategory(Intent.CATEGORY_OPENABLE)
+        startActivityForResult(Intent.createChooser(intent, null), PICK_IMAGE)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != PICK_IMAGE) return
+        val result = pending ?: return
+        pending = null
+        val uri = data?.data
+        if (resultCode != RESULT_OK || uri == null) {
+            result.success(null)
+            return
+        }
+        try {
+            val type = contentResolver.getType(uri) ?: "application/octet-stream"
+            val bytes = contentResolver.openInputStream(uri)!!.use { it.readBytes() }
+            result.success(mapOf("type" to type, "bytes" to bytes))
+        } catch (e: Exception) {
+            result.error("read_failed", e.message, null)
+        }
+    }
+
     // "Google Pixel 10 Pro Fold": names the device in the server's device list.
     private fun model(): String {
         val maker = Build.MANUFACTURER.replaceFirstChar { it.uppercase() }
         return if (Build.MODEL.startsWith(Build.MANUFACTURER, ignoreCase = true)) Build.MODEL else "$maker ${Build.MODEL}"
+    }
+
+    companion object {
+        private const val PICK_IMAGE = 41
     }
 
     private fun canInstall() = Build.VERSION.SDK_INT < 26 || packageManager.canRequestPackageInstalls()

@@ -36,14 +36,21 @@ class _SecurityPageState extends State<SecurityPage> {
     }
   }
 
-  static const _label = {'ok': 'Good', 'warn': 'To improve', 'fail': 'To fix', 'unknown': 'Unknown'};
+  static const _label = {
+    'ok': 'Good',
+    'warn': 'To improve',
+    'fail': 'To fix',
+    'unknown': 'Unknown',
+  };
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final t = Tones.of(context);
-    final checks = ((report?['checks'] as List?) ?? []).cast<Map<String, dynamic>>();
-    final ports = ((report?['ports'] as List?) ?? []).cast<Map<String, dynamic>>();
+    final checks = ((report?['checks'] as List?) ?? [])
+        .cast<Map<String, dynamic>>();
+    final ports = ((report?['ports'] as List?) ?? [])
+        .cast<Map<String, dynamic>>();
     final counts = {'ok': 0, 'warn': 0, 'fail': 0, 'unknown': 0};
     for (final c in checks) {
       counts[c['status'] as String] = (counts[c['status']] ?? 0) + 1;
@@ -59,42 +66,53 @@ class _SecurityPageState extends State<SecurityPage> {
       'fail' => t.bad,
       _ => cs.onSurfaceVariant,
     };
-    Widget portList(String title, List<Map<String, dynamic>> l, bool local) => Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Muted(title),
-        const SizedBox(height: 6),
-        if (l.isEmpty) const Muted('None'),
-        for (final p in l)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              children: [
-                Text('${p['port']}/${p['proto']}', style: cmdStyle(context, fontSize: 13)),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Muted(
-                    (p['process'] as String? ?? '').isNotEmpty
-                        ? p['process'] as String
-                        : local
-                        ? p['addr'] as String? ?? ''
-                        : 'unknown process',
-                    maxLines: 1,
-                  ),
+    Widget portList(String title, List<Map<String, dynamic>> l, bool local) =>
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Muted(title),
+            const SizedBox(height: 6),
+            if (l.isEmpty) const Muted('None'),
+            for (final p in l)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Text(
+                      '${p['port']}/${p['proto']}',
+                      style: cmdStyle(context, fontSize: 13),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Muted(
+                        (p['process'] as String? ?? '').isNotEmpty
+                            ? p['process'] as String
+                            : local
+                            ? p['addr'] as String? ?? ''
+                            : 'unknown process',
+                        maxLines: 1,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-      ],
-    );
+              ),
+          ],
+        );
     return WPage(
       onRefresh: () => _load(true),
       children: [
         PageTitle(
           'Security',
-          sub: report == null ? null : 'Checked ${agoIso(report!['checked'] as String?)}',
+          sub: report == null
+              ? null
+              : 'Checked ${agoIso(report!['checked'] as String?)}',
           actions: [
-            WButton(loading ? 'Checking…' : 'Check again', icon: 'restart', kind: BtnKind.tonal, onPressed: loading ? null : () => _load(true)),
+            WButton(
+              loading ? 'Checking…' : 'Check again',
+              icon: 'restart',
+              kind: BtnKind.tonal,
+              onPressed: loading ? null : () => _load(true),
+            ),
           ],
         ),
         WCard(
@@ -109,12 +127,28 @@ class _SecurityPageState extends State<SecurityPage> {
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    ShapeIcon(M3Shape.sunny, size: 120, color: cs.tertiaryContainer),
+                    ShapeIcon(
+                      M3Shape.sunny,
+                      size: 120,
+                      color: cs.tertiaryContainer,
+                    ),
                     Text.rich(
                       TextSpan(
                         text: report == null ? '…' : '${report!['score']}',
-                        style: TextStyle(fontSize: 34, fontWeight: FontWeight.w600, color: cs.onTertiaryContainer),
-                        children: [TextSpan(text: '/100', style: TextStyle(fontSize: 14, color: cs.onTertiaryContainer))],
+                        style: TextStyle(
+                          fontSize: 34,
+                          fontWeight: FontWeight.w600,
+                          color: cs.onTertiaryContainer,
+                        ),
+                        children: [
+                          TextSpan(
+                            text: '/100',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: cs.onTertiaryContainer,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -140,14 +174,29 @@ class _SecurityPageState extends State<SecurityPage> {
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        WChip('${counts['fail']} to fix', color: t.bad, textColor: t.onBad),
-                        WChip('${counts['warn']} to improve', color: t.warn, textColor: t.onWarn),
-                        WChip('${counts['ok']} good', color: t.ok, textColor: t.onOk),
-                        if (counts['unknown']! > 0) WChip('${counts['unknown']} unknown', outline: true),
+                        WChip(
+                          '${counts['fail']} to fix',
+                          color: t.bad,
+                          textColor: t.onBad,
+                        ),
+                        WChip(
+                          '${counts['warn']} to improve',
+                          color: t.warn,
+                          textColor: t.onWarn,
+                        ),
+                        WChip(
+                          '${counts['ok']} good',
+                          color: t.ok,
+                          textColor: t.onOk,
+                        ),
+                        if (counts['unknown']! > 0)
+                          WChip('${counts['unknown']} unknown', outline: true),
                       ],
                     ),
                     const SizedBox(height: 10),
-                    const Muted('The checks only read the configuration. Fixes are listed with each item; the assistant will be able to apply them with your approval.'),
+                    const Muted(
+                      'The checks only read the configuration. Fixes are listed with each item; the assistant will be able to apply them with your approval.',
+                    ),
                   ],
                 ),
               ),
@@ -172,17 +221,37 @@ class _SecurityPageState extends State<SecurityPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(c['title'] as String, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                              Text(
+                                c['title'] as String,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
                               Muted(c['detail'] as String? ?? ''),
-                              if ((c['fix'] as String? ?? '').isNotEmpty && c['status'] != 'ok')
+                              if ((c['fix'] as String? ?? '').isNotEmpty &&
+                                  c['status'] != 'ok')
                                 Padding(
                                   padding: const EdgeInsets.only(top: 6),
                                   child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      WIcon('info', size: 16, color: cs.primary),
+                                      WIcon(
+                                        'info',
+                                        size: 16,
+                                        color: cs.primary,
+                                      ),
                                       const SizedBox(width: 6),
-                                      Expanded(child: CmdText(c['fix'] as String, style: TextStyle(fontSize: 13, color: cs.primary))),
+                                      Expanded(
+                                        child: CmdText(
+                                          c['fix'] as String,
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: cs.primary,
+                                          ),
+                                        ),
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -192,7 +261,11 @@ class _SecurityPageState extends State<SecurityPage> {
                         const SizedBox(width: 8),
                         Text(
                           _label[c['status']] ?? '',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: stateColor(c['status'] as String)),
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: stateColor(c['status'] as String),
+                          ),
                         ),
                       ],
                     ),
@@ -207,14 +280,26 @@ class _SecurityPageState extends State<SecurityPage> {
               CardHead(
                 'Listening ports',
                 sub: 'What the firewall then filters',
-                leading: ShapeIcon(M3Shape.flower, size: 28, color: cs.primaryContainer),
+                leading: ShapeIcon(
+                  M3Shape.flower,
+                  size: 28,
+                  color: cs.primaryContainer,
+                ),
               ),
               ResponsiveGrid(
                 minWidth: 260,
                 gap: 20,
                 children: [
-                  portList('All interfaces', ports.where((p) => p['public'] == true).toList(), false),
-                  portList('Local or private only', ports.where((p) => p['public'] != true).toList(), true),
+                  portList(
+                    'All interfaces',
+                    ports.where((p) => p['public'] == true).toList(),
+                    false,
+                  ),
+                  portList(
+                    'Local or private only',
+                    ports.where((p) => p['public'] != true).toList(),
+                    true,
+                  ),
                 ],
               ),
             ],

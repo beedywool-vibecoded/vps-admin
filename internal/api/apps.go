@@ -186,6 +186,18 @@ func (s *Server) githubDetect(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"detection": deploy.Detect(files, pkg, df), "files": files})
 }
 
+// githubBranches lists a repository's branches for the branch picker.
+func (s *Server) githubBranches(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	inst, _ := strconv.ParseInt(q.Get("installation"), 10, 64)
+	list, err := s.GitHub.Branches(r.Context(), inst, q.Get("repo"))
+	if err != nil {
+		writeErrorMsg(w, githubStatusCode(err), "github_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"branches": list})
+}
+
 // githubWebhook deploys apps that follow the pushed branch. Public, authenticated by the
 // HMAC signature GitHub computes with the App webhook secret.
 func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) {

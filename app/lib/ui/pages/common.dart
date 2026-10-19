@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/api.dart';
 import '../../data/models.dart';
@@ -179,8 +181,9 @@ class _LogsState extends State<_Logs> {
 
   void _arm() {
     _timer?.cancel();
-    if (follow)
+    if (follow) {
       _timer = Timer.periodic(const Duration(seconds: 4), (_) => _refresh());
+    }
   }
 
   Future<void> _refresh() async {
@@ -194,8 +197,9 @@ class _LogsState extends State<_Logs> {
       setState(() => text = t.isEmpty ? 'No output yet.' : t);
       if (atBottom) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_scroll.hasClients)
+          if (_scroll.hasClients) {
             _scroll.jumpTo(_scroll.position.maxScrollExtent);
+          }
         });
       }
     } catch (e) {
@@ -332,4 +336,176 @@ class EmptyCard extends StatelessWidget {
       ],
     ),
   );
+}
+
+/// Which container groups are expanded, shared by the Overview and Containers pages and
+/// remembered on this phone. Collapsed by default.
+class OpenGroups extends ChangeNotifier {
+  OpenGroups._() {
+    SharedPreferences.getInstance()
+        .then((p) {
+          try {
+            open = (jsonDecode(p.getString('openGroups') ?? '[]') as List)
+                .cast<String>()
+                .toSet();
+            notifyListeners();
+          } catch (_) {}
+        })
+        .catchError((_) {});
+  }
+  static final instance = OpenGroups._();
+  Set<String> open = {};
+
+  bool has(String name) => open.contains(name);
+  void toggle(String name) {
+    open.contains(name) ? open.remove(name) : open.add(name);
+    notifyListeners();
+    SharedPreferences.getInstance()
+        .then((p) => p.setString('openGroups', jsonEncode(open.toList())))
+        .catchError((_) => false);
+  }
+}
+
+/// A container group card (header with icon, name, folder, state dots, count, chevron,
+/// collapsible body), the same on the Overview and on Containers.
+class GroupCard extends StatelessWidget {
+  const GroupCard({
+    super.key,
+    required this.group,
+    required this.index,
+    required this.children,
+    this.forceOpen = false,
+    this.onIcon,
+    this.onRename,
+    this.trailing,
+  });
+  final ContainerGroup group;
+  final int index;
+  final List<Widget> children;
+  final bool forceOpen;
+  final VoidCallback? onIcon, onRename;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final live = Live.of(context);
+    final cs = Theme.of(context).colorScheme;
+    final g = group;
+    final titled = live.groupTitles.containsKey(g.name);
+    return ListenableBuilder(
+      listenable: OpenGroups.instance,
+      builder: (context, _) {
+        final isOpen = forceOpen || OpenGroups.instance.has(g.name);
+        return WCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: onIcon,
+                    child: GroupBadge(
+                      icon: live.groupIcons[g.name],
+                      index: index,
+                    ),
+                  ),
+                  if (onRename != null)
+                    WIconButton(
+                      'edit',
+                      tooltip: 'Rename ${live.groupTitle(g.name)}',
+                      size: 16,
+                      onPressed: onRename,
+                    ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => OpenGroups.instance.toggle(g.name),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text.rich(
+                                    TextSpan(
+                                      text: live.groupTitle(g.name),
+                                      style: const TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                      children: [
+                                        if (titled)
+                                          TextSpan(
+                                            text: ' (${g.name})',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w400,
+                                              color: cs.onSurfaceVariant,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (g.dir != null)
+                                    Muted(
+                                      g.dir!,
+                                      size: 12,
+                                      mono: true,
+                                      maxLines: 2,
+                                    ),
+                                ],
+                              ),
+                            ),
+                            for (final c in g.items.take(6))
+                              Padding(
+                                padding: const EdgeInsets.only(left: 4),
+                                child: StatusDot(
+                                  containerTone(c),
+                                  label: c.state,
+                                ),
+                              ),
+                            const SizedBox(width: 10),
+                            WChip('${g.items.length}'),
+                            const SizedBox(width: 6),
+                            AnimatedRotation(
+                              turns: isOpen ? .5 : 0,
+                              duration: const Duration(milliseconds: 250),
+                              child: WIcon(
+                                'chevron',
+                                size: 20,
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  ?trailing,
+                ],
+              ),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 300),
+                curve: const Cubic(0.05, 0.7, 0.1, 1),
+                alignment: Alignment.topCenter,
+                child: isOpen
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [const SizedBox(height: 12), ...children],
+                      )
+                    : const SizedBox(width: double.infinity),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }

@@ -312,6 +312,8 @@ class Api {
       put('/api/appearance', {'opacity': opacity});
   Future<Map<String, dynamic>> setGroupIcon(String project, String icon) =>
       put('/api/appearance/icons', {'project': project, 'icon': icon});
+  Future<Map<String, dynamic>> setGroupTitle(String project, String title) =>
+      put('/api/appearance/titles', {'project': project, 'title': title});
   Future<Map<String, dynamic>> removeBackground() =>
       delete('/api/appearance/background');
   Future<Map<String, dynamic>> uploadBackground(

@@ -35,6 +35,17 @@ let closeStream: (() => void) | undefined
 const form = ref({ branch: '', rootDir: '', build: 'auto' as BuildType, port: 0, domain: '', autoDeploy: true, keep: 5, memoryMb: 0 })
 const cmds = ref({ installCmd: '', buildCmd: '', startCmd: '', dockerfile: '', composeFile: '' })
 const checkResult = ref<UpdateCheck | null>(null)
+const branches = ref<string[]>([])
+const branchOptions = computed(() => [...new Set([form.value.branch, ...branches.value].filter(Boolean))].map((b) => ({ value: b, label: b })))
+let branchesFor = ''
+function loadBranches(a: AppView) {
+  if (branchesFor === a.repo) return
+  branchesFor = a.repo
+  api
+    .branches(a.installationId, a.repo)
+    .then((r) => (branches.value = r.branches))
+    .catch(() => (branchesFor = ''))
+}
 const checking = ref(false)
 const effectiveBuild = computed(() => (form.value.build === 'auto' ? app.value?.live?.build || app.value?.latest?.build || '' : form.value.build))
 const deleteVolumes = ref(false)
@@ -51,6 +62,7 @@ async function load() {
     domains.value = res.domains
     if (!envDirty) env.value = res.env.map((e) => ({ ...e, keep: e.secret && e.hasValue }))
     const a = res.app
+    loadBranches(a)
     if (!formDirty) {
       form.value = { branch: a.branch, rootDir: a.rootDir, build: a.build, port: a.port, domain: a.domain, autoDeploy: a.autoDeploy, keep: a.keep, memoryMb: a.memoryMb }
       cmds.value = { installCmd: a.installCmd, buildCmd: a.buildCmd, startCmd: a.startCmd, dockerfile: a.dockerfile, composeFile: a.composeFile }
@@ -270,7 +282,7 @@ onBeforeUnmount(() => {
       <section class="card stack">
         <div class="card-head"><h2>Settings</h2></div>
         <div class="grid">
-          <label class="tf"><span>Branch</span><input v-model.trim="form.branch" /></label>
+          <M3Select v-model="form.branch" label="Branch" :options="branchOptions" />
           <label class="tf"><span>Root folder</span><input v-model.trim="form.rootDir" placeholder="/" /></label>
           <label class="tf"><span>Domain</span><input v-model.trim="form.domain" :disabled="!domains" :placeholder="domains ? 'app.example.com' : 'needs Caddy'" /></label>
           <label class="tf"><span>Port</span><input v-model.number="form.port" inputmode="numeric" /></label>

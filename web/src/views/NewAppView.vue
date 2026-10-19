@@ -24,6 +24,8 @@ const saving = ref(false)
 
 const name = ref('')
 const branch = ref('')
+const branches = ref<string[]>([])
+const branchOptions = computed(() => [...new Set([branch.value, ...branches.value].filter(Boolean))].map((b) => ({ value: b, label: b })))
 const rootDir = ref('')
 const build = ref<BuildType>('auto')
 const port = ref(0)
@@ -47,6 +49,11 @@ function pick(r: Repo) {
   repo.value = r
   name.value = slugify(r.fullName.split('/')[1] ?? r.fullName)
   branch.value = r.defaultBranch
+  branches.value = []
+  api
+    .branches(r.installationId, r.fullName)
+    .then((res) => repo.value === r && (branches.value = res.branches))
+    .catch(() => {})
   rootDir.value = ''
   build.value = 'auto'
   port.value = 0
@@ -180,11 +187,7 @@ onMounted(async () => {
             <input :value="name" spellcheck="false" @input="name = slugify(($event.target as HTMLInputElement).value)" />
             <small>Also the container name</small>
           </label>
-          <label class="tf">
-            <span>Branch</span>
-            <input v-model.trim="branch" spellcheck="false" />
-            <small>Deployed on every push when automatic deploys are on</small>
-          </label>
+          <M3Select v-model="branch" label="Branch" :options="branchOptions" />
           <label class="tf">
             <span>Root folder</span>
             <input v-model.trim="rootDir" placeholder="/" spellcheck="false" />

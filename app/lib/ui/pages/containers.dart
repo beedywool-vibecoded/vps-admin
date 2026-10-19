@@ -1,8 +1,6 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/api.dart';
 import '../../data/models.dart';
@@ -29,7 +27,6 @@ class _ContainersPageState extends State<ContainersPage> {
   bool loading = true;
   String error = '', query = '';
   final busy = <String>{};
-  Set<String> open = {};
   Timer? _timer;
 
   Api get api => Live.read(context).api;
@@ -37,7 +34,6 @@ class _ContainersPageState extends State<ContainersPage> {
   @override
   void initState() {
     super.initState();
-    _readOpen();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _load();
       _stats();
@@ -55,30 +51,15 @@ class _ContainersPageState extends State<ContainersPage> {
     super.dispose();
   }
 
-  // Open groups are remembered on this phone, like the panel does per browser.
-  Future<void> _readOpen() async {
-    try {
-      final p = await SharedPreferences.getInstance();
-      final v = jsonDecode(p.getString('openGroups') ?? '[]') as List;
-      if (mounted) setState(() => open = v.cast<String>().toSet());
-    } catch (_) {}
-  }
-
-  Future<void> _toggle(String name) async {
-    setState(() => open.contains(name) ? open.remove(name) : open.add(name));
-    try {
-      final p = await SharedPreferences.getInstance();
-      await p.setString('openGroups', jsonEncode(open.toList()));
-    } catch (_) {}
-  }
-
   Future<void> _load() async {
     try {
       final l = await api.containers();
-      if (mounted) setState(() {
-        list = l;
-        error = '';
-      });
+      if (mounted) {
+        setState(() {
+          list = l;
+          error = '';
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => error = errText(e));
     } finally {
@@ -201,8 +182,7 @@ class _ContainersPageState extends State<ContainersPage> {
 
   @override
   Widget build(BuildContext context) {
-    final live = Live.of(context);
-    final cs = Theme.of(context).colorScheme;
+    Live.of(context);
     final groups = groupContainers(list, query: query);
     return WPage(
       onRefresh: () async => Future.wait([_load(), _stats(), _scripts()]),
@@ -234,135 +214,92 @@ class _ContainersPageState extends State<ContainersPage> {
         else if (groups.isEmpty)
           const Muted('No container.', size: 15),
         for (var gi = 0; gi < groups.length; gi++)
-          _group(context, live, cs, groups[gi], gi),
+          _group(context, groups[gi], gi),
       ],
     );
   }
 
-  Widget _group(
-    BuildContext context,
-    LiveSession live,
-    ColorScheme cs,
-    ContainerGroup g,
-    int gi,
-  ) {
-    final isOpen = query.trim().isNotEmpty || open.contains(g.name);
-    final folderScripts = g.dir == null
-        ? <Map<String, dynamic>>[]
-        : scripts.where((s) => s['dir'] == g.dir).toList();
-    return WCard(
-      child: Column(
+  Future<void> _renameGroup(String project) async {
+    final live = Live.read(context);
+    final c = TextEditingController(text: live.groupTitle(project));
+    final res = await showWDialog<String>(
+      context,
+      title: 'Rename the group',
+      body: (_) => Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: g.name == 'Standalone' ? null : () => _pickIcon(g.name),
-                child: GroupBadge(icon: live.groupIcons[g.name], index: gi),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () => _toggle(g.name),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 6,
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                g.name,
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              if (g.dir != null)
-                                Muted(
-                                  g.dir!,
-                                  size: 12,
-                                  mono: true,
-                                  maxLines: 2,
-                                ),
-                            ],
-                          ),
-                        ),
-                        for (final c in g.items.take(8))
-                          Padding(
-                            padding: const EdgeInsets.only(left: 4),
-                            child: StatusDot(containerTone(c), label: c.state),
-                          ),
-                        const SizedBox(width: 10),
-                        WChip('${g.items.length}'),
-                        const SizedBox(width: 6),
-                        AnimatedRotation(
-                          turns: isOpen ? .5 : 0,
-                          duration: const Duration(milliseconds: 250),
-                          child: WIcon(
-                            'chevron',
-                            size: 20,
-                            color: cs.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
+          CmdText(
+            'Everyone sees this name, on the panel and in the app. Compose keeps `$project`.',
+            style: const TextStyle(fontSize: 13),
           ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 300),
-            curve: const Cubic(0.05, 0.7, 0.1, 1),
-            alignment: Alignment.topCenter,
-            child: !isOpen
-                ? const SizedBox(width: double.infinity)
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const SizedBox(height: 12),
-                      if (folderScripts.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              for (final sc in folderScripts)
-                                Tooltip(
-                                  message: sc['target'] as String? ?? '',
-                                  child: WButton(
-                                    scriptTitle(sc),
-                                    icon: 'terminal',
-                                    kind: BtnKind.outlined,
-                                    onPressed: () => runScriptDialog(
-                                      context,
-                                      api,
-                                      sc,
-                                      onDone: _scripts,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      for (var i = 0; i < g.items.length; i++)
-                        _row(
-                          g.items[i],
-                          first: i == 0 && folderScripts.isEmpty,
-                        ),
-                    ],
-                  ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: c,
+            autofocus: true,
+            decoration: InputDecoration(hintText: project),
           ),
         ],
       ),
+      actions: (d) => [
+        if (live.groupTitles.containsKey(project))
+          WButton(
+            'Reset',
+            kind: BtnKind.text,
+            onPressed: () => Navigator.pop(d, ''),
+          ),
+        WButton(
+          'Cancel',
+          kind: BtnKind.text,
+          onPressed: () => Navigator.pop(d),
+        ),
+        WButton('Save', onPressed: () => Navigator.pop(d, c.text.trim())),
+      ],
+    );
+    if (res == null) return;
+    try {
+      live.applyAppearance(await live.api.setGroupTitle(project, res));
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Widget _group(BuildContext context, ContainerGroup g, int gi) {
+    final folderScripts = g.dir == null
+        ? <Map<String, dynamic>>[]
+        : scripts.where((s) => s['dir'] == g.dir).toList();
+    final standalone = g.name == 'Standalone';
+    return GroupCard(
+      group: g,
+      index: gi,
+      forceOpen: query.trim().isNotEmpty,
+      onIcon: standalone ? null : () => _pickIcon(g.name),
+      onRename: standalone ? null : () => _renameGroup(g.name),
+      children: [
+        if (folderScripts.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final sc in folderScripts)
+                  Tooltip(
+                    message: sc['target'] as String? ?? '',
+                    child: WButton(
+                      scriptTitle(sc),
+                      icon: 'terminal',
+                      kind: BtnKind.outlined,
+                      onPressed: () =>
+                          runScriptDialog(context, api, sc, onDone: _scripts),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        for (var i = 0; i < g.items.length; i++)
+          _row(g.items[i], first: i == 0 && folderScripts.isEmpty),
+      ],
     );
   }
 
@@ -527,8 +464,9 @@ class _RebuildBodyState extends State<_RebuildBody> {
           (chunk) {
             setState(() => out += chunk);
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (_scroll.hasClients)
+              if (_scroll.hasClients) {
                 _scroll.jumpTo(_scroll.position.maxScrollExtent);
+              }
             });
           },
           onError: (Object e) {

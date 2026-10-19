@@ -412,6 +412,8 @@ export const api = {
   githubManifest: (org = '') => request<{ url: string; manifest: string }>('POST', '/api/github/manifest', { org }),
   githubDisconnect: () => request<void>('DELETE', '/api/github'),
   repos: () => request<{ repos: Repo[] }>('GET', '/api/github/repos'),
+  branches: (installationId: number, repo: string) =>
+    request<{ branches: string[] }>('GET', `/api/github/branches?installation=${installationId}&repo=${encodeURIComponent(repo)}`),
   detect: (r: Repo, ref: string, root: string) =>
     request<{ detection: Detection; files: string[] }>(
       'GET',

@@ -434,74 +434,46 @@ class _OverviewPageState extends State<OverviewPage> {
               ],
             ),
           ),
-        for (final g in groups)
-          WCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    children: [
-                      StatusDot(
-                        groupTone(g.items),
-                        label: groupTone(g.items) == Tone.ok
-                            ? 'Running'
-                            : 'Needs attention',
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Wrap(
-                          spacing: 12,
-                          crossAxisAlignment: WrapCrossAlignment.end,
-                          children: [
-                            Text(
-                              g.name,
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            if (g.dir != null)
-                              Muted(g.dir!, size: 12, mono: true),
-                          ],
-                        ),
-                      ),
-                      WChip('${g.items.length}'),
-                      TextButton(
-                        onPressed: () => Nav.go(context, 'containers'),
-                        child: const Text('Manage'),
-                      ),
-                    ],
-                  ),
-                ),
-                for (var i = 0; i < g.items.length; i++)
-                  WRow(
-                    first: i == 0,
-                    children: [
-                      StatusDot(
-                        containerTone(g.items[i]),
-                        label: g.items[i].health ?? g.items[i].state,
-                      ),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              g.items[i].name,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            Muted(imageName(g.items[i].image), maxLines: 1),
-                          ],
-                        ),
-                      ),
-                      if (g.items[i].exposed)
-                        const WChip('public port', outline: true),
-                      Flexible(child: Muted(g.items[i].status, maxLines: 2)),
-                    ],
-                  ),
-              ],
+        for (var gi = 0; gi < groups.length; gi++)
+          GroupCard(
+            group: groups[gi],
+            index: gi,
+            trailing: TextButton(
+              onPressed: () => Nav.go(context, 'containers'),
+              child: const Text('Manage'),
             ),
+            children: [
+              for (var i = 0; i < groups[gi].items.length; i++)
+                Builder(
+                  builder: (context) {
+                    final c = groups[gi].items[i];
+                    return WRow(
+                      first: i == 0,
+                      children: [
+                        StatusDot(containerTone(c), label: c.health ?? c.state),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                c.name,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              Muted(imageName(c.image), maxLines: 1),
+                            ],
+                          ),
+                        ),
+                        if (c.exposed)
+                          const WChip('public port', outline: true),
+                        Flexible(child: Muted(c.status, maxLines: 2)),
+                      ],
+                    );
+                  },
+                ),
+            ],
           ),
         if (dockerError.isNotEmpty) Muted('Docker: $dockerError'),
       ],

@@ -9,7 +9,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -150,10 +152,7 @@ func serve(cfgPath string) error {
 	}
 	engine := &deploy.Engine{
 		Store: st, Box: box, GitHub: gh, DataDir: cfg.DataDir, SitesDir: cfg.CaddySitesDir,
-		ReloadCaddy: func(ctx context.Context) error {
-			_, err := runner.Sudo(ctx, time.Minute, "systemctl", "reload", "caddy.service")
-			return err
-		},
+		ReloadCaddy: func(ctx context.Context) error { return reloadCaddy(ctx, runner) },
 	}
 	engine.Init()
 	go engine.Run(ctx)
@@ -299,4 +298,37 @@ func scriptsCmd(cmd, cfgPath string, args []string, name, folder string) error {
 		}
 		return nil
 	}
+}
+
+// reloadCaddy applies the app snippets. A reload can fail while Caddy is busy (another
+// reload, certificates being obtained), so it is retried; the final error carries
+// Caddy's own message from the journal rather than systemctl's exit status.
+func reloadCaddy(ctx context.Context, runner *system.Runner) error {
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(3 * time.Second):
+			}
+		}
+		if _, err = runner.Sudo(ctx, time.Minute, "systemctl", "reload", "caddy.service"); err == nil {
+			return nil
+		}
+	}
+	out, _ := exec.CommandContext(ctx, "journalctl", "-u", "caddy", "--since", "-2min", "-o", "cat", "--no-pager").Output()
+	var last string
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.Contains(line, `"level":"error"`) || strings.HasPrefix(line, "Error:") {
+			last = line
+		}
+	}
+	if last != "" {
+		if i := strings.Index(last, `"error":"`); i >= 0 {
+			last = strings.TrimSuffix(last[i+9:], `"}`)
+		}
+		return fmt.Errorf("%w: %s", err, last)
+	}
+	return err
 }

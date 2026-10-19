@@ -73,8 +73,9 @@ class _RunBodyState extends State<_RunBody> {
       output: (c) {
         setState(() => out += c);
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_scroll.hasClients)
+          if (_scroll.hasClients) {
             _scroll.jumpTo(_scroll.position.maxScrollExtent);
+          }
         });
       },
       end: (r) {

@@ -32,7 +32,8 @@ class _UpdatesPageState extends State<UpdatesPage> {
     try {
       final u = await live.api.updateRaw();
       final sec = await live.api.securityRaw();
-      final checks = ((sec['checks'] as List?) ?? []).cast<Map<String, dynamic>>();
+      final checks = ((sec['checks'] as List?) ?? [])
+          .cast<Map<String, dynamic>>();
       if (!mounted) return;
       setState(() {
         st = u;
@@ -61,7 +62,12 @@ class _UpdatesPageState extends State<UpdatesPage> {
       final u = await live.api.updateRaw();
       if (!mounted) return;
       setState(() => st = u);
-      showInfo(context, u['available'] == true ? '${(u['latest'] as Map?)?['tag']} is available' : 'The agent is up to date');
+      showInfo(
+        context,
+        u['available'] == true
+            ? '${(u['latest'] as Map?)?['tag']} is available'
+            : 'The agent is up to date',
+      );
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
@@ -75,7 +81,8 @@ class _UpdatesPageState extends State<UpdatesPage> {
     if (!await wConfirm(
       context,
       title: 'Install $tag?',
-      body: 'The agent checks the signature, swaps the binary and restarts. The app reconnects by itself; if the new version fails to start, the previous one comes back automatically.',
+      body:
+          'The agent checks the signature, swaps the binary and restarts. The app reconnects by itself; if the new version fails to start, the previous one comes back automatically.',
       action: 'Install',
     )) {
       return;
@@ -94,7 +101,12 @@ class _UpdatesPageState extends State<UpdatesPage> {
           }
         } catch (_) {}
       }
-      if (mounted) showError(context, 'The agent did not come back with the new version. It may have rolled back, check the status below.');
+      if (mounted) {
+        showError(
+          context,
+          'The agent did not come back with the new version. It may have rolled back, check the status below.',
+        );
+      }
       await _load();
     } catch (e) {
       if (mounted) showError(context, e);
@@ -118,15 +130,34 @@ class _UpdatesPageState extends State<UpdatesPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          WIcon(icon, size: 18, color: bad ? cs.onErrorContainer : cs.onSurfaceVariant),
+          WIcon(
+            icon,
+            size: 18,
+            color: bad ? cs.onErrorContainer : cs.onSurfaceVariant,
+          ),
           const SizedBox(width: 8),
-          Expanded(child: Text(text, style: TextStyle(fontSize: 14, color: bad ? cs.onErrorContainer : cs.onSurface))),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 14,
+                color: bad ? cs.onErrorContainer : cs.onSurface,
+              ),
+            ),
+          ),
         ],
       ),
     );
-    Widget setting(String title, String sub, bool value, ValueChanged<bool> on) => Container(
+    Widget setting(
+      String title,
+      String sub,
+      bool value,
+      ValueChanged<bool> on,
+    ) => Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
-      decoration: BoxDecoration(border: Border(top: BorderSide(color: cs.surfaceContainerHigh))),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: cs.surfaceContainerHigh)),
+      ),
       child: Row(
         children: [
           Expanded(
@@ -153,30 +184,56 @@ class _UpdatesPageState extends State<UpdatesPage> {
                 runSpacing: 12,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  ShapeIcon(M3Shape.cookie, size: 56, color: cs.primaryContainer),
+                  ShapeIcon(
+                    M3Shape.cookie,
+                    size: 56,
+                    color: cs.primaryContainer,
+                  ),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('VPS Admin agent', style: Theme.of(context).textTheme.titleMedium),
+                      Text(
+                        'VPS Admin agent',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
                       Text.rich(
                         TextSpan(
                           text: 'Version ',
                           children: [
-                            TextSpan(text: st?['current'] as String? ?? '…', style: const TextStyle(fontWeight: FontWeight.w700)),
-                            TextSpan(text: ' · ${st?['checkedAt'] != null ? 'checked ${agoIso(st!['checkedAt'] as String)}' : 'never checked'}'),
+                            TextSpan(
+                              text: st?['current'] as String? ?? '…',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            TextSpan(
+                              text:
+                                  ' · ${st?['checkedAt'] != null ? 'checked ${agoIso(st!['checkedAt'] as String)}' : 'never checked'}',
+                            ),
                           ],
                         ),
-                        style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: cs.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
-                  WButton(checking ? 'Checking…' : 'Check now', kind: BtnKind.tonal, onPressed: checking || installing ? null : _check),
+                  WButton(
+                    checking ? 'Checking…' : 'Check now',
+                    kind: BtnKind.tonal,
+                    onPressed: checking || installing ? null : _check,
+                  ),
                   if (st?['available'] == true)
-                    WButton(installing ? 'Installing…' : 'Install ${latest?['tag']}', onPressed: installing ? null : _install),
+                    WButton(
+                      installing ? 'Installing…' : 'Install ${latest?['tag']}',
+                      onPressed: installing ? null : _install,
+                    ),
                 ],
               ),
-              if ((st?['error'] as String? ?? '').isNotEmpty) note('alert', st!['error'] as String, bad: true),
+              if ((st?['error'] as String? ?? '').isNotEmpty)
+                note('alert', st!['error'] as String, bad: true),
               if (last.isNotEmpty)
                 note(
                   rolled ? 'alert' : 'history',
@@ -186,7 +243,10 @@ class _UpdatesPageState extends State<UpdatesPage> {
               if (latest != null)
                 Container(
                   padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(color: cs.surfaceContainerHigh, borderRadius: BorderRadius.circular(16)),
+                  decoration: BoxDecoration(
+                    color: cs.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -194,23 +254,44 @@ class _UpdatesPageState extends State<UpdatesPage> {
                         spacing: 10,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          Text(latest['tag'] as String? ?? '', style: const TextStyle(fontWeight: FontWeight.w700)),
-                          if (latest['prerelease'] == true) const WChip('pre-release'),
-                          if (latest['published'] != null) Muted(dateTime(latest['published'] as String)),
+                          Text(
+                            latest['tag'] as String? ?? '',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          if (latest['prerelease'] == true)
+                            const WChip('pre-release'),
+                          if (latest['published'] != null)
+                            Muted(dateTime(latest['published'] as String)),
                         ],
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        (latest['notes'] as String? ?? '').isEmpty ? 'No release notes.' : latest['notes'] as String,
-                        style: const TextStyle(fontFamily: kMono, fontSize: 12, height: 1.5),
+                        (latest['notes'] as String? ?? '').isEmpty
+                            ? 'No release notes.'
+                            : latest['notes'] as String,
+                        style: const TextStyle(
+                          fontFamily: kMono,
+                          fontSize: 12,
+                          height: 1.5,
+                        ),
                       ),
                     ],
                   ),
                 ),
               Column(
                 children: [
-                  setting('Install updates automatically', 'Checks GitHub every 6 hours. Only builds signed with the project key are installed.', st?['auto'] == true, (v) => _save(auto: v)),
-                  setting('Follow pre-releases', 'Get release candidates before they are marked stable.', st?['prerelease'] == true, (v) => _save(prerelease: v)),
+                  setting(
+                    'Install updates automatically',
+                    'Checks GitHub every 6 hours. Only builds signed with the project key are installed.',
+                    st?['auto'] == true,
+                    (v) => _save(auto: v),
+                  ),
+                  setting(
+                    'Follow pre-releases',
+                    'Get release candidates before they are marked stable.',
+                    st?['prerelease'] == true,
+                    (v) => _save(prerelease: v),
+                  ),
                 ],
               ),
             ],
@@ -226,13 +307,20 @@ class _UpdatesPageState extends State<UpdatesPage> {
                 runSpacing: 12,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  ShapeIcon(M3Shape.clover, size: 56, color: cs.tertiaryContainer),
+                  ShapeIcon(
+                    M3Shape.clover,
+                    size: 56,
+                    color: cs.tertiaryContainer,
+                  ),
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 420),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('System packages', style: Theme.of(context).textTheme.titleMedium),
+                        Text(
+                          'System packages',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
                         Muted(packages?['detail'] as String? ?? 'Checking…'),
                       ],
                     ),
@@ -240,12 +328,15 @@ class _UpdatesPageState extends State<UpdatesPage> {
                   WButton(
                     'Restart the server',
                     icon: 'power',
-                    kind: reboot != null && reboot!['status'] != 'ok' ? BtnKind.filled : BtnKind.outlined,
+                    kind: reboot != null && reboot!['status'] != 'ok'
+                        ? BtnKind.filled
+                        : BtnKind.outlined,
                     onPressed: () => rebootDialog(context, live),
                   ),
                 ],
               ),
-              if (reboot != null && reboot!['status'] != 'ok') note('info', reboot!['detail'] as String? ?? ''),
+              if (reboot != null && reboot!['status'] != 'ok')
+                note('info', reboot!['detail'] as String? ?? ''),
               CmdText(
                 'Installing packages and rebooting from the panel comes with the assistant, behind an approval for each step. Until then, use `sudo apt full-upgrade` (or your distribution\'s equivalent) over SSH.',
                 style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),

@@ -116,6 +116,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("DELETE /api/github", full(s.githubDisconnect))
 	mux.Handle("GET /api/github/repos", full(s.githubRepos))
 	mux.Handle("GET /api/github/detect", full(s.githubDetect))
+	mux.Handle("GET /api/github/branches", full(s.githubBranches))
 
 	mux.Handle("GET /api/apps", full(s.appsList))
 	mux.Handle("POST /api/apps", full(s.appCreate))

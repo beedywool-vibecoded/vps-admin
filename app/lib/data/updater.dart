@@ -27,6 +27,13 @@ class AppRelease {
 class Updater extends ChangeNotifier {
   static const _channel = MethodChannel('fr.beedy.vps_admin/updater');
 
+  /// Opens the system picker for a JPEG, PNG or WebP; null when cancelled.
+  static Future<({List<int> bytes, String type})?> pickImage() async {
+    final r = await _channel.invokeMapMethod<String, dynamic>('pickImage');
+    if (r == null) return null;
+    return (bytes: (r['bytes'] as List).cast<int>(), type: r['type'] as String);
+  }
+
   /// The phone model, like "Google Pixel 10 Pro Fold".
   static Future<String> deviceModel() async {
     try {

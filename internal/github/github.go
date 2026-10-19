@@ -396,6 +396,26 @@ func (c *Client) Commit(ctx context.Context, installation int64, repo, ref strin
 	return &Commit{SHA: res.SHA, Message: msg}, nil
 }
 
+// Branches lists the branch names of repo (the first 300, enough for a picker).
+func (c *Client) Branches(ctx context.Context, installation int64, repo string) ([]string, error) {
+	var out []string
+	for page := 1; page <= 3; page++ {
+		var res []struct {
+			Name string `json:"name"`
+		}
+		if err := c.asInstallation(ctx, installation, fmt.Sprintf("/repos/%s/branches?per_page=100&page=%d", repo, page), &res); err != nil {
+			return nil, err
+		}
+		for _, b := range res {
+			out = append(out, b.Name)
+		}
+		if len(res) < 100 {
+			break
+		}
+	}
+	return out, nil
+}
+
 // Tarball streams the gzipped source of repo at sha. The caller closes it.
 func (c *Client) Tarball(ctx context.Context, installation int64, repo, sha string) (io.ReadCloser, error) {
 	tok, err := c.Token(ctx, installation)

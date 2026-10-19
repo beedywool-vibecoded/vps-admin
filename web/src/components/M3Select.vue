@@ -116,18 +116,23 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside, true)
 <style scoped>
 .select {
   position: relative;
+  display: flex;
 }
+/* Same filled field as the text fields beside it, filling its grid row */
 .field-btn {
+  flex: 1;
   display: grid;
   grid-template-columns: 1fr auto;
+  align-content: center;
   align-items: center;
+  gap: 4px 8px;
   width: 100%;
   min-height: 56px;
-  padding: 8px 12px 8px 16px;
+  padding: 10px 12px 8px 16px;
   border: none;
-  border-bottom: 2px solid var(--on-sv);
+  border-bottom: 1px solid var(--on-sv);
   border-radius: 12px 12px 4px 4px;
-  background: var(--sch);
+  background: var(--schh);
   color: var(--on-surface);
   text-align: left;
   transition: border-color 0.2s var(--ease);
@@ -135,6 +140,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside, true)
 .open .field-btn,
 .field-btn:focus-visible {
   border-bottom-color: var(--primary);
+  box-shadow: inset 0 -1px 0 var(--primary);
   outline: none;
 }
 .lbl {
@@ -145,7 +151,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside, true)
 }
 .val {
   grid-column: 1;
-  font-size: 15px;
+  font-size: 16px;
 }
 .chev {
   grid-column: 2;
