@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../data/servers.dart';
 import 'add_server_screen.dart';
+import 'admin_screens.dart';
 import 'scope.dart';
 import 'widgets.dart';
 
@@ -120,6 +121,35 @@ class SettingsScreen extends StatelessWidget {
           ),
         ),
         header('This server'),
+        ListTile(
+          leading: const Icon(Icons.devices),
+          title: const Text('Devices'),
+          subtitle: const Text('Who is paired, by person; rename or remove'),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const DevicesScreen()),
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.history),
+          title: const Text('Activity'),
+          subtitle: const Text('Every sign-in and action, by whom'),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ActivityScreen()),
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.system_update_alt),
+          title: const Text('Server updates'),
+          subtitle: const Text(
+            'The VPS Admin agent: install, automatic updates',
+          ),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AgentUpdatesScreen()),
+          ),
+        ),
         ListTile(
           leading: Icon(Icons.restart_alt, color: cs.error),
           title: const Text('Restart the server'),

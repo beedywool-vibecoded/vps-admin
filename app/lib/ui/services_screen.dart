@@ -37,6 +37,7 @@ Future<void> _actions(
   required bool running,
   required Future<void> Function(String) act,
   required Future<String> Function() logs,
+  Stream<String> Function()? rebuild,
 }) async {
   final picked = await showModalBottomSheet<String>(
     context: context,
@@ -84,6 +85,18 @@ Future<void> _actions(
                       child: const Text('Start'),
                     ),
                   ),
+                if (rebuild != null) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.tonal(
+                      onPressed: () => Navigator.pop(c, 'rebuild'),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(56),
+                      ),
+                      child: const Text('Rebuild'),
+                    ),
+                  ),
+                ],
                 const SizedBox(width: 8),
                 Expanded(
                   child: FilledButton(
@@ -109,6 +122,24 @@ Future<void> _actions(
         builder: (_) => LogsPage(title: '$title logs', load: logs),
       ),
     );
+    return;
+  }
+  if (picked == 'rebuild') {
+    if (await confirmAction(
+          context,
+          title: 'Rebuild $title?',
+          body:
+              'Pulls a newer image (or rebuilds it), then recreates this container alone. The others keep running.',
+          action: 'Rebuild',
+        ) &&
+        context.mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => StreamPage(title: 'Rebuild $title', start: rebuild!),
+        ),
+      );
+    }
     return;
   }
   if (picked != 'start' &&
@@ -255,20 +286,24 @@ class _Containers extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final api = AppScope.of(context).api!;
-    return Loader<(List<DockerContainer>, Map<String, dynamic>)>(
+    return Loader<
+      (List<DockerContainer>, Map<String, dynamic>, List<Map<String, dynamic>>)
+    >(
       load: () async {
         final list = await api.containers();
         var icons = <String, dynamic>{};
+        var scripts = <Map<String, dynamic>>[];
         try {
           icons =
               (await api.appearance())['groupIcons'] as Map<String, dynamic>? ??
               {};
+          scripts = (await api.scripts()).scripts;
         } catch (_) {}
-        return (list, icons);
+        return (list, icons, scripts);
       },
       refreshEvery: const Duration(seconds: 15),
       builder: (context, data, reload) {
-        final (list, icons) = data;
+        final (list, icons, scripts) = data;
         final cs = Theme.of(context).colorScheme;
         final groups = <String, List<DockerContainer>>{};
         for (final c in list) {
@@ -346,6 +381,26 @@ class _Containers extends StatelessWidget {
                         ],
                       ),
                       children: [
+                        if (g.value.first.workDir != null)
+                          for (final sc in scripts.where(
+                            (s) => s['dir'] == g.value.first.workDir,
+                          ))
+                            ListTile(
+                              leading: const Icon(Icons.terminal),
+                              title: Text(
+                                (sc['title'] as String? ?? '').isNotEmpty
+                                    ? sc['title'] as String
+                                    : sc['name'] as String,
+                              ),
+                              subtitle: const Text('Script of this folder'),
+                              trailing: const Icon(Icons.play_arrow),
+                              onTap: () => runScriptFromAnywhere(
+                                context,
+                                api,
+                                sc,
+                                reload,
+                              ),
+                            ),
                         for (final c in g.value)
                           ListTile(
                             leading: StatusDot(
@@ -378,6 +433,9 @@ class _Containers extends StatelessWidget {
                                 await reload();
                               },
                               logs: () => api.containerLogs(c.id),
+                              rebuild: c.service == null
+                                  ? null
+                                  : () => api.rebuildContainer(c.id),
                             ),
                           ),
                       ],

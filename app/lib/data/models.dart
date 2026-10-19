@@ -65,9 +65,10 @@ class DockerContainer {
       health = j['health'] as String?,
       project = j['project'] as String?,
       workDir = j['workDir'] as String?,
+      service = j['service'] as String?,
       exposed = j['exposed'] as bool? ?? false;
   final String id, name, image, state, status;
-  final String? health, project, workDir;
+  final String? health, project, workDir, service;
   final bool exposed;
   bool get bad =>
       health == 'unhealthy' || state == 'restarting' || state == 'dead';
@@ -102,10 +103,12 @@ class UpdateStatus {
       available = j['available'] as bool? ?? false,
       auto = j['auto'] as bool? ?? false,
       lastResult = j['lastResult'] as String?,
-      error = j['error'] as String?;
+      error = j['error'] as String?,
+      prerelease = j['prerelease'] as bool? ?? false,
+      running = j['running'] as bool? ?? false;
   final String current;
   final String? latest, lastResult, error;
-  final bool available, auto;
+  final bool available, auto, prerelease, running;
 }
 
 class Deployment {
@@ -182,4 +185,38 @@ class ToolCall {
       isError = j['isError'] as bool? ?? false;
   final String id, name, input, summary, kind, status, result;
   final bool isError;
+}
+
+class Device {
+  Device(Map<String, dynamic> j)
+    : id = j['id'] as String,
+      name = j['name'] as String? ?? '',
+      owner = j['owner'] as String? ?? '',
+      kind = j['kind'] as String? ?? 'web',
+      createdAt = DateTime.parse(j['createdAt'] as String).toLocal(),
+      lastSeenAt = j['lastSeenAt'] == null
+          ? null
+          : DateTime.parse(j['lastSeenAt'] as String).toLocal(),
+      lastIp = j['lastIp'] as String? ?? '',
+      passkeys = (j['passkeys'] as num?)?.toInt() ?? 0;
+  final String id, name, owner, kind, lastIp;
+  final DateTime createdAt;
+  final DateTime? lastSeenAt;
+  final int passkeys;
+}
+
+class AuditEntry {
+  AuditEntry(Map<String, dynamic> j)
+    : id = (j['id'] as num).toInt(),
+      at = DateTime.parse(j['at'] as String).toLocal(),
+      device = j['device'] as String? ?? '',
+      ip = j['ip'] as String? ?? '',
+      action = j['action'] as String? ?? '',
+      target = j['target'] as String? ?? '',
+      ok = j['ok'] as bool? ?? true,
+      detail = j['detail'] as String? ?? '';
+  final int id;
+  final DateTime at;
+  final String device, ip, action, target, detail;
+  final bool ok;
 }

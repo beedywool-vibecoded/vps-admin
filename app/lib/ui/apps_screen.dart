@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../data/api.dart';
 import '../data/models.dart';
 import 'scope.dart';
 import 'widgets.dart';
@@ -103,7 +104,19 @@ class AppDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final api = AppScope.of(context).api!;
     return Scaffold(
-      appBar: AppBar(title: Text(id)),
+      appBar: AppBar(
+        title: Text(id),
+        actions: [
+          IconButton(
+            tooltip: 'Settings',
+            icon: const Icon(Icons.tune),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => AppSettingsScreen(id: id)),
+            ),
+          ),
+        ],
+      ),
       body: Loader(
         load: () => api.app(id),
         refreshEvery: const Duration(seconds: 4),
@@ -267,6 +280,149 @@ class AppDetailScreen extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+/// Branch, automatic deploys and custom build commands of an app, as in the panel.
+class AppSettingsScreen extends StatefulWidget {
+  const AppSettingsScreen({super.key, required this.id});
+  final String id;
+
+  @override
+  State<AppSettingsScreen> createState() => _AppSettingsScreenState();
+}
+
+class _AppSettingsScreenState extends State<AppSettingsScreen> {
+  static const _fields = {
+    'branch': 'Branch',
+    'installCmd': 'Install command',
+    'buildCmd': 'Build command',
+    'startCmd': 'Start command',
+    'dockerfile': 'Dockerfile',
+    'composeFile': 'Compose file',
+  };
+  Map<String, dynamic>? _app;
+  final _ctl = <String, TextEditingController>{};
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_app == null && _error == null) _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final a = await AppScope.of(context).api!.appRaw(widget.id);
+      setState(() {
+        _app = a;
+        for (final k in _fields.keys) {
+          _ctl[k] = TextEditingController(text: a[k] as String? ?? '');
+        }
+      });
+    } catch (e) {
+      setState(() => _error = e is ApiException ? e.message : e.toString());
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final c in _ctl.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      final a = {
+        ..._app!,
+        for (final k in _fields.keys) k: _ctl[k]!.text.trim(),
+      };
+      await AppScope.of(context).api!.saveApp(widget.id, a);
+      if (mounted) {
+        showInfo(context, 'Saved, it applies at the next deployment');
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final a = _app;
+    final build = a?['build'] as String? ?? '';
+    final linked = (a?['dir'] as String? ?? '').isNotEmpty;
+    bool shown(String k) => switch (k) {
+      'installCmd' ||
+      'buildCmd' => build == 'node' || build == 'static' || build == 'auto',
+      'startCmd' => build == 'node' || build == 'auto',
+      'dockerfile' => build == 'dockerfile' || build == 'auto',
+      'composeFile' => build == 'compose' || build == 'auto',
+      _ => true,
+    };
+    return Scaffold(
+      appBar: AppBar(title: Text('${widget.id} settings')),
+      body: a == null
+          ? Center(
+              child: _error != null
+                  ? Text(_error!)
+                  : const CircularProgressIndicator(),
+            )
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                if (linked)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: CmdText('Updates the folder `${a['dir']}` on push.'),
+                  ),
+                for (final k in _fields.keys)
+                  if (shown(k) &&
+                      !(linked && k != 'branch' && k != 'composeFile'))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: TextField(
+                        controller: _ctl[k],
+                        autocorrect: false,
+                        style: k == 'branch'
+                            ? null
+                            : const TextStyle(fontFamily: 'monospace'),
+                        decoration: InputDecoration(
+                          labelText: _fields[k],
+                          helperText: k == 'startCmd'
+                              ? 'Runs with sh -c, PORT=3000 is set. Empty: npm start'
+                              : k == 'branch'
+                              ? null
+                              : 'Empty keeps the default',
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    linked ? 'Update on every push' : 'Deploy on every push',
+                  ),
+                  value: a['autoDeploy'] as bool? ?? false,
+                  onChanged: (v) => setState(() => a['autoDeploy'] = v),
+                ),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: _saving ? null : _save,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                  child: Text(_saving ? 'Saving…' : 'Save'),
+                ),
+              ],
+            ),
     );
   }
 }

@@ -136,6 +136,63 @@ class Api {
   Future<UpdateStatus> checkUpdate() async =>
       UpdateStatus(await post('/api/update/check'));
   Future<void> applyUpdate() => post('/api/update/apply');
+  Future<UpdateStatus> updateSettings({bool? auto, bool? prerelease}) async =>
+      UpdateStatus(
+        await put('/api/settings/update', {
+          'auto': ?auto,
+          'prerelease': ?prerelease,
+        }),
+      );
+
+  Future<({List<Device> devices, String current})> devices() async {
+    final j = await get('/api/devices');
+    return (
+      devices: [
+        for (final d in j['devices'] as List) Device(d as Map<String, dynamic>),
+      ],
+      current: j['current'] as String? ?? '',
+    );
+  }
+
+  Future<void> renameDevice(String id, String owner, String name) => _send(
+    'PATCH',
+    '/api/devices/${Uri.encodeComponent(id)}',
+    {'owner': owner, 'name': name},
+  );
+  Future<void> revokeDevice(String id) =>
+      delete('/api/devices/${Uri.encodeComponent(id)}');
+  Future<List<AuditEntry>> audit({int before = 0}) async => [
+    for (final e
+        in (await get('/api/audit?limit=50&before=$before'))['entries'] as List)
+      AuditEntry(e as Map<String, dynamic>),
+  ];
+
+  /// Pulls or rebuilds the compose service of a container and recreates it; the
+  /// output arrives as it is written.
+  Stream<String> rebuildContainer(String id) async* {
+    final req = http.Request(
+      'POST',
+      Uri.parse(
+        '$base/api/docker/containers/${Uri.encodeComponent(id)}/rebuild',
+      ),
+    )..headers.addAll(_headers);
+    final res = await req.send().timeout(_timeout);
+    if (res.statusCode >= 400) {
+      final data = jsonDecode(await res.stream.bytesToString()) as Map;
+      throw ApiException(
+        res.statusCode,
+        data['error'] as String? ?? 'http_${res.statusCode}',
+        data['message'] as String? ?? 'Rebuild failed',
+      );
+    }
+    yield* res.stream.transform(utf8.decoder);
+  }
+
+  /// Raw app settings, sent back whole by [saveApp].
+  Future<Map<String, dynamic>> appRaw(String id) async =>
+      (await get('/api/apps/$id'))['app'] as Map<String, dynamic>;
+  Future<void> saveApp(String id, Map<String, dynamic> app) =>
+      put('/api/apps/$id', app);
 
   Future<List<AppInfo>> apps() async =>
       ((await get('/api/apps'))['apps'] as List)

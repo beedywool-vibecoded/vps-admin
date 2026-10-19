@@ -337,3 +337,11 @@ class _RunPageState extends State<_RunPage> {
     ),
   );
 }
+
+/// Runs a script from elsewhere in the app (the containers of its folder).
+Future<void> runScriptFromAnywhere(
+  BuildContext context,
+  Api api,
+  Map<String, dynamic> script,
+  Future<void> Function() reload,
+) => const ScriptsTab()._run(context, api, script, reload);

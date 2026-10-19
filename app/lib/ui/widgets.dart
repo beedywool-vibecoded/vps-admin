@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -485,4 +486,83 @@ class LogsPage extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Output of a long command that streams (a rebuild), shown as it arrives.
+class StreamPage extends StatefulWidget {
+  const StreamPage({super.key, required this.title, required this.start});
+  final String title;
+  final Stream<String> Function() start;
+
+  @override
+  State<StreamPage> createState() => _StreamPageState();
+}
+
+class _StreamPageState extends State<StreamPage> {
+  final _out = StringBuffer();
+  final _scroll = ScrollController();
+  StreamSubscription<String>? _sub;
+  bool _done = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _sub = widget.start().listen(
+      (chunk) {
+        setState(() => _out.write(chunk));
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scroll.hasClients) {
+            _scroll.jumpTo(_scroll.position.maxScrollExtent);
+          }
+        });
+      },
+      onError: (Object e) => setState(() {
+        _error = e is ApiException ? e.message : e.toString();
+        _done = true;
+      }),
+      onDone: () => setState(() => _done = true),
+    );
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = _out.toString();
+    final ok = text.trimRight().endsWith('==> Done');
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.title),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: _done
+                ? StatusDot(
+                    ok && _error == null ? Tone.ok : Tone.bad,
+                    label: ok ? 'done' : 'failed',
+                  )
+                : const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        controller: _scroll,
+        padding: const EdgeInsets.all(16),
+        child: SelectableText(
+          _error ?? (text.isEmpty ? 'Starting…' : text),
+          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+        ),
+      ),
+    );
+  }
 }
