@@ -174,7 +174,7 @@ Repo **privé** : ajoute `--token <jeton>`, un jeton GitHub *fine-grained* en le
 | 2 | Crée l'utilisateur système `vps-admin` (groupes `docker`, `systemd-journal`, `adm`) |
 | 3 | Écrit la liste blanche sudo avec les vrais chemins des commandes |
 | 4 | Installe le service systemd et le script de retour arrière |
-| 5 | Ajoute le domaine à Caddy et prépare le dossier des apps, ou indique quoi proxyfier |
+| 5 | Configure le reverse proxy trouvé : Caddy (domaine et dossier des apps) ou nginx (site dédié et certificat Let's Encrypt via certbot, proposé à l'installation s'il manque) |
 | 6 | Affiche un **code d'appairage** |
 
 Ouvre ensuite le domaine, tape le code, crée ta passkey. Pour l'app ou un autre navigateur : `sudo vps-admin pair`. Relancer l'installeur répare ou met à jour sans toucher aux données.
@@ -201,7 +201,7 @@ Ouvre ensuite le domaine, tape le code, crée ta passkey. Pour l'app ou un autre
 <td width="50%" valign="top">
 
 **Serveur**
-- L'agent écoute sur `127.0.0.1`, le TLS est assuré par Caddy.
+- L'agent écoute sur `127.0.0.1`, le TLS est assuré par Caddy ou par nginx avec certbot.
 - Utilisateur dédié, root seulement pour les commandes de `/etc/sudoers.d/vps-admin`.
 - Variables d'environnement, clé GitHub App et clé Anthropic **chiffrées** (AES-GCM).
 - L'assistant ne peut jamais supprimer de volumes, toucher à SSH ou au pare-feu, lire des clés, ni éteindre le serveur.

@@ -7,7 +7,11 @@
 #   --domain HOST     public hostname of the panel (needed for passkeys, served over https)
 #   --version TAG     install this release instead of the latest
 #   --binary PATH     install a local binary instead of downloading one (testing)
-#   --no-caddy        do not touch Caddy even if it is installed
+#   --proxy NAME      reverse proxy to configure: auto (default: Caddy, else nginx), caddy,
+#                     nginx or none
+#   --no-caddy        same as --proxy none (kept for older commands)
+#   --email ADDRESS   for Let's Encrypt with nginx (certbot); asked when needed otherwise
+#   --no-tls          with nginx, do not request a certificate
 #   --token TOKEN     GitHub token for a private repository (read-only Contents access);
 #                     also saved in the config so self-update keeps working
 #
@@ -21,7 +25,9 @@ PORT=7171
 DOMAIN=""
 VERSION=""
 LOCAL_BINARY=""
-USE_CADDY=1
+PROXY=auto
+EMAIL=""
+TLS=1
 TOKEN="${VPS_ADMIN_GITHUB_TOKEN:-}"
 
 say() { printf '\033[1;35m==>\033[0m %s\n' "$*"; }
@@ -32,15 +38,19 @@ while [ $# -gt 0 ]; do
 		--domain) DOMAIN="${2:-}"; shift 2 ;;
 		--version) VERSION="${2:-}"; shift 2 ;;
 		--binary) LOCAL_BINARY="${2:-}"; shift 2 ;;
-		--no-caddy) USE_CADDY=0; shift ;;
+		--proxy) PROXY="${2:-}"; shift 2 ;;
+		--no-caddy) PROXY=none; shift ;;
+		--email) EMAIL="${2:-}"; shift 2 ;;
+		--no-tls) TLS=0; shift ;;
 		--token) TOKEN="${2:-}"; shift 2 ;;
-		-h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+		-h|--help) sed -n '2,19p' "$0"; exit 0 ;;
 		*) die "unknown option $1" ;;
 	esac
 done
 
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo bash install.sh)"
 command -v systemctl >/dev/null || die "systemd is required"
+case "$PROXY" in auto|caddy|nginx|none) ;; *) die "--proxy takes auto, caddy, nginx or none" ;; esac
 if [ -n "$DOMAIN" ] && ! [[ "$DOMAIN" =~ ^[A-Za-z0-9.-]+$ ]]; then
 	die "--domain takes a hostname, like admin.example.com"
 fi
@@ -204,7 +214,26 @@ done
 curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 || die "the agent did not start, see: journalctl -u vps-admin"
 
 # 5. Reverse proxy --------------------------------------------------------------------
-if [ "$USE_CADDY" = 1 ] && command -v caddy >/dev/null && [ -f /etc/caddy/Caddyfile ]; then
+# Questions go to the terminal even when the script is piped into bash.
+ask() {
+	local reply=""
+	# No terminal (cron, CI, a pipe without tty): no question, the caller's default.
+	{ printf '%s ' "$1" >/dev/tty; } 2>/dev/null || return 1
+	{ read -r reply </dev/tty; } 2>/dev/null || return 1
+	printf '%s' "$reply"
+}
+
+if [ "$PROXY" = auto ]; then
+	if command -v caddy >/dev/null && [ -f /etc/caddy/Caddyfile ]; then
+		PROXY=caddy
+	elif command -v nginx >/dev/null && [ -d /etc/nginx ]; then
+		PROXY=nginx
+	else
+		PROXY=none
+	fi
+fi
+
+setup_caddy() {
 	say "Configuring Caddy"
 	backup="/etc/caddy/Caddyfile.$(date +%Y%m%d%H%M%S).bak"
 	cp -a /etc/caddy/Caddyfile "$backup"
@@ -231,10 +260,93 @@ CADDY
 		rm -f /etc/caddy/conf.d/vps-admin.caddy
 		say "Caddy rejected the new config, restored it. Proxy ${DOMAIN:-the panel} to 127.0.0.1:$PORT yourself."
 	fi
-elif [ -n "$DOMAIN" ]; then
-	say "Point your reverse proxy for $DOMAIN to 127.0.0.1:$PORT (TLS is required for passkeys)."
-	say "Without Caddy, deployed apps get no domain (reachable on 127.0.0.1 only)."
-fi
+}
+
+# nginx: one site file for the panel, then a Let's Encrypt certificate through certbot,
+# which adds the HTTPS part to that same file and keeps it renewed.
+setup_nginx() {
+	[ -n "$DOMAIN" ] || { say "nginx found; pass --domain to serve the panel through it."; return; }
+	say "Configuring nginx"
+	local site conf link=""
+	if [ -d /etc/nginx/sites-available ] && [ -d /etc/nginx/sites-enabled ]; then
+		site=/etc/nginx/sites-available/vps-admin
+		link=/etc/nginx/sites-enabled/vps-admin
+	else
+		site=/etc/nginx/conf.d/vps-admin.conf
+	fi
+	# Another server block for the same name would conflict with ours.
+	conf=$(grep -rlE "server_name[^;]*[[:space:]]$DOMAIN([[:space:];]|$)" /etc/nginx 2>/dev/null | grep -v -e "^$site\$" -e "^$link\$" | head -1 || true)
+	if [ -n "$conf" ]; then
+		say "$conf already has a server block for $DOMAIN: remove it (or rerun with --proxy none) so the installer can manage it."
+		return
+	fi
+	if [ -f "$site" ] && grep -q 'managed by Certbot' "$site"; then
+		say "Keeping $site, it already has its certificate"
+	else
+		cat > "$site" <<NGINX
+# Managed by the VPS Admin installer
+server {
+	listen 80;
+	listen [::]:80;
+	server_name $DOMAIN;
+	client_max_body_size 16m;
+
+	location / {
+		proxy_pass http://127.0.0.1:$PORT;
+		proxy_http_version 1.1;
+		proxy_set_header Host \$host;
+		proxy_set_header X-Real-IP \$remote_addr;
+		proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+		proxy_set_header X-Forwarded-Proto \$scheme;
+		# Live views (metrics, logs, builds, the assistant) stream: no buffering.
+		proxy_buffering off;
+		proxy_cache off;
+		proxy_read_timeout 1h;
+	}
+}
+NGINX
+	fi
+	[ -n "$link" ] && ln -sf "$site" "$link"
+	if ! nginx -t >/dev/null 2>&1; then
+		rm -f "$site" ${link:+"$link"}
+		say "nginx rejected the new site, removed it. Proxy $DOMAIN to 127.0.0.1:$PORT yourself."
+		return
+	fi
+	systemctl reload nginx
+
+	[ "$TLS" = 1 ] || { say "No certificate requested (--no-tls): passkeys need HTTPS."; return; }
+	if [ -f "$site" ] && grep -q 'managed by Certbot' "$site"; then return; fi
+	if ! command -v certbot >/dev/null || ! certbot plugins 2>/dev/null | grep -q nginx; then
+		if command -v apt-get >/dev/null && [ "$(ask "HTTPS needs certbot. Install certbot and its nginx plugin now? [Y/n]" || echo n)" != n ]; then
+			apt-get install -y certbot python3-certbot-nginx >/dev/null
+		else
+			say "Install certbot (certbot python3-certbot-nginx), then run: certbot --nginx -d $DOMAIN"
+			return
+		fi
+	fi
+	local args=(--nginx -d "$DOMAIN" --non-interactive --agree-tos --redirect)
+	if [ -n "$EMAIL" ]; then
+		args+=(-m "$EMAIL")
+	elif [ -z "$(ls -A /etc/letsencrypt/accounts 2>/dev/null)" ]; then
+		EMAIL=$(ask "Email for Let's Encrypt (expiry notices), empty for none:" || true)
+		if [ -n "$EMAIL" ]; then args+=(-m "$EMAIL"); else args+=(--register-unsafely-without-email); fi
+	fi
+	say "Requesting a certificate for $DOMAIN"
+	if certbot "${args[@]}" >/dev/null 2>&1; then
+		systemctl reload nginx
+	else
+		say "certbot failed (DNS of $DOMAIN must point here, port 80 open). Retry with: certbot --nginx -d $DOMAIN"
+	fi
+}
+
+case "$PROXY" in
+	caddy) setup_caddy ;;
+	nginx)
+		setup_nginx
+		say "With nginx, deployed apps get no domain yet (reachable on 127.0.0.1 only)."
+		;;
+	none) [ -n "$DOMAIN" ] && say "Point your reverse proxy for $DOMAIN to 127.0.0.1:$PORT (TLS is required for passkeys, disable response buffering)." ;;
+esac
 
 # 6. Pairing --------------------------------------------------------------------------
 /opt/vps-admin/bin/vps-admin pair
