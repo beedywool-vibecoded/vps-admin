@@ -26,6 +26,10 @@ class MainActivity : FlutterActivity() {
                 "canInstall" -> result.success(canInstall())
                 "model" -> result.success(model())
                 "pickImage" -> pickImage(result)
+                "openUrl" -> {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(call.argument<String>("url")!!)))
+                    result.success(null)
+                }
                 "openInstallSettings" -> {
                     startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
                     result.success(null)

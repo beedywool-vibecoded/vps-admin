@@ -114,6 +114,13 @@ class AppState extends ChangeNotifier {
         'Enter the address of the panel, like admin.example.com',
       );
     }
+    if (url.startsWith('http://') && !privateHost(Uri.parse(url).host)) {
+      throw ApiException(
+        0,
+        'insecure_url',
+        'Use https:// for a public address: the app token must not travel in clear',
+      );
+    }
     final token = await Api.pair(url, code, deviceName, owner);
     final api = Api(url, token);
     String name = Uri.parse(url).host;
@@ -161,6 +168,28 @@ class AppState extends ChangeNotifier {
       await _prefs?.setInt('seed', seed.index);
     }
     notifyListeners();
+  }
+
+  /// Plain HTTP is accepted only where the network itself is private: loopback, LAN
+  /// ranges, Tailscale (100.64.0.0/10, *.ts.net) and .local / .lan names.
+  static bool privateHost(String host) {
+    if (host == 'localhost' ||
+        host.endsWith('.local') ||
+        host.endsWith('.lan') ||
+        host.endsWith('.ts.net')) {
+      return true;
+    }
+    final p = host.split('.').map(int.tryParse).toList();
+    if (p.length != 4 || p.any((x) => x == null)) {
+      return host.startsWith('[fd') || host == '[::1]';
+    }
+    final a = p[0]!, b = p[1]!;
+    return a == 10 ||
+        a == 127 ||
+        (a == 172 && b >= 16 && b <= 31) ||
+        (a == 192 && b == 168) ||
+        (a == 100 && b >= 64 && b <= 127) ||
+        (a == 169 && b == 254);
   }
 
   static String? normalizeUrl(String input) {

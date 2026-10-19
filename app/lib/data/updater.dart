@@ -27,6 +27,10 @@ class AppRelease {
 class Updater extends ChangeNotifier {
   static const _channel = MethodChannel('fr.beedy.vps_admin/updater');
 
+  /// Opens a link in the browser (GitHub pages, the panel).
+  static Future<void> openUrl(String url) =>
+      _channel.invokeMethod('openUrl', {'url': url});
+
   /// Opens the system picker for a JPEG, PNG or WebP; null when cancelled.
   static Future<({List<int> bytes, String type})?> pickImage() async {
     final r = await _channel.invokeMapMethod<String, dynamic>('pickImage');

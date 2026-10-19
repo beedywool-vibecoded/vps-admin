@@ -410,13 +410,6 @@ class GroupCard extends StatelessWidget {
                       index: index,
                     ),
                   ),
-                  if (onRename != null)
-                    WIconButton(
-                      'edit',
-                      tooltip: 'Rename ${live.groupTitle(g.name)}',
-                      size: 16,
-                      onPressed: onRename,
-                    ),
                   const SizedBox(width: 4),
                   Expanded(
                     child: InkWell(
@@ -450,6 +443,25 @@ class GroupCard extends StatelessWidget {
                                               color: cs.onSurfaceVariant,
                                             ),
                                           ),
+                                        if (onRename != null)
+                                          WidgetSpan(
+                                            alignment:
+                                                PlaceholderAlignment.middle,
+                                            child: InkResponse(
+                                              onTap: onRename,
+                                              radius: 18,
+                                              child: Padding(
+                                                padding: const EdgeInsets.only(
+                                                  left: 8,
+                                                ),
+                                                child: WIcon(
+                                                  'edit',
+                                                  size: 16,
+                                                  color: cs.onSurfaceVariant,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
                                       ],
                                     ),
                                   ),
@@ -463,7 +475,9 @@ class GroupCard extends StatelessWidget {
                                 ],
                               ),
                             ),
-                            for (final c in g.items.take(6))
+                            for (final c in g.items.take(
+                              MediaQuery.sizeOf(context).width < 600 ? 3 : 8,
+                            ))
                               Padding(
                                 padding: const EdgeInsets.only(left: 4),
                                 child: StatusDot(

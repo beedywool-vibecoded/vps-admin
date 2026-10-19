@@ -307,9 +307,51 @@ class _ContainersPageState extends State<ContainersPage> {
     final st = stats[c.id];
     final ports = _ports(c);
     final running = c.state == 'running';
-    return WRow(
+    final narrow = MediaQuery.sizeOf(context).width < 600;
+    final actions = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (!running)
+          WIconButton(
+            'play',
+            tooltip: 'Start ${c.name}',
+            onPressed: busy.contains(c.id) ? null : () => _act(c, 'start'),
+          )
+        else
+          WIconButton(
+            'restart',
+            tooltip: 'Restart ${c.name}',
+            onPressed: busy.contains(c.id) ? null : () => _act(c, 'restart'),
+          ),
+        WIconButton(
+          'stop',
+          tooltip: 'Stop ${c.name}',
+          size: 18,
+          onPressed: busy.contains(c.id) || !running
+              ? null
+              : () => _act(c, 'stop'),
+        ),
+        if (c.service != null)
+          WIconButton(
+            'wrench',
+            tooltip: 'Rebuild ${c.name}',
+            size: 18,
+            onPressed: () => _rebuild(c),
+          ),
+        WIconButton(
+          'logs',
+          tooltip: 'Logs of ${c.name}',
+          onPressed: () => showLogs(
+            context,
+            title: '${c.name} logs',
+            load: () => api.containerLogs(c.id),
+          ),
+        ),
+      ],
+    );
+    final row = WRow(
       first: first,
-      padding: const EdgeInsets.fromLTRB(6, 12, 0, 12),
+      padding: EdgeInsets.fromLTRB(6, 12, 0, narrow ? 0 : 12),
       children: [
         StatusDot(containerTone(c), label: c.health ?? c.state),
         Expanded(
@@ -351,48 +393,17 @@ class _ContainersPageState extends State<ContainersPage> {
             ],
           ),
         ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (!running)
-              WIconButton(
-                'play',
-                tooltip: 'Start ${c.name}',
-                onPressed: busy.contains(c.id) ? null : () => _act(c, 'start'),
-              )
-            else
-              WIconButton(
-                'restart',
-                tooltip: 'Restart ${c.name}',
-                onPressed: busy.contains(c.id)
-                    ? null
-                    : () => _act(c, 'restart'),
-              ),
-            WIconButton(
-              'stop',
-              tooltip: 'Stop ${c.name}',
-              size: 18,
-              onPressed: busy.contains(c.id) || !running
-                  ? null
-                  : () => _act(c, 'stop'),
-            ),
-            if (c.service != null)
-              WIconButton(
-                'wrench',
-                tooltip: 'Rebuild ${c.name}',
-                size: 18,
-                onPressed: () => _rebuild(c),
-              ),
-            WIconButton(
-              'logs',
-              tooltip: 'Logs of ${c.name}',
-              onPressed: () => showLogs(
-                context,
-                title: '${c.name} logs',
-                load: () => api.containerLogs(c.id),
-              ),
-            ),
-          ],
+        if (!narrow) actions,
+      ],
+    );
+    if (!narrow) return row;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        row,
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Align(alignment: Alignment.centerRight, child: actions),
         ),
       ],
     );

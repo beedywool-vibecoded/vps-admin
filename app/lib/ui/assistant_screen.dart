@@ -104,8 +104,10 @@ class AssistantScreen extends StatelessWidget {
 
 /// One conversation: stored messages, live text, tool cards with approvals.
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key, this.id});
+  const ChatScreen({super.key, this.id, this.initial});
   final String? id;
+  // A suggestion to send right away, for a new conversation.
+  final String? initial;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -132,6 +134,9 @@ class _ChatScreenState extends State<ChatScreen> {
     id = widget.id;
     if (id != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _open());
+    } else if (widget.initial != null) {
+      _input.text = widget.initial!;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _send());
     }
   }
 
