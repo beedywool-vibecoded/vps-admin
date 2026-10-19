@@ -18,8 +18,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"unicode"
 	"time"
+	"unicode"
 )
 
 const (
@@ -37,8 +37,8 @@ var (
 type Script struct {
 	Name        string `json:"name"`
 	Title       string `json:"title,omitempty"` // display name set from the panel
-	Target      string `json:"target"`      // the file the link points to
-	Description string `json:"description"` // first comment line after the shebang
+	Target      string `json:"target"`          // the file the link points to
+	Description string `json:"description"`     // first comment line after the shebang
 	Executable  bool   `json:"executable"`
 	Missing     bool   `json:"missing"` // the target was moved or deleted
 	Running     bool   `json:"running"`

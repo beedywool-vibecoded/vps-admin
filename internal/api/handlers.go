@@ -29,7 +29,7 @@ func (s *Server) authState(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) pair(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Code string `json:"code"`
+		Code  string `json:"code"`
 		Name  string `json:"name"`
 		Owner string `json:"owner"`
 		Kind  string `json:"kind"`
