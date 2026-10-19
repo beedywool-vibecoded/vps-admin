@@ -161,6 +161,8 @@ var migrations = []string{
 	ALTER TABLE apps ADD COLUMN start_cmd TEXT NOT NULL DEFAULT '';
 	ALTER TABLE apps ADD COLUMN dockerfile TEXT NOT NULL DEFAULT '';
 	ALTER TABLE apps ADD COLUMN compose_file TEXT NOT NULL DEFAULT '';`,
+	// 6: who uses each device, asked at pairing
+	`ALTER TABLE devices ADD COLUMN owner TEXT NOT NULL DEFAULT '';`,
 }
 
 func Open(dataDir string) (*Store, error) {

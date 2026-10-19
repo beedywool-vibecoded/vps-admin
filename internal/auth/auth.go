@@ -39,6 +39,7 @@ const (
 var (
 	ErrBadCode     = errors.New("invalid or expired pairing code")
 	ErrRateLimited = errors.New("too many attempts, try again later")
+	ErrNoOwner     = errors.New("say who uses this device")
 )
 
 type Auth struct {
@@ -95,7 +96,8 @@ func normalizeCode(c string) string {
 	return b.String()
 }
 
-func cleanName(name, fallback string) string {
+// CleanName drops control characters and caps the length of a device or person name.
+func CleanName(name, fallback string) string {
 	name = strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f {
 			return -1
@@ -118,9 +120,15 @@ type PairResult struct {
 
 // Pair redeems a code. For an app it returns a bearer token; for a browser it sets an
 // enroll session cookie on w.
-func (a *Auth) Pair(ctx context.Context, w http.ResponseWriter, ip, code, name, kind string) (*PairResult, error) {
+// Pair trades a pairing code for a device. owner, the person using it, is required so
+// the devices and the activity log tell admins apart.
+func (a *Auth) Pair(ctx context.Context, w http.ResponseWriter, ip, code, name, owner, kind string) (*PairResult, error) {
 	if !a.limiter.allow(ip) {
 		return nil, ErrRateLimited
+	}
+	// Checked before the code is used, so a missing name does not burn it.
+	if owner = CleanName(owner, ""); owner == "" {
+		return nil, ErrNoOwner
 	}
 	ok, err := a.store.UsePairingCode(ctx, hash(normalizeCode(code)))
 	if err != nil {
@@ -142,7 +150,7 @@ func (a *Auth) Pair(ctx context.Context, w http.ResponseWriter, ip, code, name, 
 	default:
 		return nil, errors.New("kind must be web or app")
 	}
-	if err := a.store.AddDevice(ctx, res.DeviceID, cleanName(name, "Unnamed device"), kind, tokenHash, ip); err != nil {
+	if err := a.store.AddDevice(ctx, res.DeviceID, CleanName(name, "Unnamed device"), owner, kind, tokenHash, ip); err != nil {
 		return nil, err
 	}
 	if kind == KindWeb {

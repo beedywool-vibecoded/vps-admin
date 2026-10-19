@@ -69,6 +69,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.Handle("GET /api/devices", full(s.devices))
 	mux.Handle("DELETE /api/devices/{id}", full(s.revokeDevice))
+	mux.Handle("PATCH /api/devices/{id}", full(s.renameDevice))
 
 	mux.Handle("GET /api/system", full(s.systemInfo))
 	mux.Handle("GET /api/system/history", full(s.systemHistory))
@@ -101,6 +102,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.Handle("GET /api/scripts", full(s.scriptsList))
 	mux.Handle("POST /api/scripts/{name}/run", full(s.scriptRun))
+	mux.Handle("PUT /api/scripts/{name}/title", full(s.scriptRename))
 	mux.Handle("POST /api/scripts/{name}/stop", full(s.scriptStop))
 	mux.Handle("GET /api/scripts/{name}/stream", full(s.scriptStream))
 	mux.Handle("GET /api/script-runs/{run}", full(s.scriptRunOutput))

@@ -14,6 +14,7 @@ const state = ref<AuthState | null>(null)
 const step = ref<'loading' | 'signin' | 'pair' | 'enroll'>('loading')
 const code = ref('')
 const deviceName = ref(defaultName())
+const owner = ref('')
 const busy = ref(false)
 const error = ref('')
 
@@ -22,6 +23,19 @@ function defaultName(): string {
   const browser = /Firefox\//.test(ua) ? 'Firefox' : /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Browser'
   const os = /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Mac OS/.test(ua) ? 'macOS' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : ''
   return os ? `${browser} on ${os}` : browser
+}
+
+// Chrome on Android tells the phone model through client hints: "Chrome on Pixel 10 Pro Fold".
+type UAData = { getHighEntropyValues(h: string[]): Promise<{ model?: string }> }
+async function refineName() {
+  const data = (navigator as Navigator & { userAgentData?: UAData }).userAgentData
+  if (!data) return
+  try {
+    const { model } = await data.getHighEntropyValues(['model'])
+    if (model && deviceName.value === defaultName()) deviceName.value = `${deviceName.value.split(' on ')[0]} on ${model}`
+  } catch {
+    // no hints: the generic name stays
+  }
 }
 
 const canPasskey = computed(() => passkeysSupported() && (state.value?.secureOrigin ?? false))
@@ -47,7 +61,7 @@ function onCodeInput(e: Event) {
 
 function message(e: unknown): string {
   if (e instanceof ApiError) {
-    if (e.code === 'bad_code') return 'This code is wrong, expired or already used. Run "sudo vps-admin pair" for a new one.'
+    if (e.code === 'bad_code') return 'This code is wrong, expired or already used. Run `sudo vps-admin pair` for a new one.'
     if (e.code === 'rate_limited') return 'Too many attempts. Wait a few minutes and try again.'
     if (e.code === 'passkey_rejected') return 'The passkey was not accepted. Try again, or pair this browser with a code.'
     return e.message
@@ -70,7 +84,7 @@ async function attempt(fn: () => Promise<void>) {
 
 const pair = () =>
   attempt(async () => {
-    await api.pair(code.value, deviceName.value)
+    await api.pair(code.value, deviceName.value, owner.value.trim())
     await refresh()
   })
 const enroll = () =>
@@ -84,7 +98,10 @@ const signin = () =>
     done()
   })
 
-onMounted(() => attempt(refresh))
+onMounted(() => {
+  refineName()
+  attempt(refresh)
+})
 </script>
 
 <template>
@@ -136,10 +153,15 @@ onMounted(() => attempt(refresh))
             @input="onCodeInput"
           />
           <label class="field">
+            <Icon name="person" :size="20" />
+            <input v-model="owner" placeholder="Your name" aria-label="Your name" maxlength="60" autocomplete="name" required />
+          </label>
+          <label class="field">
             <Icon name="globe" :size="20" />
             <input v-model="deviceName" aria-label="Name of this device" maxlength="60" />
           </label>
-          <button class="btn btn-filled btn-lg st wide" type="submit" :disabled="busy || code.length !== 11">Pair</button>
+          <p class="muted small hint">Your name tells the other admins who uses this device, in the device list and the activity log.</p>
+          <button class="btn btn-filled btn-lg st wide" type="submit" :disabled="busy || code.length !== 11 || !owner.trim() || !deviceName.trim()">Pair</button>
         </form>
         <button v-if="state?.hasPasskeys" class="btn btn-text st" type="button" @click="(step = 'signin'), (error = '')">
           I already have a passkey
@@ -157,12 +179,18 @@ onMounted(() => attempt(refresh))
         </button>
       </template>
 
-      <p v-if="error" class="error" role="alert">{{ error }}</p>
+      <p v-if="error" class="error" role="alert">
+        <template v-for="(part, i) in error.split(/`([^`]+)`/)" :key="i"><code v-if="i % 2">{{ part }}</code><template v-else>{{ part }}</template></template>
+      </p>
     </section>
   </main>
 </template>
 
 <style scoped>
+.hint {
+  margin: -4px 4px 0;
+  text-align: left;
+}
 .login {
   min-height: 100vh;
   display: grid;

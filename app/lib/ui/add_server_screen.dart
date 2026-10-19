@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../data/updater.dart';
 
 import 'scope.dart';
 import 'widgets.dart';
@@ -39,13 +42,38 @@ class _CodeFormatter extends TextInputFormatter {
 class _AddServerScreenState extends State<AddServerScreen> {
   final _url = TextEditingController();
   final _code = TextEditingController();
+  final _owner = TextEditingController();
   final _codeFocus = FocusNode();
+  final _ownerFocus = FocusNode();
   bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // The name typed for the last server, so adding another one is quicker.
+    SharedPreferences.getInstance()
+        .then((p) {
+          final last = p.getString('owner') ?? '';
+          if (mounted && _owner.text.isEmpty) {
+            setState(() => _owner.text = last);
+          }
+        })
+        .catchError((_) {});
+  }
+
+  bool get _ready =>
+      !_busy && _code.text.length == 11 && _owner.text.trim().isNotEmpty;
 
   Future<void> _pair() async {
     setState(() => _busy = true);
     try {
-      await AppScope.of(context).pair(_url.text, _code.text, 'Android app');
+      final owner = _owner.text.trim();
+      final model = await Updater.deviceModel();
+      if (!mounted) return;
+      await AppScope.of(context).pair(_url.text, _code.text, model, owner);
+      SharedPreferences.getInstance()
+          .then((p) => p.setString('owner', owner))
+          .catchError((_) => false);
       if (mounted && !widget.first) Navigator.pop(context);
     } catch (e) {
       if (mounted) showError(context, e);
@@ -58,7 +86,9 @@ class _AddServerScreenState extends State<AddServerScreen> {
   void dispose() {
     _url.dispose();
     _code.dispose();
+    _owner.dispose();
     _codeFocus.dispose();
+    _ownerFocus.dispose();
     super.dispose();
   }
 
@@ -86,7 +116,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: t.textTheme.titleSmall),
+              CmdText(title, style: t.textTheme.titleSmall),
               const SizedBox(height: 8),
               child,
             ],
@@ -154,7 +184,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
                             keyboardType: TextInputType.url,
                             autocorrect: false,
                             textInputAction: TextInputAction.next,
-                            onSubmitted: (_) => _codeFocus.requestFocus(),
+                            onSubmitted: (_) => _ownerFocus.requestFocus(),
                             decoration: const InputDecoration(
                               hintText: 'admin.example.com',
                               filled: true,
@@ -164,16 +194,31 @@ class _AddServerScreenState extends State<AddServerScreen> {
                         const SizedBox(height: 16),
                         step(
                           2,
-                          'On the server, run sudo vps-admin pair and type the code',
+                          'Your name, so the other admins know who uses this phone',
+                          TextField(
+                            controller: _owner,
+                            focusNode: _ownerFocus,
+                            textCapitalization: TextCapitalization.words,
+                            textInputAction: TextInputAction.next,
+                            autofillHints: const [AutofillHints.name],
+                            onSubmitted: (_) => _codeFocus.requestFocus(),
+                            onChanged: (_) => setState(() {}),
+                            decoration: const InputDecoration(
+                              hintText: 'Your name',
+                              filled: true,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        step(
+                          3,
+                          'On the server, run `sudo vps-admin pair` and type the code',
                           TextField(
                             controller: _code,
                             focusNode: _codeFocus,
                             inputFormatters: [_CodeFormatter()],
                             textInputAction: TextInputAction.done,
-                            onSubmitted: (_) =>
-                                _code.text.length == 11 && !_busy
-                                ? _pair()
-                                : null,
+                            onSubmitted: (_) => _ready ? _pair() : null,
                             textCapitalization: TextCapitalization.characters,
                             autocorrect: false,
                             style: const TextStyle(
@@ -191,9 +236,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
                         ),
                         const SizedBox(height: 20),
                         FilledButton(
-                          onPressed: _busy || _code.text.length != 11
-                              ? null
-                              : _pair,
+                          onPressed: _ready ? _pair : null,
                           style: FilledButton.styleFrom(
                             minimumSize: const Size.fromHeight(48),
                           ),

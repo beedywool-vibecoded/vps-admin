@@ -156,7 +156,7 @@ onBeforeUnmount(() => clearInterval(timer))
     <section v-for="([name, items], gi) in groups" :key="name" class="card">
       <div class="card-head">
         <M3Shape :kind="SHAPES[gi % SHAPES.length]!" :size="28" :fill="gi % 2 ? 'var(--secc)' : 'var(--pc)'" />
-        <h2 class="gname">{{ name }}<code v-if="items[0]?.workDir" class="path">{{ items[0].workDir }}</code></h2>
+        <h2 class="gname">{{ name }}<code v-if="items[0]?.workDir" class="path plain">{{ items[0].workDir }}</code></h2>
         <span class="chip">{{ items.length }}</span>
       </div>
       <div v-if="items[0]?.workDir" class="links">
@@ -181,7 +181,7 @@ onBeforeUnmount(() => clearInterval(timer))
           <Icon name="restart" :size="16" /> Rebuild
         </button>
         <button v-for="sc in scriptsFor(items[0].workDir)" :key="sc.name" class="btn btn-outlined st script-btn" type="button" v-tip="sc.description || sc.target" @click="runFor = sc">
-          <Icon name="terminal" :size="16" /> {{ sc.name }}<span v-if="sc.running" class="dotr" />
+          <Icon name="terminal" :size="16" /> {{ sc.title || sc.name }}<span v-if="sc.running" class="dotr" />
         </button>
       </div>
       <div v-for="c in items" :key="c.id" class="row">

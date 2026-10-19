@@ -30,18 +30,21 @@ func (s *Server) authState(w http.ResponseWriter, r *http.Request) {
 func (s *Server) pair(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Code string `json:"code"`
-		Name string `json:"name"`
-		Kind string `json:"kind"`
+		Name  string `json:"name"`
+		Owner string `json:"owner"`
+		Kind  string `json:"kind"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
 	ip := s.clientIP(r)
-	res, err := s.Auth.Pair(r.Context(), w, ip, body.Code, body.Name, body.Kind)
+	res, err := s.Auth.Pair(r.Context(), w, ip, body.Code, body.Name, body.Owner, body.Kind)
 	switch {
 	case errors.Is(err, auth.ErrRateLimited):
 		writeError(w, http.StatusTooManyRequests, "rate_limited")
+	case errors.Is(err, auth.ErrNoOwner):
+		writeErrorMsg(w, http.StatusBadRequest, "owner_required", "Enter your name, so the other admins know who uses this device. If this is an old version of the app, update it first.")
 	case errors.Is(err, auth.ErrBadCode):
 		s.Store.Audit(r.Context(), auditEntry(ip, "auth.pair", body.Kind, err))
 		writeError(w, http.StatusUnauthorized, "bad_code")
@@ -111,6 +114,30 @@ func (s *Server) devices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"devices": list, "current": auth.FromContext(r.Context()).DeviceID})
+}
+
+func (s *Server) renameDevice(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Owner string `json:"owner"`
+		Name  string `json:"name"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	owner, name := auth.CleanName(body.Owner, ""), auth.CleanName(body.Name, "")
+	if owner == "" || name == "" {
+		writeErrorMsg(w, http.StatusBadRequest, "invalid", "both the person and the device name are needed")
+		return
+	}
+	id := r.PathValue("id")
+	err := s.Store.RenameDevice(r.Context(), id, owner, name)
+	s.audit(r, "device.rename", owner+" · "+name, err)
+	if err != nil {
+		writeError(w, statusFor(err), "rename_failed")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) revokeDevice(w http.ResponseWriter, r *http.Request) {

@@ -95,7 +95,12 @@ class AppState extends ChangeNotifier {
   }
 
   /// Pairs with a server using a code from `sudo vps-admin pair`.
-  Future<Server> pair(String input, String code, String deviceName) async {
+  Future<Server> pair(
+    String input,
+    String code,
+    String deviceName,
+    String owner,
+  ) async {
     final url = normalizeUrl(input);
     if (url == null) {
       throw ApiException(
@@ -104,7 +109,7 @@ class AppState extends ChangeNotifier {
         'Enter the address of the panel, like admin.example.com',
       );
     }
-    final token = await Api.pair(url, code, deviceName);
+    final token = await Api.pair(url, code, deviceName, owner);
     final api = Api(url, token);
     String name = Uri.parse(url).host;
     try {

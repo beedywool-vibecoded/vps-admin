@@ -10,6 +10,7 @@ import (
 type Device struct {
 	ID         string     `json:"id"`
 	Name       string     `json:"name"`
+	Owner      string     `json:"owner"` // the person using it
 	Kind       string     `json:"kind"`
 	CreatedAt  time.Time  `json:"createdAt"`
 	LastSeenAt *time.Time `json:"lastSeenAt,omitempty"`
@@ -50,15 +51,15 @@ func (s *Store) UsePairingCode(ctx context.Context, hash []byte) (bool, error) {
 	return c == 1, err
 }
 
-func (s *Store) AddDevice(ctx context.Context, id, name, kind string, tokenHash []byte, ip string) error {
+func (s *Store) AddDevice(ctx context.Context, id, name, owner, kind string, tokenHash []byte, ip string) error {
 	var th any
 	if tokenHash != nil {
 		th = tokenHash
 	}
 	n := now()
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO devices(id, name, kind, token_hash, created_at, last_seen_at, last_ip) VALUES(?, ?, ?, ?, ?, ?, ?)`,
-		id, name, kind, th, n, n, ip)
+		`INSERT INTO devices(id, name, owner, kind, token_hash, created_at, last_seen_at, last_ip) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, name, owner, kind, th, n, n, ip)
 	return err
 }
 
@@ -83,7 +84,7 @@ func (s *Store) TouchDevice(ctx context.Context, id, ip string) {
 
 func (s *Store) Devices(ctx context.Context) ([]Device, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT d.id, d.name, d.kind, d.created_at, d.last_seen_at, COALESCE(d.last_ip, ''),
+		SELECT d.id, d.name, d.owner, d.kind, d.created_at, d.last_seen_at, COALESCE(d.last_ip, ''),
 		       (SELECT COUNT(*) FROM passkeys p WHERE p.device_id = d.id)
 		FROM devices d WHERE d.revoked_at IS NULL ORDER BY d.created_at`)
 	if err != nil {
@@ -95,7 +96,7 @@ func (s *Store) Devices(ctx context.Context) ([]Device, error) {
 		var d Device
 		var created int64
 		var seen sql.NullInt64
-		if err := rows.Scan(&d.ID, &d.Name, &d.Kind, &created, &seen, &d.LastIP, &d.Passkeys); err != nil {
+		if err := rows.Scan(&d.ID, &d.Name, &d.Owner, &d.Kind, &created, &seen, &d.LastIP, &d.Passkeys); err != nil {
 			return nil, err
 		}
 		d.CreatedAt = time.Unix(created, 0)
@@ -111,6 +112,18 @@ func (s *Store) DeviceActive(ctx context.Context, id string) bool {
 }
 
 // RevokeDevice disables a device and drops its sessions and passkeys.
+// RenameDevice sets who uses a device and what it is.
+func (s *Store) RenameDevice(ctx context.Context, id, owner, name string) error {
+	r, err := s.db.ExecContext(ctx, `UPDATE devices SET owner = ?, name = ? WHERE id = ? AND revoked_at IS NULL`, owner, name, id)
+	if err != nil {
+		return err
+	}
+	if c, _ := r.RowsAffected(); c == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *Store) RevokeDevice(ctx context.Context, id string) error {
 	r, err := s.db.ExecContext(ctx,
 		`UPDATE devices SET revoked_at = ?, token_hash = NULL WHERE id = ? AND revoked_at IS NULL`, now(), id)

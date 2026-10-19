@@ -734,8 +734,9 @@ onBeforeUnmount(() => {
   display: block;
   padding: 12px;
   border-radius: 12px;
-  background: var(--scc);
-  color: var(--primary);
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  color: var(--code-fg);
   font-size: 13px;
   white-space: pre-wrap;
   word-break: break-all;

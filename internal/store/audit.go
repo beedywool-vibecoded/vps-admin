@@ -35,7 +35,7 @@ func (s *Store) AuditLog(ctx context.Context, before int64, limit int) ([]AuditE
 		before = 1 << 62
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT a.id, a.at, COALESCE(a.device_id, ''), COALESCE(d.name, ''), COALESCE(a.ip, ''), a.action, a.target, a.ok, a.detail
+		SELECT a.id, a.at, COALESCE(a.device_id, ''), CASE WHEN d.owner != '' THEN d.owner || ' · ' || d.name ELSE COALESCE(d.name, '') END, COALESCE(a.ip, ''), a.action, a.target, a.ok, a.detail
 		FROM audit a LEFT JOIN devices d ON d.id = a.device_id
 		WHERE a.id < ? ORDER BY a.id DESC LIMIT ?`, before, limit)
 	if err != nil {

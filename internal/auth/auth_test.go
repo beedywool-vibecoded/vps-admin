@@ -37,15 +37,15 @@ func TestPairingCodeFlow(t *testing.T) {
 		t.Fatalf("unexpected code format %q", code)
 	}
 	w := httptest.NewRecorder()
-	if _, err := a.Pair(ctx, w, "1.2.3.4", old, "x", KindApp); !errors.Is(err, ErrBadCode) {
+	if _, err := a.Pair(ctx, w, "1.2.3.4", old, "x", "Sam", KindApp); !errors.Is(err, ErrBadCode) {
 		t.Fatalf("a replaced code still works: %v", err)
 	}
 	// Lower case and missing dashes are accepted.
-	res, err := a.Pair(ctx, w, "1.2.3.4", strings.ToLower(strings.ReplaceAll(code, "-", "")), "Pixel", KindApp)
+	res, err := a.Pair(ctx, w, "1.2.3.4", strings.ToLower(strings.ReplaceAll(code, "-", "")), "Pixel", "Sam", KindApp)
 	if err != nil || !strings.HasPrefix(res.Token, tokenPrefix) {
 		t.Fatalf("pair: %+v, %v", res, err)
 	}
-	if _, err := a.Pair(ctx, w, "1.2.3.4", code, "again", KindApp); !errors.Is(err, ErrBadCode) {
+	if _, err := a.Pair(ctx, w, "1.2.3.4", code, "again", "Sam", KindApp); !errors.Is(err, ErrBadCode) {
 		t.Fatalf("code reused: %v", err)
 	}
 
@@ -65,7 +65,7 @@ func TestWebPairingGivesEnrollSession(t *testing.T) {
 	ctx := context.Background()
 	code, _ := a.NewPairingCode(ctx)
 	w := httptest.NewRecorder()
-	res, err := a.Pair(ctx, w, "1.2.3.4", code, "Firefox", KindWeb)
+	res, err := a.Pair(ctx, w, "1.2.3.4", code, "Firefox", "Sam", KindWeb)
 	if err != nil || res.Token != "" {
 		t.Fatalf("pair: %+v, %v", res, err)
 	}

@@ -27,6 +27,15 @@ class AppRelease {
 class Updater extends ChangeNotifier {
   static const _channel = MethodChannel('fr.beedy.vps_admin/updater');
 
+  /// The phone model, like "Google Pixel 10 Pro Fold".
+  static Future<String> deviceModel() async {
+    try {
+      return await _channel.invokeMethod<String>('model') ?? 'Android phone';
+    } catch (_) {
+      return 'Android phone';
+    }
+  }
+
   int? currentCode;
   String? currentName;
   AppRelease? latest;

@@ -256,7 +256,7 @@ onBeforeUnmount(() => clearInterval(timer))
     <section v-for="g in groups" :key="g.name" class="card" :aria-label="g.name">
       <div class="card-head">
         <StatusDot :tone="groupTone(g)" :label="groupTone(g) === 'ok' ? 'Running' : 'Needs attention'" />
-        <h2 class="gname">{{ g.name }}<code v-if="g.items[0]?.workDir" class="path">{{ g.items[0].workDir }}</code></h2>
+        <h2 class="gname">{{ g.name }}<code v-if="g.items[0]?.workDir" class="path plain">{{ g.items[0].workDir }}</code></h2>
         <span class="chip">{{ g.items.length }}</span>
         <RouterLink to="/containers" class="btn btn-text st">Manage</RouterLink>
       </div>

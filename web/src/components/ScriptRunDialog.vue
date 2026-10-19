@@ -55,7 +55,7 @@ async function run() {
 </script>
 
 <template>
-  <M3Dialog v-model="open" :title="script?.name ?? ''" wide>
+  <M3Dialog v-model="open" :title="script ? (script.title ? `${script.title} (${script.name})` : script.name) : ''" wide>
     <template #header>
       <span v-if="state === 'running'" class="chip">running</span>
       <span v-else-if="state === 'done'" class="chip" :class="result.exitCode === 0 && !result.error ? 'ok' : 'bad'">exit {{ result.exitCode }}</span>

@@ -29,11 +29,7 @@ class ScriptsTab extends StatelessWidget {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
-              const SelectableText(
-                'sudo vps-admin link /path/to/script.sh',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontFamily: 'monospace'),
-              ),
+              const Cmd('sudo vps-admin link /path/to/script.sh'),
             ],
           );
         }
@@ -44,11 +40,24 @@ class ScriptsTab extends StatelessWidget {
               Card(
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ListTile(
+                  onLongPress: () => _rename(context, api, s, reload),
                   title: Row(
                     children: [
                       Flexible(
-                        child: Text(
-                          s['name'] as String,
+                        child: Text.rich(
+                          TextSpan(
+                            text: _title(s),
+                            children: [
+                              if ((s['title'] as String? ?? '').isNotEmpty)
+                                TextSpan(
+                                  text: '  (${s['name']})',
+                                  style: TextStyle(
+                                    color: cs.onSurfaceVariant,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                            ],
+                          ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -142,7 +151,7 @@ class ScriptsTab extends StatelessWidget {
     final go = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
-        title: Text('Run ${s['name']}?'),
+        title: Text('Run ${_title(s)}?'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -161,7 +170,7 @@ class ScriptsTab extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Runs as the vps-admin user (Docker access, no root).',
+              'Runs as the owner of the file. Long press a script to rename it.',
               style: TextStyle(fontSize: 12),
             ),
           ],
@@ -183,6 +192,63 @@ class ScriptsTab extends StatelessWidget {
       await api.runScript(s['name'] as String, args.text.trim());
       await reload();
       if (context.mounted) _openRun(context, api, s['name'] as String);
+    } catch (e) {
+      if (context.mounted) showError(context, e);
+    }
+  }
+
+  static String _title(Map<String, dynamic> s) {
+    final t = s['title'] as String? ?? '';
+    return t.isNotEmpty ? t : s['name'] as String;
+  }
+
+  /// Only the name shown changes; the link keeps its name for the command line.
+  Future<void> _rename(
+    BuildContext context,
+    Api api,
+    Map<String, dynamic> s,
+    Future<void> Function() reload,
+  ) async {
+    final c = TextEditingController(text: _title(s));
+    final title = await showDialog<String>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: const Text('Rename the script'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CmdText(
+              'The command line keeps `${s['name']}`.',
+              style: const TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: c,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Name shown',
+                filled: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(d),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(d, c.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (title == null || !context.mounted) return;
+    try {
+      await api.renameScript(s['name'] as String, title);
+      await reload();
     } catch (e) {
       if (context.mounted) showError(context, e);
     }

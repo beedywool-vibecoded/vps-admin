@@ -252,10 +252,73 @@ String ago(DateTime t) {
   return '${s ~/ 86400} d ago';
 }
 
+/// Commands sit on a dark surface in both themes, so they stand apart from prose.
+TextStyle cmdStyle(BuildContext context, {double? fontSize}) {
+  final dark = Theme.of(context).brightness == Brightness.dark;
+  final cs = Theme.of(context).colorScheme;
+  return TextStyle(
+    fontFamily: 'monospace',
+    fontSize: fontSize,
+    color: dark ? cs.onSurface : const Color(0xFFE6E0E9),
+    backgroundColor: dark ? cs.surfaceContainerLowest : const Color(0xFF1D1B20),
+  );
+}
+
+/// A command on its own line, in a dark selectable block.
+class Cmd extends StatelessWidget {
+  const Cmd(this.command, {super.key});
+  final String command;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = cmdStyle(context, fontSize: 13);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: style.backgroundColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      child: SelectableText(
+        command,
+        style: style.copyWith(backgroundColor: Colors.transparent),
+      ),
+    );
+  }
+}
+
+/// Text where `backticked` parts are commands.
+class CmdText extends StatelessWidget {
+  const CmdText(this.text, {super.key, this.style, this.textAlign});
+  final String text;
+  final TextStyle? style;
+  final TextAlign? textAlign;
+
+  @override
+  Widget build(BuildContext context) {
+    final parts = text.split('`');
+    final code = cmdStyle(context);
+    return Text.rich(
+      TextSpan(
+        style: style,
+        children: [
+          for (var i = 0; i < parts.length; i++)
+            TextSpan(
+              text: i.isOdd ? '\u00a0${parts[i]}\u00a0' : parts[i],
+              style: i.isOdd ? code : null,
+            ),
+        ],
+      ),
+      textAlign: textAlign,
+    );
+  }
+}
+
 void showError(BuildContext context, Object e) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      content: Text(e is ApiException ? e.message : e.toString()),
+      content: CmdText(e is ApiException ? e.message : e.toString()),
       backgroundColor: Theme.of(context).colorScheme.errorContainer,
       showCloseIcon: true,
     ),

@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Icon from '@/components/Icon.vue'
 import M3Slider from '@/components/M3Slider.vue'
+import M3Dialog from '@/components/M3Dialog.vue'
 import { appearance, loadAppearance, removeBackground, setOpacity, uploadBackground } from '@/lib/appearance'
 import { api, type AuditEntry, type Device } from '@/lib/api'
 import { passkeysSupported, registerPasskey } from '@/lib/passkey'
@@ -57,7 +58,57 @@ const MODES: { id: ThemeMode; label: string }[] = [
   { id: 'dark', label: 'Dark' },
   { id: 'light', label: 'Light' },
 ]
-const sortedDevices = computed(() => [...devices.value].sort((a, b) => (a.id === current.value ? -1 : b.id === current.value ? 1 : 0)))
+// Devices grouped by the person using them, yours first.
+const people = computed(() => {
+  const groups = new Map<string, Device[]>()
+  for (const d of devices.value) {
+    const k = d.owner || ''
+    groups.set(k, [...(groups.get(k) ?? []), d])
+  }
+  const me = devices.value.find((d) => d.id === current.value)?.owner ?? ''
+  return [...groups.entries()]
+    .map(([owner, list]) => ({ owner, list: list.sort((a, b) => (a.id === current.value ? -1 : b.id === current.value ? 1 : 0)) }))
+    .sort((a, b) => (a.owner === me ? -1 : b.owner === me ? 1 : !a.owner ? 1 : !b.owner ? -1 : a.owner.localeCompare(b.owner)))
+})
+const unnamedSelf = computed(() => {
+  const d = devices.value.find((x) => x.id === current.value)
+  return d && !d.owner ? d : null
+})
+const initial = (s: string) => (s.trim()[0] ?? '?').toUpperCase()
+
+// Rename dialog
+const editing = ref<Device | null>(null)
+const editOpen = computed({ get: () => editing.value !== null, set: (v) => !v && (editing.value = null) })
+const editOwner = ref('')
+const editName = ref('')
+function startEdit(d: Device) {
+  editing.value = d
+  editOwner.value = d.owner
+  editName.value = d.name
+}
+async function saveEdit() {
+  const d = editing.value
+  if (!d || !editOwner.value.trim() || !editName.value.trim()) return
+  try {
+    await api.renameDevice(d.id, editOwner.value.trim(), editName.value.trim())
+    editing.value = null
+    await loadDevices()
+  } catch (e) {
+    toastError(e)
+  }
+}
+const selfOwner = ref('')
+async function nameSelf() {
+  const d = unnamedSelf.value
+  if (!d || !selfOwner.value.trim()) return
+  try {
+    await api.renameDevice(d.id, selfOwner.value.trim(), d.name)
+    toast('Saved')
+    await loadDevices()
+  } catch (e) {
+    toastError(e)
+  }
+}
 
 async function loadDevices() {
   const d = await api.devices()
@@ -74,7 +125,7 @@ async function loadAudit(more = false) {
 async function revoke(d: Device) {
   const self = d.id === current.value
   const ok = await confirm({
-    title: `Remove ${d.name}?`,
+    title: `Remove ${d.owner ? `${d.owner}'s ` : ''}${d.name}?`,
     body: self
       ? 'This is the browser you are using: you will be signed out and need a new pairing code to come back.'
       : `Its ${d.kind === 'app' ? 'token stops working' : 'passkeys and sessions are deleted'} right away.`,
@@ -119,6 +170,7 @@ const ACTIONS: Record<string, string> = {
   'auth.passkey_login': 'Signed in with a passkey',
   'auth.passkey_register': 'Added a passkey',
   'device.revoke': 'Removed a device',
+  'device.rename': 'Renamed a device',
   'update.apply': 'Installed an update',
   'update.auto': 'Auto-update',
   'settings.update': 'Changed update settings',
@@ -228,21 +280,49 @@ onMounted(async () => {
       <p class="muted small" style="margin: 0 0 8px">
         To add a phone or another browser, run <code>sudo vps-admin pair</code> on the server and enter the code there.
       </p>
-      <div v-for="d in sortedDevices" :key="d.id" class="row">
-        <span class="dev-icon"><Icon :name="d.kind === 'app' ? 'phone' : 'globe'" :size="20" /></span>
+      <form v-if="unnamedSelf" class="self" @submit.prevent="nameSelf">
+        <Icon name="person" :size="20" />
         <div class="grow">
-          <div class="name">
-            {{ d.name }}
-            <span v-if="d.id === current" class="chip">This device</span>
-          </div>
-          <div class="muted small">
-            {{ d.kind === 'app' ? 'App' : `Browser · ${d.passkeys} passkey${d.passkeys === 1 ? '' : 's'}` }} ·
-            added {{ ago(d.createdAt) }} · seen {{ ago(d.lastSeenAt) }}{{ d.lastIp ? ` from ${d.lastIp}` : '' }}
-          </div>
+          <div>Who uses this browser?</div>
+          <div class="muted small">Every device now has the name of its person, so admins can tell each other apart</div>
         </div>
-        <button class="btn btn-text st" type="button" @click="revoke(d)">Remove</button>
+        <label class="field self-field"><input v-model="selfOwner" placeholder="Your name" aria-label="Your name" maxlength="60" autocomplete="name" /></label>
+        <button class="btn btn-filled st" type="submit" :disabled="!selfOwner.trim()">Save</button>
+      </form>
+      <div v-for="p in people" :key="p.owner" class="person">
+        <div class="person-head">
+          <span class="avatar" :class="{ none: !p.owner }">{{ p.owner ? initial(p.owner) : '?' }}</span>
+          <h3>{{ p.owner || 'Not named yet' }}</h3>
+          <span class="muted small">{{ p.list.length }} device{{ p.list.length === 1 ? '' : 's' }}</span>
+        </div>
+        <div v-for="d in p.list" :key="d.id" class="row dev">
+          <span class="dev-icon"><Icon :name="d.kind === 'app' ? 'phone' : 'globe'" :size="20" /></span>
+          <div class="grow">
+            <div class="name">
+              {{ d.name }}
+              <span v-if="d.id === current" class="chip">This device</span>
+            </div>
+            <div class="muted small">
+              {{ d.kind === 'app' ? 'Android app' : `Browser · ${d.passkeys} passkey${d.passkeys === 1 ? '' : 's'}` }} ·
+              added {{ ago(d.createdAt) }} · seen {{ ago(d.lastSeenAt) }}{{ d.lastIp ? ` from ${d.lastIp}` : '' }}
+            </div>
+          </div>
+          <button class="icon-btn st" type="button" :aria-label="`Rename ${d.name}`" v-tip="'Rename'" @click="startEdit(d)"><Icon name="edit" :size="18" /></button>
+          <button class="btn btn-text st" type="button" @click="revoke(d)">Remove</button>
+        </div>
       </div>
     </section>
+
+    <M3Dialog v-model="editOpen" title="Rename the device">
+      <form class="edit-form" @submit.prevent="saveEdit">
+        <label class="field"><Icon name="person" :size="20" /><input v-model="editOwner" placeholder="Person" aria-label="Person using it" maxlength="60" /></label>
+        <label class="field"><Icon :name="editing?.kind === 'app' ? 'phone' : 'globe'" :size="20" /><input v-model="editName" placeholder="Device" aria-label="Device name" maxlength="60" /></label>
+      </form>
+      <template #actions>
+        <button class="btn btn-text st" type="button" @click="editOpen = false">Cancel</button>
+        <button class="btn btn-filled st" type="button" :disabled="!editOwner.trim() || !editName.trim()" @click="saveEdit">Save</button>
+      </template>
+    </M3Dialog>
 
     <section class="card">
       <div class="card-head">
@@ -350,6 +430,62 @@ onMounted(async () => {
   box-shadow:
     0 0 0 3px var(--sc),
     0 0 0 5px var(--on-surface);
+}
+.self {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--tc);
+  color: var(--on-tc);
+}
+.self .muted {
+  color: inherit;
+  opacity: 0.8;
+}
+.self-field {
+  flex: 1 1 180px;
+  background: var(--surface);
+}
+.person + .person {
+  margin-top: 8px;
+  border-top: 1px solid var(--sch);
+}
+.person-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 4px 6px;
+}
+.person-head h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+}
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  background: var(--pc);
+  color: var(--on-pc);
+  font-weight: 600;
+}
+.avatar.none {
+  background: var(--sch);
+  color: var(--on-sv);
+}
+.dev {
+  padding-left: 20px;
+}
+.edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 .dev-icon {
   width: 40px;

@@ -135,6 +135,7 @@ export interface UpdateStatus {
 export interface Device {
   id: string
   name: string
+  owner: string
   kind: 'web' | 'app'
   createdAt: string
   lastSeenAt?: string
@@ -306,6 +307,7 @@ export interface ToolCall {
 
 export interface Script {
   name: string
+  title?: string // display name set in the panel
   target: string
   description: string
   executable: boolean
@@ -365,8 +367,9 @@ export async function request<T>(method: string, path: string, body?: unknown): 
 
 export const api = {
   authState: () => request<AuthState>('GET', '/api/auth/state'),
-  pair: (code: string, name: string) =>
-    request<{ deviceId: string }>('POST', '/api/auth/pair', { code, name, kind: 'web' }),
+  pair: (code: string, name: string, owner: string) =>
+    request<{ deviceId: string }>('POST', '/api/auth/pair', { code, name, owner, kind: 'web' }),
+  renameDevice: (id: string, owner: string, name: string) => request<void>('PATCH', `/api/devices/${id}`, { owner, name }),
   logout: () => request<void>('POST', '/api/auth/logout'),
 
   system: () => request<{ host: Host; snapshot: Snapshot; version: string }>('GET', '/api/system'),
@@ -398,6 +401,7 @@ export const api = {
   revokeDevice: (id: string) => request<void>('DELETE', `/api/devices/${encodeURIComponent(id)}`),
   reboot: (confirm: string) => request<{ rebooting: boolean }>('POST', '/api/system/reboot', { confirm }),
   scripts: () => request<{ scripts: Script[]; runs: ScriptRun[]; dir: string }>('GET', '/api/scripts'),
+  renameScript: (name: string, title: string) => request<void>('PUT', `/api/scripts/${encodeURIComponent(name)}/title`, { title }),
   runScript: (name: string, args: string) => request<{ id: string }>('POST', `/api/scripts/${encodeURIComponent(name)}/run`, { args }),
   stopScript: (name: string) => request<void>('POST', `/api/scripts/${encodeURIComponent(name)}/stop`),
   scriptRunOutput: (id: string) => request<{ output: string }>('GET', `/api/script-runs/${encodeURIComponent(id)}`),

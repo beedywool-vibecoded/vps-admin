@@ -39,7 +39,7 @@ func (s *Store) FinishScriptRun(ctx context.Context, id string, finished time.Ti
 // ScriptRuns lists recent runs, of one script or of all when script is empty.
 func (s *Store) ScriptRuns(ctx context.Context, script string, limit int) ([]ScriptRun, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT r.id, r.script, r.args, COALESCE(d.name, ''), r.started, r.finished, r.exit_code, r.error
+		SELECT r.id, r.script, r.args, CASE WHEN d.owner != '' THEN d.owner || ' · ' || d.name ELSE COALESCE(d.name, '') END, r.started, r.finished, r.exit_code, r.error
 		FROM script_runs r LEFT JOIN devices d ON d.id = r.device_id
 		WHERE ? = '' OR r.script = ? ORDER BY r.started DESC LIMIT ?`, script, script, limit)
 	if err != nil {

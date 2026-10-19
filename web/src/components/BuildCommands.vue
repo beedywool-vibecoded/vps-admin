@@ -40,7 +40,7 @@ const node = computed(() => props.build === 'node' || props.build === 'static')
         <label v-if="build !== 'static'" class="tf">
           <span>Start</span>
           <input v-model.trim="model.startCmd" placeholder="npm start" spellcheck="false" />
-          <small>Runs with sh -c, PORT=3000 is set</small>
+          <small>Runs with <code>sh -c</code>, <code>PORT=3000</code> is set</small>
         </label>
       </template>
       <label v-if="build === 'dockerfile' || !build" class="tf">

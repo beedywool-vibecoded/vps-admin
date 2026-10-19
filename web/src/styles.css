@@ -165,6 +165,29 @@ code,
 pre {
   font-family: var(--mono);
 }
+/* Commands and technical values: monospace on a dark chip, apart from the prose */
+code {
+  padding: 0.1em 0.45em;
+  border: 1px solid var(--code-border, #49454f);
+  border-radius: 6px;
+  background: var(--code-bg, #0f0d13);
+  color: var(--code-fg, #e6e0e9);
+  font-size: 0.88em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+pre code {
+  padding: 0;
+  border: none;
+  background: none;
+}
+/* Paths shown as labels stay plain */
+code.plain {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+}
 :focus-visible {
   outline: 3px solid var(--primary);
   outline-offset: 2px;

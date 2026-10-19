@@ -24,6 +24,7 @@ class MainActivity : FlutterActivity() {
                     result.success(mapOf("code" to code, "name" to info.versionName))
                 }
                 "canInstall" -> result.success(canInstall())
+                "model" -> result.success(model())
                 "openInstallSettings" -> {
                     startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
                     result.success(null)
@@ -41,6 +42,12 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    // "Google Pixel 10 Pro Fold": names the device in the server's device list.
+    private fun model(): String {
+        val maker = Build.MANUFACTURER.replaceFirstChar { it.uppercase() }
+        return if (Build.MODEL.startsWith(Build.MANUFACTURER, ignoreCase = true)) Build.MODEL else "$maker ${Build.MODEL}"
     }
 
     private fun canInstall() = Build.VERSION.SDK_INT < 26 || packageManager.canRequestPackageInstalls()

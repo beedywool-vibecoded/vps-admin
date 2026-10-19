@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import Icon from '@/components/Icon.vue'
 import M3Shape from '@/components/M3Shape.vue'
 import StatusDot from '@/components/StatusDot.vue'
+import M3Dialog from '@/components/M3Dialog.vue'
 import { api, streamScript, type Script, type ScriptRun } from '@/lib/api'
 import { ago, dateTime } from '@/lib/format'
 import { confirm, toast, toastError } from '@/lib/ui'
@@ -21,6 +22,27 @@ const outEl = ref<HTMLElement>()
 let closeStream: (() => void) | undefined
 
 const SHAPES: ShapeKind[] = ['cookie', 'clover', 'sunny', 'flower']
+
+// Display names: the link keeps its name, shown in parentheses.
+const titleOf = (name: string) => scripts.value.find((s) => s.name === name)?.title || name
+const renaming = ref<Script | null>(null)
+const renameOpen = computed({ get: () => renaming.value !== null, set: (v) => !v && (renaming.value = null) })
+const newTitle = ref('')
+function startRename(s: Script) {
+  renaming.value = s
+  newTitle.value = s.title || s.name
+}
+async function saveTitle() {
+  const s = renaming.value
+  if (!s) return
+  try {
+    await api.renameScript(s.name, newTitle.value.trim())
+    renaming.value = null
+    await load()
+  } catch (e) {
+    toastError(e)
+  }
+}
 const recent = computed(() => runs.value.slice(0, 20))
 
 async function load() {
@@ -43,7 +65,7 @@ async function scrollDown() {
 
 function follow(s: Script) {
   closeStream?.()
-  shown.value = { title: s.name, text: '', live: true }
+  shown.value = { title: s.title || s.name, text: '', live: true }
   closeStream = streamScript(s.name, {
     output: (chunk) => {
       if (shown.value) shown.value.text += chunk
@@ -59,8 +81,8 @@ function follow(s: Script) {
 async function run(s: Script) {
   const a = (args.value[s.name] ?? '').trim()
   const ok = await confirm({
-    title: `Run ${s.name}?`,
-    body: `${s.target}${a ? ` ${a}` : ''}\nIt runs as the vps-admin user (Docker access, no root), for 30 minutes at most.`,
+    title: `Run ${s.title || s.name}?`,
+    body: `${s.target}${a ? ` ${a}` : ''}\nIt runs as the owner of the file, for 30 minutes at most.`,
     action: 'Run',
   })
   if (!ok) return
@@ -79,7 +101,7 @@ async function run(s: Script) {
 async function stop(s: Script) {
   try {
     await api.stopScript(s.name)
-    toast(`${s.name} stopped`)
+    toast(`${s.title || s.name} stopped`)
   } catch (e) {
     toastError(e)
   }
@@ -89,7 +111,7 @@ async function showRun(r: ScriptRun) {
   closeStream?.()
   try {
     const { output } = await api.scriptRunOutput(r.id)
-    shown.value = { title: `${r.script} · ${dateTime(r.started)}`, text: output || 'No output.', live: false, exit: r.exitCode, error: r.error }
+    shown.value = { title: `${titleOf(r.script)} · ${dateTime(r.started)}`, text: output || 'No output.', live: false, exit: r.exitCode, error: r.error }
     scrollDown()
   } catch (e) {
     toastError(e)
@@ -126,14 +148,16 @@ onBeforeUnmount(() => closeStream?.())
             <M3Shape :kind="SHAPES[i % SHAPES.length]!" :size="40" :fill="i % 2 ? 'var(--secc)' : 'var(--pc)'" />
             <div class="grow">
               <div class="name">
-                {{ s.name }}
+                {{ s.title || s.name }}
+                <span v-if="s.title" class="orig">({{ s.name }})</span>
+                <button class="icon-btn st ren" type="button" :aria-label="`Rename ${s.title || s.name}`" v-tip="'Rename'" @click="startRename(s)"><Icon name="edit" :size="16" /></button>
                 <span v-if="s.running" class="chip run-chip">running</span>
                 <span v-if="s.missing" class="chip bad-chip">file missing</span>
                 <span v-else-if="!s.executable" class="chip bad-chip">not executable</span>
               </div>
               <div v-if="s.description" class="muted small">{{ s.description }}</div>
-              <code class="target">{{ s.target }}</code>
-              <div v-if="s.dir" class="muted small folder">Shown with the containers of <code>{{ s.dir }}</code></div>
+              <code class="target plain">{{ s.target }}</code>
+              <div v-if="s.dir" class="muted small folder">Shown with the containers of <code class="plain">{{ s.dir }}</code></div>
             </div>
           </div>
           <div class="actions">
@@ -166,12 +190,24 @@ onBeforeUnmount(() => closeStream?.())
           <p v-if="!recent.length" class="muted small">Nothing has run yet.</p>
           <button v-for="r in recent" :key="r.id" type="button" class="hist st" @click="showRun(r)">
             <StatusDot :tone="runTone(r)" :label="r.finished == null ? 'running' : `exit ${r.exitCode ?? '?'}`" />
-            <span class="grow ellipsis"><strong>{{ r.script }}</strong>{{ r.args ? `\u00a0${r.args}` : '' }}</span>
+            <span class="grow ellipsis"><strong>{{ titleOf(r.script) }}</strong>{{ r.args ? `\u00a0${r.args}` : '' }}</span>
             <span class="muted small">{{ r.device || 'assistant' }} · {{ ago(r.started) }}</span>
           </button>
         </section>
       </div>
     </div>
+
+    <M3Dialog v-model="renameOpen" title="Rename the script">
+      <p class="muted small" style="margin: 0">Only the name shown in the panel changes. The command line keeps <code>{{ renaming?.name }}</code>.</p>
+      <form @submit.prevent="saveTitle">
+        <label class="field"><input v-model="newTitle" :placeholder="renaming?.name" aria-label="Name shown" maxlength="60" /></label>
+      </form>
+      <template #actions>
+        <button v-if="renaming?.title" class="btn btn-text st" type="button" @click="(newTitle = ''), saveTitle()">Reset</button>
+        <button class="btn btn-text st" type="button" @click="renameOpen = false">Cancel</button>
+        <button class="btn btn-filled st" type="button" @click="saveTitle">Save</button>
+      </template>
+    </M3Dialog>
   </div>
 </template>
 
@@ -190,8 +226,9 @@ onBeforeUnmount(() => closeStream?.())
 .cmd {
   padding: 12px 16px;
   border-radius: 12px;
-  background: var(--scc);
-  color: var(--primary);
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  color: var(--code-fg);
   font-size: 14px;
 }
 .cols {
@@ -230,6 +267,15 @@ onBeforeUnmount(() => closeStream?.())
   gap: 8px;
   font-size: 17px;
   font-weight: 500;
+}
+.orig {
+  color: var(--on-sv);
+  font-size: 14px;
+  font-weight: 400;
+}
+.ren {
+  width: 32px;
+  height: 32px;
 }
 .target {
   display: block;

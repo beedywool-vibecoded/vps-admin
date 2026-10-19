@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
 	"time"
 )
 
@@ -35,6 +36,7 @@ var (
 
 type Script struct {
 	Name        string `json:"name"`
+	Title       string `json:"title,omitempty"` // display name set from the panel
 	Target      string `json:"target"`      // the file the link points to
 	Description string `json:"description"` // first comment line after the shebang
 	Executable  bool   `json:"executable"`
@@ -159,6 +161,10 @@ func describe(path string) string {
 		}
 		if c, ok := strings.CutPrefix(l, "#"); ok {
 			c = strings.TrimSpace(c)
+			// Skip banners like "# =====" that hold no words.
+			if !strings.ContainsFunc(c, unicode.IsLetter) {
+				continue
+			}
 			c = strings.TrimPrefix(c, "description:")
 			return strings.TrimSpace(c)
 		}

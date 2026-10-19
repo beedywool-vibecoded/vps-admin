@@ -19,8 +19,49 @@ func (s *Server) scriptsList(w http.ResponseWriter, r *http.Request) {
 		writeErrorMsg(w, http.StatusInternalServerError, "scripts_failed", err.Error())
 		return
 	}
+	titles := s.scriptTitles(r.Context())
+	for i := range list {
+		list[i].Title = titles[list[i].Name]
+	}
 	runs, _ := s.Store.ScriptRuns(r.Context(), "", 50)
 	writeJSON(w, http.StatusOK, map[string]any{"scripts": list, "runs": runs, "dir": s.Cfg.ScriptsDir})
+}
+
+const scriptTitlesSetting = "scripts.titles"
+
+// scriptTitles maps link names to the display names given in the panel.
+func (s *Server) scriptTitles(ctx context.Context) map[string]string {
+	m := map[string]string{}
+	json.Unmarshal([]byte(s.Store.Setting(ctx, scriptTitlesSetting, "{}")), &m)
+	return m
+}
+
+// scriptRename sets the display name of a script; an empty title goes back to the link
+// name. The link itself keeps its name, so the CLI and the history are unchanged.
+func (s *Server) scriptRename(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Title string `json:"title"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	name := r.PathValue("name")
+	title := auth.CleanName(body.Title, "")
+	titles := s.scriptTitles(r.Context())
+	if title == "" || title == name {
+		delete(titles, name)
+	} else {
+		titles[name] = title
+	}
+	b, _ := json.Marshal(titles)
+	err := s.Store.SetSetting(r.Context(), scriptTitlesSetting, string(b))
+	s.audit(r, "script.rename", name, err)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) scriptRun(w http.ResponseWriter, r *http.Request) {

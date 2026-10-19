@@ -27,12 +27,22 @@ class Api {
     'Accept': 'application/json',
   };
 
-  static Future<String> pair(String base, String code, String name) async {
+  static Future<String> pair(
+    String base,
+    String code,
+    String name,
+    String owner,
+  ) async {
     final res = await http
         .post(
           Uri.parse('$base/api/auth/pair'),
           headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'code': code, 'name': name, 'kind': 'app'}),
+          body: jsonEncode({
+            'code': code,
+            'name': name,
+            'owner': owner,
+            'kind': 'app',
+          }),
         )
         .timeout(_timeout);
     final body = _decode(res);
@@ -40,7 +50,7 @@ class Api {
       final err = body['error'] as String? ?? 'http_${res.statusCode}';
       throw ApiException(res.statusCode, err, switch (err) {
         'bad_code' =>
-          'This code is wrong, expired or already used. Run "sudo vps-admin pair" for a new one.',
+          'This code is wrong, expired or already used. Run `sudo vps-admin pair` for a new one.',
         'rate_limited' => 'Too many attempts. Wait a few minutes.',
         _ => body['message'] as String? ?? 'Pairing failed (${res.statusCode})',
       });
@@ -174,6 +184,8 @@ class Api {
     );
   }
 
+  Future<void> renameScript(String name, String title) =>
+      put('/api/scripts/${Uri.encodeComponent(name)}/title', {'title': title});
   Future<void> runScript(String name, String args) =>
       post('/api/scripts/${Uri.encodeComponent(name)}/run', {'args': args});
   Future<void> stopScript(String name) =>
