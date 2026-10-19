@@ -7,6 +7,7 @@ package scripts
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -39,10 +40,47 @@ type Script struct {
 	Executable  bool   `json:"executable"`
 	Missing     bool   `json:"missing"` // the target was moved or deleted
 	Running     bool   `json:"running"`
+	// Dir is the compose folder the script belongs to, so the panel shows it with
+	// those containers. Found at link time, or given with -dir.
+	Dir string `json:"dir,omitempty"`
 }
 
-// Link creates (or replaces) name -> file in dir. Run as root by the CLI.
-func Link(dir, file, name string) (string, error) {
+const metaFile = ".meta.json"
+
+var composeNames = []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"}
+
+// composeDirOf walks up from the script folder (four levels at most) to the first folder
+// with a compose file.
+func composeDirOf(file string) string {
+	dir := filepath.Dir(file)
+	for i := 0; i < 4 && dir != "/"; i++ {
+		for _, n := range composeNames {
+			if _, err := os.Stat(filepath.Join(dir, n)); err == nil {
+				return dir
+			}
+		}
+		dir = filepath.Dir(dir)
+	}
+	return ""
+}
+
+func readMeta(dir string) map[string]string {
+	m := map[string]string{}
+	b, err := os.ReadFile(filepath.Join(dir, metaFile))
+	if err == nil {
+		json.Unmarshal(b, &m)
+	}
+	return m
+}
+
+func writeMeta(dir string, m map[string]string) error {
+	b, _ := json.MarshalIndent(m, "", "  ")
+	return os.WriteFile(filepath.Join(dir, metaFile), append(b, '\n'), 0o644)
+}
+
+// Link creates (or replaces) name -> file in dir. Run as root by the CLI. folder ties
+// the script to a compose folder; empty means "find it from the file location".
+func Link(dir, file, name, folder string) (string, error) {
 	abs, err := filepath.Abs(file)
 	if err != nil {
 		return "", err
@@ -71,6 +109,18 @@ func Link(dir, file, name string) (string, error) {
 	if err := os.Symlink(abs, link); err != nil {
 		return "", err
 	}
+	meta := readMeta(dir)
+	if folder == "" {
+		folder = composeDirOf(abs)
+	} else if folder, err = filepath.Abs(folder); err != nil {
+		return "", err
+	}
+	if folder != "" {
+		meta[name] = folder
+	} else {
+		delete(meta, name)
+	}
+	writeMeta(dir, meta)
 	if st.Mode()&0o111 == 0 {
 		return name, fmt.Errorf("linked, but %s is not executable: run chmod +x %s", abs, abs)
 	}
@@ -86,6 +136,11 @@ func Unlink(dir, name string) error {
 	fi, err := os.Lstat(link)
 	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
 		return ErrNotFound
+	}
+	meta := readMeta(dir)
+	if _, ok := meta[name]; ok {
+		delete(meta, name)
+		writeMeta(dir, meta)
 	}
 	return os.Remove(link)
 }
@@ -115,6 +170,8 @@ func describe(path string) string {
 type Runner struct {
 	Dir     string
 	DataDir string
+	// Helper is the root-owned run-script program; empty runs scripts directly.
+	Helper string
 
 	mu      sync.Mutex
 	running map[string]*Run
@@ -148,13 +205,14 @@ func (r *Runner) List() ([]Script, error) {
 		return nil, err
 	}
 	out := []Script{}
+	meta := readMeta(r.Dir)
 	for _, e := range entries {
 		if e.Type()&os.ModeSymlink == 0 || !nameRe.MatchString(e.Name()) {
 			continue
 		}
 		link := filepath.Join(r.Dir, e.Name())
 		target, _ := os.Readlink(link)
-		s := Script{Name: e.Name(), Target: target}
+		s := Script{Name: e.Name(), Target: target, Dir: meta[e.Name()]}
 		if st, err := os.Stat(link); err != nil {
 			s.Missing = true
 		} else {
@@ -191,10 +249,17 @@ func (r *Runner) Start(name string, args []string, onStart, onDone func(*Run)) (
 	r.running[name] = run
 	r.mu.Unlock()
 
-	cmd := exec.CommandContext(ctx, link, args...)
-	cmd.Dir = filepath.Dir(link)
-	if target, err := filepath.EvalSymlinks(link); err == nil {
-		cmd.Dir = filepath.Dir(target) // scripts often expect to run next to their files
+	// As root (development, containers) the script runs directly; otherwise the
+	// root-owned helper runs it as the owner of the file.
+	var cmd *exec.Cmd
+	if os.Geteuid() != 0 && r.Helper != "" {
+		cmd = exec.CommandContext(ctx, "sudo", append([]string{"-n", "--", r.Helper, name}, args...)...)
+	} else {
+		cmd = exec.CommandContext(ctx, link, args...)
+		cmd.Dir = filepath.Dir(link)
+		if target, err := filepath.EvalSymlinks(link); err == nil {
+			cmd.Dir = filepath.Dir(target) // scripts often expect to run next to their files
+		}
 	}
 	cmd.Env = []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "HOME=" + r.DataDir, "LANG=C.UTF-8", "TERM=dumb", "VPS_ADMIN=1"}
 	cmd.Stdout, cmd.Stderr = run, run
@@ -319,3 +384,6 @@ func SplitArgs(s string) ([]string, error) {
 	}
 	return out, nil
 }
+
+// FolderOf returns the compose folder a script is tied to.
+func (r *Runner) FolderOf(name string) string { return readMeta(r.Dir)[name] }

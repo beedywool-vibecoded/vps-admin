@@ -6,6 +6,7 @@ import M3Shape from '@/components/M3Shape.vue'
 import M3Switch from '@/components/M3Switch.vue'
 import EnvEditor from '@/components/EnvEditor.vue'
 import M3Select from '@/components/M3Select.vue'
+import BuildCommands, { type Commands } from '@/components/BuildCommands.vue'
 import { api, type BuildType, type Detection, type EnvVar, type GitHubStatus, type Repo } from '@/lib/api'
 import { BUILD_LABEL, slugify, suggestDomain } from '@/lib/deploys'
 import { ago } from '@/lib/format'
@@ -26,6 +27,7 @@ const branch = ref('')
 const rootDir = ref('')
 const build = ref<BuildType>('auto')
 const port = ref(0)
+const cmds = ref<Commands>({ installCmd: '', buildCmd: '', startCmd: '', dockerfile: '', composeFile: '' })
 const domain = ref('')
 const autoDeploy = ref(true)
 const keep = ref(5)
@@ -91,6 +93,7 @@ async function submit() {
       autoDeploy: autoDeploy.value,
       keep: keep.value,
       memoryMb: memoryMb.value || 0,
+      ...cmds.value,
       env: env.value,
       deploy: true,
     })
@@ -215,6 +218,8 @@ onMounted(async () => {
             <small>0 for no limit</small>
           </label>
         </div>
+
+        <BuildCommands v-model="cmds" :build="effectiveBuild" />
 
         <div>
           <h3 class="sub">Environment variables</h3>

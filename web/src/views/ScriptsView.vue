@@ -116,7 +116,7 @@ onBeforeUnmount(() => closeStream?.())
       <h2>No script yet</h2>
       <p class="muted">Link any executable file from the server, it shows up here with a Run button:</p>
       <code class="cmd">sudo vps-admin link /path/to/update-app.sh</code>
-      <p class="muted small">Add <code>-name</code> to choose its name. A comment on the second line becomes its description.</p>
+      <p class="muted small">Add <code>-name</code> to choose its name and <code>-dir</code> to attach it to a compose folder (found automatically when the script sits in one). A comment on the second line becomes its description.</p>
     </section>
 
     <div v-else class="cols">
@@ -133,6 +133,7 @@ onBeforeUnmount(() => closeStream?.())
               </div>
               <div v-if="s.description" class="muted small">{{ s.description }}</div>
               <code class="target">{{ s.target }}</code>
+              <div v-if="s.dir" class="muted small folder"><Icon name="folder" :size="14" /> Shown with the containers of <code>{{ s.dir }}</code></div>
             </div>
           </div>
           <div class="actions">
@@ -235,6 +236,12 @@ onBeforeUnmount(() => closeStream?.())
   font-size: 12px;
   color: var(--on-sv);
   word-break: break-all;
+}
+.folder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
 }
 .actions {
   display: flex;

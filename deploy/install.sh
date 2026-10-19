@@ -164,6 +164,8 @@ allow nft "list ruleset"
 allow fail2ban-client "status" "status *"
 allow ss "-tulnpH"
 allow systemctl "start *" "stop *" "restart *" "reload *" "reboot"
+# Linked scripts run as their owner through this root-owned helper.
+rules+="vps-admin ALL=(root) NOPASSWD: /opt/vps-admin/run-script *"$'\n'
 printf '# Managed by the VPS Admin installer, rewritten on every run.\nDefaults:vps-admin !requiretty\n%s' "$rules" > "$TMP/sudoers"
 visudo -cf "$TMP/sudoers" >/dev/null || die "generated sudoers file is invalid"
 install -o root -g root -m 440 "$TMP/sudoers" /etc/sudoers.d/vps-admin
@@ -182,8 +184,10 @@ fetch_asset() { # name, destination
 	fi
 }
 fetch_asset preflight.sh "$TMP/preflight.sh"
+fetch_asset run-script.sh "$TMP/run-script.sh"
 fetch_asset vps-admin.service "$TMP/vps-admin.service"
 install -o root -g root -m 755 "$TMP/preflight.sh" /opt/vps-admin/preflight.sh
+install -o root -g root -m 755 "$TMP/run-script.sh" /opt/vps-admin/run-script
 install -o root -g root -m 644 "$TMP/vps-admin.service" /etc/systemd/system/vps-admin.service
 
 systemctl stop vps-admin 2>/dev/null || true

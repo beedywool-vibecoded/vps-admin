@@ -129,6 +129,7 @@ onBeforeUnmount(() => clearInterval(timer))
         <div class="name">
           <StatusDot :tone="appTone(a.status, a.latest)" :label="a.status" />
           {{ a.id }}
+          <span v-if="a.dir" class="chip folder-chip" v-tip="a.dir"><Icon name="folder" :size="14" /> Existing folder</span>
         </div>
         <div class="muted small ellipsis">
           {{ a.repo }} · {{ a.branch }} · {{ BUILD_LABEL[a.build] }}<template v-if="a.domain"> · {{ a.domain }}</template>
@@ -147,6 +148,10 @@ onBeforeUnmount(() => clearInterval(timer))
 </template>
 
 <style scoped>
+.folder-chip {
+  gap: 4px;
+  font-weight: 400;
+}
 .connect {
   display: flex;
   flex-wrap: wrap;

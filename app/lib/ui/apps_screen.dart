@@ -63,7 +63,11 @@ class AppsScreen extends StatelessWidget {
                   ],
                 ),
                 subtitle: Text(
-                  a.domain.isNotEmpty ? a.domain : '${a.repo} · ${a.branch}',
+                  a.domain.isNotEmpty
+                      ? a.domain
+                      : a.dir.isNotEmpty
+                      ? a.dir
+                      : '${a.repo} · ${a.branch}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -135,6 +139,22 @@ class AppDetailScreen extends StatelessWidget {
                 '${a.repo} · ${a.branch}${a.domain.isNotEmpty ? ' · ${a.domain}' : ''}',
                 style: t.textTheme.bodySmall,
               ),
+              if (a.dir.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.folder_outlined, size: 16),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Updates ${a.dir} on push',
+                          style: t.textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -158,7 +178,35 @@ class AppDetailScreen extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                icon: const Icon(Icons.sync),
+                label: const Text('Check for updates'),
+                onPressed: () async {
+                  try {
+                    final c = await api.checkApp(id);
+                    if (!context.mounted) return;
+                    if (c.upToDate) {
+                      showInfo(context, 'Up to date with ${a.branch}');
+                      return;
+                    }
+                    final short = c.latestSha.length > 7
+                        ? c.latestSha.substring(0, 7)
+                        : c.latestSha;
+                    if (await confirmAction(
+                      context,
+                      title: 'New commit on ${a.branch}',
+                      body: '$short ${c.latestMessage}',
+                      action: 'Update now',
+                    )) {
+                      run(() => api.deploy(id), 'Update started');
+                    }
+                  } catch (e) {
+                    if (context.mounted) showError(context, e);
+                  }
+                },
+              ),
+              const SizedBox(height: 8),
               Text('Deployments', style: t.textTheme.titleMedium),
               const SizedBox(height: 8),
               Card(

@@ -33,11 +33,11 @@ func TestLinkListRun(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "update-app.sh")
 	os.WriteFile(src, []byte("#!/bin/sh\n# Pulls and restarts the app\necho \"hello $1\"\nexit 3\n"), 0o755)
 
-	name, err := Link(filepath.Join(dir, "scripts"), src, "")
+	name, err := Link(filepath.Join(dir, "scripts"), src, "", "")
 	if err != nil || name != "update-app" {
 		t.Fatalf("link: %s, %v", name, err)
 	}
-	if _, err := Link(filepath.Join(dir, "scripts"), src, "../evil"); err == nil {
+	if _, err := Link(filepath.Join(dir, "scripts"), src, "../evil", ""); err == nil {
 		t.Error("path in name accepted")
 	}
 	r := &Runner{Dir: filepath.Join(dir, "scripts"), DataDir: dir}
@@ -72,5 +72,33 @@ func TestLinkListRun(t *testing.T) {
 	}
 	if _, err := os.Stat(src); err != nil {
 		t.Fatal("unlink removed the target file")
+	}
+}
+
+func TestComposeFolderDetected(t *testing.T) {
+	proj := t.TempDir()
+	os.WriteFile(filepath.Join(proj, "docker-compose.yml"), []byte("services: {}\n"), 0o644)
+	os.MkdirAll(filepath.Join(proj, "tools"), 0o755)
+	src := filepath.Join(proj, "tools", "update.sh")
+	os.WriteFile(src, []byte("#!/bin/sh\n"), 0o755)
+	dir := t.TempDir()
+	if _, err := Link(dir, src, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	r := &Runner{Dir: dir}
+	r.Init()
+	list, _ := r.List()
+	if len(list) != 1 || list[0].Dir != proj {
+		t.Fatalf("compose folder not found: %+v", list)
+	}
+	other := t.TempDir()
+	Link(dir, src, "update", other)
+	list, _ = r.List()
+	if list[0].Dir != other {
+		t.Fatalf("-dir not honored: %+v", list)
+	}
+	Unlink(dir, "update")
+	if len(readMeta(dir)) != 0 {
+		t.Fatal("meta kept after unlink")
 	}
 }

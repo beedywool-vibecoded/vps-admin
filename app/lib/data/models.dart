@@ -134,6 +134,7 @@ class AppInfo {
       branch = j['branch'] as String,
       build = j['build'] as String,
       domain = j['domain'] as String? ?? '',
+      dir = j['dir'] as String? ?? '',
       status = j['status'] as String? ?? '',
       autoDeploy = j['autoDeploy'] as bool? ?? false,
       live = j['live'] == null
@@ -142,9 +143,20 @@ class AppInfo {
       latest = j['latest'] == null
           ? null
           : Deployment(j['latest'] as Map<String, dynamic>);
-  final String id, repo, branch, build, domain, status;
+  final String id, repo, branch, build, domain, dir, status;
   final bool autoDeploy;
   final Deployment? live, latest;
+}
+
+class UpdateCheck {
+  UpdateCheck(Map<String, dynamic> j)
+    : current = j['current'] as String? ?? '',
+      latestSha = (j['latest'] as Map<String, dynamic>)['sha'] as String,
+      latestMessage =
+          (j['latest'] as Map<String, dynamic>)['message'] as String? ?? '',
+      upToDate = j['upToDate'] as bool? ?? false;
+  final String current, latestSha, latestMessage;
+  final bool upToDate;
 }
 
 class Conversation {

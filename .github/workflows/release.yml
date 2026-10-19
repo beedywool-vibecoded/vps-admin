@@ -44,7 +44,7 @@ jobs:
               -ldflags "-s -w -X github.com/beedywool/vps-admin/internal/buildinfo.Version=$GITHUB_REF_NAME -X github.com/beedywool/vps-admin/internal/buildinfo.Repo=$GITHUB_REPOSITORY" \
               -o dist/vps-admin_linux_$arch ./cmd/vps-admin
           done
-          cp deploy/install.sh deploy/preflight.sh deploy/vps-admin.service dist/
+          cp deploy/install.sh deploy/preflight.sh deploy/run-script.sh deploy/vps-admin.service dist/
           cd dist && sha256sum vps-admin_linux_* > SHA256SUMS
 
       - uses: actions/setup-java@v5

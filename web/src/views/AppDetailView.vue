@@ -8,7 +8,8 @@ import StatusDot from '@/components/StatusDot.vue'
 import EnvEditor from '@/components/EnvEditor.vue'
 import M3Select from '@/components/M3Select.vue'
 import M3Checkbox from '@/components/M3Checkbox.vue'
-import { api, streamDeployment, type AppView, type BuildType, type Deployment, type EnvVar } from '@/lib/api'
+import BuildCommands from '@/components/BuildCommands.vue'
+import { api, streamDeployment, type AppView, type BuildType, type Deployment, type EnvVar, type UpdateCheck } from '@/lib/api'
 import { BUILD_LABEL, STATUS_LABEL, appTone, depTone } from '@/lib/deploys'
 import { ago, dateTime } from '@/lib/format'
 import { confirm, toast, toastError } from '@/lib/ui'
@@ -32,6 +33,10 @@ let closeStream: (() => void) | undefined
 
 // Settings form
 const form = ref({ branch: '', rootDir: '', build: 'auto' as BuildType, port: 0, domain: '', autoDeploy: true, keep: 5, memoryMb: 0 })
+const cmds = ref({ installCmd: '', buildCmd: '', startCmd: '', dockerfile: '', composeFile: '' })
+const checkResult = ref<UpdateCheck | null>(null)
+const checking = ref(false)
+const effectiveBuild = computed(() => (form.value.build === 'auto' ? app.value?.live?.build || app.value?.latest?.build || '' : form.value.build))
 const deleteVolumes = ref(false)
 const buildOptions = (Object.keys(BUILD_LABEL) as BuildType[]).map((k) => ({ value: k, label: BUILD_LABEL[k]! }))
 
@@ -46,7 +51,10 @@ async function load() {
     domains.value = res.domains
     if (!envDirty) env.value = res.env.map((e) => ({ ...e, keep: e.secret && e.hasValue }))
     const a = res.app
-    if (!formDirty) form.value = { branch: a.branch, rootDir: a.rootDir, build: a.build, port: a.port, domain: a.domain, autoDeploy: a.autoDeploy, keep: a.keep, memoryMb: a.memoryMb }
+    if (!formDirty) {
+      form.value = { branch: a.branch, rootDir: a.rootDir, build: a.build, port: a.port, domain: a.domain, autoDeploy: a.autoDeploy, keep: a.keep, memoryMb: a.memoryMb }
+      cmds.value = { installCmd: a.installCmd, buildCmd: a.buildCmd, startCmd: a.startCmd, dockerfile: a.dockerfile, composeFile: a.composeFile }
+    }
     if (selected.value === null && res.deployments[0]) select(res.deployments[0].id)
   } catch (e) {
     toastError(e)
@@ -56,7 +64,7 @@ async function load() {
 let envDirty = false
 let formDirty = false
 watch(env, () => (envDirty = true), { deep: true })
-watch(form, () => (formDirty = true), { deep: true })
+watch([form, cmds], () => (formDirty = true), { deep: true })
 
 function select(id: number) {
   selected.value = id
@@ -120,10 +128,21 @@ async function saveEnv() {
   }
 }
 
+async function checkUpdates() {
+  checking.value = true
+  try {
+    checkResult.value = await api.checkApp(props.id)
+  } catch (e) {
+    toastError(e)
+  } finally {
+    checking.value = false
+  }
+}
+
 async function saveSettings() {
   busy.value = true
   try {
-    await api.updateApp(props.id, form.value)
+    await api.updateApp(props.id, { ...form.value, ...cmds.value })
     formDirty = false
     toast('Settings saved, they apply at the next deployment')
     await load()
@@ -136,16 +155,18 @@ async function saveSettings() {
 
 async function remove() {
   const ok = await confirm({
-    title: `Delete ${props.id}?`,
-    body: `Stops and removes its containers, images, Caddy site and files${deleteVolumes.value ? ', and its data volumes' : '. Named volumes are kept'}. The repository is not touched.`,
-    action: 'Delete',
-    danger: true,
+    title: app.value?.dir ? `Unlink ${props.id}?` : `Delete ${props.id}?`,
+    body: app.value?.dir
+      ? `Pushes stop updating ${app.value.dir}. The folder and its containers stay as they are.`
+      : `Stops and removes its containers, images, Caddy site and files${deleteVolumes.value ? ', and its data volumes' : '. Named volumes are kept'}. The repository is not touched.`,
+    action: app.value?.dir ? 'Unlink' : 'Delete',
+    danger: !app.value?.dir,
   })
   if (!ok) return
   busy.value = true
   try {
     await api.deleteApp(props.id, deleteVolumes.value)
-    toast(`${props.id} deleted`)
+    toast(`${props.id} ${app.value?.dir ? 'unlinked' : 'deleted'}`)
     router.replace('/apps')
   } catch (e) {
     toastError(e)
@@ -179,11 +200,26 @@ onBeforeUnmount(() => {
           <span><Icon name="github" :size="14" /> {{ app.repo }} · <Icon name="branch" :size="14" /> {{ app.branch }}</span>
           <span>{{ BUILD_LABEL[app.live?.build || app.latest?.build || app.build] }}</span>
           <span v-if="app.live?.hostPort">127.0.0.1:{{ app.live.hostPort }}</span>
+          <span v-if="app.dir"><Icon name="folder" :size="14" /> <code>{{ app.dir }}</code></span>
         </div>
       </div>
+      <button class="btn btn-text st" type="button" :disabled="checking" @click="checkUpdates">{{ checking ? 'Checking…' : 'Check for updates' }}</button>
       <button class="btn btn-outlined st" type="button" :disabled="busy || !app.live" @click="restart">Restart</button>
       <button class="btn btn-filled st" type="button" :disabled="busy || running" @click="redeploy">Redeploy</button>
     </header>
+
+    <div v-if="checkResult" class="upd card" :class="{ fresh: !checkResult.upToDate }">
+      <Icon :name="checkResult.upToDate ? 'check' : 'updates'" :size="20" />
+      <div class="grow small">
+        <template v-if="checkResult.upToDate">Up to date with {{ app.branch }}: <code>{{ checkResult.current.slice(0, 7) }}</code></template>
+        <template v-else>
+          New commit on {{ app.branch }}: <code>{{ checkResult.latest.sha.slice(0, 7) }}</code> {{ checkResult.latest.message }}
+          <span class="muted">(running <code>{{ checkResult.current.slice(0, 7) || 'nothing' }}</code>)</span>
+        </template>
+      </div>
+      <button v-if="!checkResult.upToDate" class="btn btn-filled st" type="button" :disabled="busy || running" @click="redeploy(); checkResult = null">Update now</button>
+      <button class="icon-btn st" type="button" aria-label="Dismiss" @click="checkResult = null"><Icon name="close" :size="18" /></button>
+    </div>
 
     <div class="tabs" role="tablist" aria-label="App sections">
       <button v-for="t in (['deployments', 'env', 'settings'] as const)" :key="t" role="tab" type="button" class="st" :class="{ on: tab === t }" :aria-selected="tab === t" @click="tab = t">
@@ -238,13 +274,16 @@ onBeforeUnmount(() => {
           <label class="tf"><span>Root folder</span><input v-model.trim="form.rootDir" placeholder="/" /></label>
           <label class="tf"><span>Domain</span><input v-model.trim="form.domain" :disabled="!domains" :placeholder="domains ? 'app.example.com' : 'needs Caddy'" /></label>
           <label class="tf"><span>Port</span><input v-model.number="form.port" inputmode="numeric" /></label>
-          <label class="tf"><span>Memory limit (MiB, 0 for none)</span><input v-model.number="form.memoryMb" inputmode="numeric" /></label>
-          <label class="tf"><span>Versions kept</span><input v-model.number="form.keep" inputmode="numeric" /></label>
-          <M3Select v-model="form.build" label="Build" :options="buildOptions" />
+          <template v-if="!app.dir">
+            <label class="tf"><span>Memory limit (MiB, 0 for none)</span><input v-model.number="form.memoryMb" inputmode="numeric" /></label>
+            <label class="tf"><span>Versions kept</span><input v-model.number="form.keep" inputmode="numeric" /></label>
+          </template>
+          <M3Select v-if="!app.dir" v-model="form.build" label="Build" :options="buildOptions" />
         </div>
+        <BuildCommands v-model="cmds" :build="app.dir ? 'compose' : effectiveBuild" />
         <div class="setting">
           <div class="grow">
-            <div>Deploy on every push</div>
+            <div>{{ app.dir ? 'Update the folder on every push' : 'Deploy on every push' }}</div>
             <div class="muted small">On {{ form.branch }}</div>
           </div>
           <M3Switch v-model="form.autoDeploy" label="Deploy on every push" />
@@ -254,7 +293,12 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section class="card danger stack">
+      <section v-if="app.dir" class="card danger stack">
+        <h2>Unlink from GitHub</h2>
+        <p class="muted small">Pushes stop updating <code>{{ app.dir }}</code>. Nothing is deleted: the folder and its containers keep running.</p>
+        <button class="btn btn-outlined st" type="button" :disabled="busy || running" @click="remove">Unlink {{ app.id }}</button>
+      </section>
+      <section v-else class="card danger stack">
         <h2>Delete app</h2>
         <p class="muted small">Stops and removes the containers, images, the Caddy site and the source folder. Named volumes are kept unless you tick the box.</p>
         <M3Checkbox v-model="deleteVolumes" class="check" label="Also delete its data volumes" />
@@ -266,6 +310,17 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.upd {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 12px 16px;
+}
+.upd.fresh {
+  background: var(--tc);
+  color: var(--on-tc);
+}
 .head {
   display: flex;
   flex-wrap: wrap;

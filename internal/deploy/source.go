@@ -94,21 +94,42 @@ func installCmd(files []string) string {
 	return "npm install"
 }
 
+// Commands override the steps of the generated Dockerfile; empty means the default.
+type Commands struct {
+	Install, Build, Start string
+}
+
 // GeneratedDockerfile returns the Dockerfile used for node and static builds. Static
 // builds look for the usual output folders of front-end tools.
-func GeneratedDockerfile(build string, files []string, hasBuildScript bool) string {
+func GeneratedDockerfile(build string, files []string, hasBuildScript bool, cmd Commands) string {
+	install := installCmd(files)
+	if cmd.Install != "" {
+		install = cmd.Install
+	}
 	switch build {
 	case BuildNode:
+		buildStep := "npm run build --if-present"
+		if cmd.Build != "" {
+			buildStep = cmd.Build
+		}
+		start := `["npm", "start"]`
+		if cmd.Start != "" {
+			start = `["sh", "-c", ` + strconv.Quote(cmd.Start) + `]`
+		}
 		return `FROM node:22-alpine
 WORKDIR /app
 COPY . .
-RUN ` + installCmd(files) + `
-RUN npm run build --if-present
+RUN ` + install + `
+RUN ` + buildStep + `
 ENV NODE_ENV=production PORT=3000
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ` + start + `
 `
 	case BuildStatic:
+		buildStep := "npm run build"
+		if cmd.Build != "" {
+			buildStep, hasBuildScript = cmd.Build, true
+		}
 		if !hasBuildScript {
 			return `FROM nginx:1.27-alpine
 COPY . /usr/share/nginx/html
@@ -118,8 +139,8 @@ EXPOSE 80
 		return `FROM node:22-alpine AS build
 WORKDIR /app
 COPY . .
-RUN ` + installCmd(files) + `
-RUN npm run build
+RUN ` + install + `
+RUN ` + buildStep + `
 RUN for d in dist build out public; do if [ -f "$d/index.html" ]; then cp -r "$d" /site; exit 0; fi; done; echo "no dist/, build/, out/ or public/ folder with an index.html after the build" >&2; exit 1
 FROM nginx:1.27-alpine
 COPY --from=build /site /usr/share/nginx/html

@@ -142,6 +142,8 @@ class Api {
   }
 
   Future<void> deploy(String id) => post('/api/apps/$id/deploy');
+  Future<UpdateCheck> checkApp(String id) async =>
+      UpdateCheck(await get('/api/apps/$id/check'));
   Future<void> rollback(String id, int dep) =>
       post('/api/apps/$id/rollback/$dep');
   Future<void> restartApp(String id) => post('/api/apps/$id/restart');

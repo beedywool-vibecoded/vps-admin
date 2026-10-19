@@ -34,11 +34,20 @@ func TestDetect(t *testing.T) {
 }
 
 func TestGeneratedDockerfile(t *testing.T) {
-	if df := GeneratedDockerfile(BuildNode, []string{"pnpm-lock.yaml"}, true); !strings.Contains(df, "pnpm install --frozen-lockfile") {
+	if df := GeneratedDockerfile(BuildNode, []string{"pnpm-lock.yaml"}, true, Commands{}); !strings.Contains(df, "pnpm install --frozen-lockfile") {
 		t.Error("lockfile not honored")
 	}
-	if df := GeneratedDockerfile(BuildStatic, nil, false); strings.Contains(df, "node") {
+	if df := GeneratedDockerfile(BuildStatic, nil, false, Commands{}); strings.Contains(df, "node") {
 		t.Error("plain static site should not need node")
+	}
+	df := GeneratedDockerfile(BuildNode, nil, true, Commands{Install: "npm ci --omit=dev", Build: "npm run compile", Start: "node dist/server.js --port 3000"})
+	for _, want := range []string{"RUN npm ci --omit=dev", "RUN npm run compile", `CMD ["sh", "-c", "node dist/server.js --port 3000"]`} {
+		if !strings.Contains(df, want) {
+			t.Errorf("custom command missing: %s\n%s", want, df)
+		}
+	}
+	if df := GeneratedDockerfile(BuildStatic, nil, false, Commands{Build: "make site"}); !strings.Contains(df, "RUN make site") {
+		t.Error("custom static build ignored")
 	}
 }
 

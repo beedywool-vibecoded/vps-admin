@@ -20,6 +20,14 @@ type App struct {
 	Keep           int       `json:"keep"`
 	MemoryMB       int       `json:"memoryMb"`
 	CreatedAt      time.Time `json:"createdAt"`
+	// Dir is an existing folder (a git checkout with a compose file) that this app keeps
+	// up to date in place. Empty for apps the panel builds itself.
+	Dir         string `json:"dir"`
+	InstallCmd  string `json:"installCmd"`
+	BuildCmd    string `json:"buildCmd"`
+	StartCmd    string `json:"startCmd"`
+	Dockerfile  string `json:"dockerfile"`  // path relative to the root folder
+	ComposeFile string `json:"composeFile"` // path relative to the root folder
 }
 
 type EnvVar struct {
@@ -46,14 +54,15 @@ type Deployment struct {
 
 var ErrExists = errors.New("already exists")
 
-const appCols = `id, repo, installation_id, branch, root_dir, build, port, domain, auto_deploy, keep, memory_mb, created_at`
+const appCols = `id, repo, installation_id, branch, root_dir, build, port, domain, auto_deploy, keep, memory_mb, created_at, dir, install_cmd, build_cmd, start_cmd, dockerfile, compose_file`
 
 type scanner interface{ Scan(...any) error }
 
 func scanApp(r scanner) (*App, error) {
 	var a App
 	var created int64
-	if err := r.Scan(&a.ID, &a.Repo, &a.InstallationID, &a.Branch, &a.RootDir, &a.Build, &a.Port, &a.Domain, &a.AutoDeploy, &a.Keep, &a.MemoryMB, &created); err != nil {
+	if err := r.Scan(&a.ID, &a.Repo, &a.InstallationID, &a.Branch, &a.RootDir, &a.Build, &a.Port, &a.Domain, &a.AutoDeploy, &a.Keep, &a.MemoryMB, &created,
+		&a.Dir, &a.InstallCmd, &a.BuildCmd, &a.StartCmd, &a.Dockerfile, &a.ComposeFile); err != nil {
 		return nil, err
 	}
 	a.CreatedAt = time.Unix(created, 0)
@@ -64,14 +73,17 @@ func (s *Store) AddApp(ctx context.Context, a *App) error {
 	if _, err := s.App(ctx, a.ID); err == nil {
 		return ErrExists
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO apps(`+appCols+`) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.ID, a.Repo, a.InstallationID, a.Branch, a.RootDir, a.Build, a.Port, a.Domain, a.AutoDeploy, a.Keep, a.MemoryMB, now())
+	_, err := s.db.ExecContext(ctx, `INSERT INTO apps(`+appCols+`) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.ID, a.Repo, a.InstallationID, a.Branch, a.RootDir, a.Build, a.Port, a.Domain, a.AutoDeploy, a.Keep, a.MemoryMB, now(),
+		a.Dir, a.InstallCmd, a.BuildCmd, a.StartCmd, a.Dockerfile, a.ComposeFile)
 	return err
 }
 
 func (s *Store) UpdateApp(ctx context.Context, a *App) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE apps SET branch = ?, root_dir = ?, build = ?, port = ?, domain = ?, auto_deploy = ?, keep = ?, memory_mb = ? WHERE id = ?`,
-		a.Branch, a.RootDir, a.Build, a.Port, a.Domain, a.AutoDeploy, a.Keep, a.MemoryMB, a.ID)
+	_, err := s.db.ExecContext(ctx, `UPDATE apps SET branch = ?, root_dir = ?, build = ?, port = ?, domain = ?, auto_deploy = ?, keep = ?, memory_mb = ?,
+		install_cmd = ?, build_cmd = ?, start_cmd = ?, dockerfile = ?, compose_file = ? WHERE id = ?`,
+		a.Branch, a.RootDir, a.Build, a.Port, a.Domain, a.AutoDeploy, a.Keep, a.MemoryMB,
+		a.InstallCmd, a.BuildCmd, a.StartCmd, a.Dockerfile, a.ComposeFile, a.ID)
 	return err
 }
 

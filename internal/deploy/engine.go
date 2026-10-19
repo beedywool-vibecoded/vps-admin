@@ -58,6 +58,8 @@ type Engine struct {
 	SitesDir string
 	// ReloadCaddy applies the snippets; Caddy refuses a bad config and keeps the old one.
 	ReloadCaddy func(context.Context) error
+	// gitRemote replaces the GitHub clone URL of linked folders in tests.
+	gitRemote func(repo, token string) string
 
 	jobs chan job
 
@@ -285,7 +287,9 @@ func (e *Engine) process(ctx context.Context, j job) {
 	e.setStatus(ctx, d, "building")
 	env, err := e.envFor(ctx, app.ID)
 	if err == nil {
-		if d.Image == "" || app.Build == BuildCompose {
+		if app.Dir != "" {
+			err = e.updateFolder(ctx, l, app, d)
+		} else if d.Image == "" || app.Build == BuildCompose {
 			err = e.fetchAndBuild(ctx, l, &app, d, env)
 		} else {
 			l.Printf("Rolling back to %s (image %s, no rebuild)", short(d.SHA), d.Image)
@@ -371,7 +375,12 @@ func (e *Engine) fetchAndBuild(ctx context.Context, l *logger, app *store.App, d
 
 	files := listRoot(root)
 	pkg, _ := os.ReadFile(filepath.Join(root, "package.json"))
-	dockerfile, _ := os.ReadFile(filepath.Join(root, "Dockerfile"))
+	dfPath := "Dockerfile"
+	if app.Dockerfile != "" {
+		dfPath = app.Dockerfile
+		files = append(files, "Dockerfile")
+	}
+	dockerfile, _ := os.ReadFile(filepath.Join(root, dfPath))
 	det := Detect(files, string(pkg), string(dockerfile))
 	build := app.Build
 	if build == BuildAuto || build == "" {
@@ -411,11 +420,13 @@ func (e *Engine) fetchAndBuild(ctx context.Context, l *logger, app *store.App, d
 	if build == BuildNode || build == BuildStatic {
 		var p packageJSON
 		json.Unmarshal(pkg, &p)
-		gen := GeneratedDockerfile(build, files, p.Scripts["build"] != "")
+		gen := GeneratedDockerfile(build, files, p.Scripts["build"] != "", Commands{app.InstallCmd, app.BuildCmd, app.StartCmd})
 		if err := os.WriteFile(filepath.Join(root, "Dockerfile.vps-admin"), []byte(gen), 0o644); err != nil {
 			return err
 		}
 		args = append(args, "-f", "Dockerfile.vps-admin")
+	} else if app.Dockerfile != "" {
+		args = append(args, "-f", app.Dockerfile)
 	}
 	args = append(args, ".")
 	l.Printf("Building image %s", imageName(app.ID, d.SHA))
@@ -564,15 +575,18 @@ func (e *Engine) composeUp(ctx context.Context, l *logger, app store.App, root s
 		return err
 	}
 	l.Printf("docker compose up (project %s)", e.composeProject(app.ID))
-	return e.docker(ctx, l, root, env, "compose", "-p", e.composeProject(app.ID), "--env-file", ".env.vps-admin",
-		"up", "-d", "--build", "--remove-orphans")
+	args := []string{"compose", "-p", e.composeProject(app.ID), "--env-file", ".env.vps-admin"}
+	if app.ComposeFile != "" {
+		args = append(args, "-f", app.ComposeFile)
+	}
+	return e.docker(ctx, l, root, env, append(args, "up", "-d", "--build", "--remove-orphans")...)
 }
 
 func (e *Engine) goLiveCompose(ctx context.Context, l *logger, app store.App, d *store.Deployment) error {
 	e.setStatus(ctx, d, "starting")
 	l.Printf("Checking the services")
 	time.Sleep(8 * time.Second)
-	out, err := e.dockerOut(ctx, "compose", "-p", e.composeProject(app.ID), "ps", "-a", "--format", "{{.Service}} {{.State}} {{.ExitCode}}")
+	out, err := e.dockerOut(ctx, "compose", "-p", e.projectName(app), "ps", "-a", "--format", "{{.Service}} {{.State}} {{.ExitCode}}")
 	if err != nil {
 		return err
 	}
@@ -659,7 +673,7 @@ func (e *Engine) prune(ctx context.Context, l *logger, app store.App) {
 // Restart restarts what currently serves the app.
 func (e *Engine) Restart(ctx context.Context, app store.App) error {
 	if app.Build == BuildCompose {
-		return e.docker(ctx, io.Discard, "", nil, "compose", "-p", e.composeProject(app.ID), "restart")
+		return e.docker(ctx, io.Discard, "", nil, "compose", "-p", e.projectName(app), "restart")
 	}
 	live, err := e.Store.LiveDeployment(ctx, app.ID)
 	if err != nil {
@@ -676,7 +690,10 @@ func (e *Engine) Remove(ctx context.Context, app store.App, volumes bool) error 
 	}
 	var errs []error
 	src := filepath.Join(e.DataDir, "apps", app.ID, "src")
-	if app.Build == BuildCompose {
+	if app.Dir != "" {
+		// A linked folder belongs to the administrator: unlinking stops the updates and
+		// leaves the folder and its containers exactly as they are.
+	} else if app.Build == BuildCompose {
 		args := []string{"compose", "-p", e.composeProject(app.ID), "down", "--remove-orphans", "--rmi", "local"}
 		if volumes {
 			args = append(args, "-v")
@@ -719,7 +736,7 @@ func (e *Engine) Remove(ctx context.Context, app store.App, volumes bool) error 
 // ContainerStatus reports the docker state of the live deployment, for the app list.
 func (e *Engine) ContainerStatus(ctx context.Context, app store.App) string {
 	if app.Build == BuildCompose {
-		out, err := e.dockerOut(ctx, "compose", "-p", e.composeProject(app.ID), "ps", "-a", "--format", "{{.State}}")
+		out, err := e.dockerOut(ctx, "compose", "-p", e.projectName(app), "ps", "-a", "--format", "{{.State}}")
 		if err != nil || out == "" {
 			return "stopped"
 		}

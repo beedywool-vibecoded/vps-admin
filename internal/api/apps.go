@@ -273,18 +273,23 @@ func (s *Server) loadApp(w http.ResponseWriter, r *http.Request) *store.App {
 }
 
 type appInput struct {
-	ID         string  `json:"id"`
-	Repo       string  `json:"repo"`
-	Branch     string  `json:"branch"`
-	RootDir    string  `json:"rootDir"`
-	Build      string  `json:"build"`
-	Port       int     `json:"port"`
-	Domain     string  `json:"domain"`
-	AutoDeploy bool    `json:"autoDeploy"`
-	Keep       int     `json:"keep"`
-	MemoryMB   int     `json:"memoryMb"`
-	Env        []envIn `json:"env"`
-	Deploy     bool    `json:"deploy"`
+	ID          string  `json:"id"`
+	Repo        string  `json:"repo"`
+	Branch      string  `json:"branch"`
+	RootDir     string  `json:"rootDir"`
+	Build       string  `json:"build"`
+	Port        int     `json:"port"`
+	Domain      string  `json:"domain"`
+	AutoDeploy  bool    `json:"autoDeploy"`
+	Keep        int     `json:"keep"`
+	MemoryMB    int     `json:"memoryMb"`
+	InstallCmd  string  `json:"installCmd"`
+	BuildCmd    string  `json:"buildCmd"`
+	StartCmd    string  `json:"startCmd"`
+	Dockerfile  string  `json:"dockerfile"`
+	ComposeFile string  `json:"composeFile"`
+	Env         []envIn `json:"env"`
+	Deploy      bool    `json:"deploy"`
 }
 
 type envIn struct {
@@ -320,6 +325,14 @@ func (in *appInput) validate() string {
 		return "invalid memory limit"
 	case strings.Contains(in.RootDir, ".."):
 		return "invalid root folder"
+	case strings.Contains(in.Dockerfile, "..") || strings.HasPrefix(in.Dockerfile, "/") ||
+		strings.Contains(in.ComposeFile, "..") || strings.HasPrefix(in.ComposeFile, "/"):
+		return "file paths are relative to the root folder"
+	}
+	for _, c := range []string{in.InstallCmd, in.BuildCmd, in.StartCmd} {
+		if strings.ContainsAny(c, "\n\r") {
+			return "commands fit on one line (chain them with &&)"
+		}
 	}
 	return ""
 }
@@ -398,7 +411,9 @@ func (s *Server) appCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a := &store.App{ID: in.ID, Repo: in.Repo, InstallationID: inst, Branch: in.Branch, RootDir: in.RootDir, Build: in.Build,
-		Port: in.Port, Domain: in.Domain, AutoDeploy: in.AutoDeploy, Keep: in.Keep, MemoryMB: in.MemoryMB}
+		Port: in.Port, Domain: in.Domain, AutoDeploy: in.AutoDeploy, Keep: in.Keep, MemoryMB: in.MemoryMB,
+		InstallCmd: strings.TrimSpace(in.InstallCmd), BuildCmd: strings.TrimSpace(in.BuildCmd), StartCmd: strings.TrimSpace(in.StartCmd),
+		Dockerfile: strings.TrimSpace(in.Dockerfile), ComposeFile: strings.TrimSpace(in.ComposeFile)}
 	err = s.Store.AddApp(r.Context(), a)
 	if errors.Is(err, store.ErrExists) {
 		writeErrorMsg(w, http.StatusConflict, "exists", "an app with this name already exists")
@@ -468,6 +483,11 @@ func (s *Server) appUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	a.Branch, a.RootDir, a.Build, a.Port, a.Domain = in.Branch, in.RootDir, in.Build, in.Port, in.Domain
 	a.AutoDeploy, a.Keep, a.MemoryMB = in.AutoDeploy, in.Keep, in.MemoryMB
+	a.InstallCmd, a.BuildCmd, a.StartCmd = strings.TrimSpace(in.InstallCmd), strings.TrimSpace(in.BuildCmd), strings.TrimSpace(in.StartCmd)
+	a.Dockerfile, a.ComposeFile = strings.TrimSpace(in.Dockerfile), strings.TrimSpace(in.ComposeFile)
+	if a.Dir != "" {
+		a.Build = deploy.BuildCompose // a linked folder is always a compose stack
+	}
 	err := s.Store.UpdateApp(r.Context(), a)
 	s.audit(r, "app.update", a.ID, err)
 	if err != nil {
@@ -642,4 +662,105 @@ func (s *Server) deploymentStream(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// composeFolder returns the working folder of a compose project running on this server.
+// Only such folders can be linked: the panel never touches arbitrary paths.
+func (s *Server) composeFolder(ctx context.Context, project string) (string, error) {
+	list, err := s.Docker.Containers(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, c := range list {
+		if c.Project == project && c.WorkDir != "" {
+			return c.WorkDir, nil
+		}
+	}
+	return "", errors.New("no compose project with this name runs on the server")
+}
+
+// folderInspect tells which repository and branch a compose folder follows.
+func (s *Server) folderInspect(w http.ResponseWriter, r *http.Request) {
+	dir, err := s.composeFolder(r.Context(), r.URL.Query().Get("project"))
+	if err != nil {
+		writeErrorMsg(w, http.StatusNotFound, "not_found", err.Error())
+		return
+	}
+	info, err := s.Deploy.InspectFolder(r.Context(), dir)
+	if err != nil {
+		writeErrorMsg(w, http.StatusBadRequest, "not_git", err.Error()+": clone the repository there first")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"dir": dir, "folder": info})
+}
+
+// appLink makes an existing compose folder update from GitHub, like a panel app.
+func (s *Server) appLink(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Project    string `json:"project"`
+		Repo       string `json:"repo"`
+		Branch     string `json:"branch"`
+		RootDir    string `json:"rootDir"`
+		AutoDeploy bool   `json:"autoDeploy"`
+	}
+	if err := readJSON(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	dir, err := s.composeFolder(r.Context(), in.Project)
+	if err != nil {
+		writeErrorMsg(w, http.StatusNotFound, "not_found", err.Error())
+		return
+	}
+	if _, err := s.Deploy.InspectFolder(r.Context(), dir); err != nil {
+		writeErrorMsg(w, http.StatusBadRequest, "not_git", err.Error())
+		return
+	}
+	if !deploy.AppID.MatchString(in.Project) || strings.TrimSpace(in.Branch) == "" || strings.Contains(in.RootDir, "..") {
+		writeErrorMsg(w, http.StatusBadRequest, "invalid", "invalid project, branch or root folder")
+		return
+	}
+	repos, err := s.GitHub.Repos(r.Context())
+	if err != nil {
+		writeErrorMsg(w, githubStatusCode(err), "github_failed", err.Error())
+		return
+	}
+	var inst int64
+	for _, rp := range repos {
+		if strings.EqualFold(rp.FullName, in.Repo) {
+			inst, in.Repo = rp.InstallationID, rp.FullName
+		}
+	}
+	if inst == 0 {
+		writeErrorMsg(w, http.StatusBadRequest, "invalid", "the GitHub App has no access to "+in.Repo+": add it on GitHub first")
+		return
+	}
+	a := &store.App{ID: in.Project, Repo: in.Repo, InstallationID: inst, Branch: in.Branch, RootDir: strings.Trim(in.RootDir, "/"),
+		Build: deploy.BuildCompose, AutoDeploy: in.AutoDeploy, Keep: 5, Dir: dir}
+	err = s.Store.AddApp(r.Context(), a)
+	if errors.Is(err, store.ErrExists) {
+		writeErrorMsg(w, http.StatusConflict, "exists", "this project is already linked")
+		return
+	}
+	s.audit(r, "app.link", a.ID+" "+dir, err)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal")
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"app": a})
+}
+
+// appCheck compares what runs with the head of the branch on GitHub.
+func (s *Server) appCheck(w http.ResponseWriter, r *http.Request) {
+	a := s.loadApp(w, r)
+	if a == nil {
+		return
+	}
+	c, err := s.GitHub.Commit(r.Context(), a.InstallationID, a.Repo, a.Branch)
+	if err != nil {
+		writeErrorMsg(w, githubStatusCode(err), "github_failed", err.Error())
+		return
+	}
+	current := s.Deploy.CurrentCommit(r.Context(), *a)
+	writeJSON(w, http.StatusOK, map[string]any{"current": current, "latest": c, "upToDate": current != "" && current == c.SHA})
 }

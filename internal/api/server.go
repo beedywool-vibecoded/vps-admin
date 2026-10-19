@@ -114,6 +114,9 @@ func (s *Server) Handler() http.Handler {
 
 	mux.Handle("GET /api/apps", full(s.appsList))
 	mux.Handle("POST /api/apps", full(s.appCreate))
+	mux.Handle("POST /api/apps/link", full(s.appLink))
+	mux.Handle("GET /api/folders/inspect", full(s.folderInspect))
+	mux.Handle("GET /api/apps/{id}/check", full(s.appCheck))
 	mux.Handle("GET /api/apps/{id}", full(s.appGet))
 	mux.Handle("PUT /api/apps/{id}", full(s.appUpdate))
 	mux.Handle("DELETE /api/apps/{id}", full(s.appDelete))

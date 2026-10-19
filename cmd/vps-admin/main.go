@@ -48,6 +48,7 @@ func main() {
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
 	cfgPath := fs.String("config", config.DefaultPath, "configuration file")
 	linkName := fs.String("name", "", "name shown in the panel (link only, defaults to the file name)")
+	linkDir := fs.String("dir", "", "compose folder the script belongs to (link only, found from the file location by default)")
 	// Flags may come after the file: vps-admin link FILE -name NAME
 	var pos []string
 	rest := os.Args[2:]
@@ -70,7 +71,7 @@ func main() {
 	case "pair":
 		err = pair(*cfgPath)
 	case "link", "unlink", "scripts":
-		err = scriptsCmd(cmd, *cfgPath, pos, *linkName)
+		err = scriptsCmd(cmd, *cfgPath, pos, *linkName, *linkDir)
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 		return
@@ -158,6 +159,9 @@ func serve(cfgPath string) error {
 	go engine.Run(ctx)
 
 	scriptRunner := &scripts.Runner{Dir: cfg.ScriptsDir, DataDir: cfg.DataDir}
+	if _, err := os.Stat("/opt/vps-admin/run-script"); err == nil {
+		scriptRunner.Helper = "/opt/vps-admin/run-script"
+	}
 	scriptRunner.Init()
 	st.InterruptedScriptRuns(ctx)
 
@@ -247,7 +251,7 @@ func chownData(dir string) {
 
 // scriptsCmd manages the script links. Linking needs root: the folder is root-owned so
 // the agent itself cannot add scripts.
-func scriptsCmd(cmd, cfgPath string, args []string, name string) error {
+func scriptsCmd(cmd, cfgPath string, args []string, name, folder string) error {
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return err
@@ -257,9 +261,12 @@ func scriptsCmd(cmd, cfgPath string, args []string, name string) error {
 		if len(args) != 1 {
 			return errors.New("usage: sudo vps-admin link FILE [-name NAME]")
 		}
-		n, err := scripts.Link(cfg.ScriptsDir, args[0], name)
+		n, err := scripts.Link(cfg.ScriptsDir, args[0], name, folder)
 		if n != "" {
 			fmt.Printf("Linked %s as %q: run it from the Scripts page of the panel.\n", args[0], n)
+			if d := (&scripts.Runner{Dir: cfg.ScriptsDir}).FolderOf(n); d != "" {
+				fmt.Printf("It also shows with the containers of %s.\n", d)
+			}
 		}
 		return err
 	case "unlink":

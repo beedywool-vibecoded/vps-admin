@@ -108,8 +108,11 @@ redémarrer, **logs en direct**. Arrêter SSH ou le panel lui-même est refusé.
 
 ### Déploiements GitHub
 Une **GitHub App** se crée en un clic, en lecture seule sur les repos choisis. Dockerfile,
-Compose, Node ou site statique : le type est **détecté tout seul**. Chaque push redéploie
-**sans coupure**, avec un retour arrière instantané et un domaine HTTPS via Caddy.
+Compose, Node ou site statique : le type est **détecté tout seul**, commandes d'install,
+de build et de démarrage personnalisables. Chaque push redéploie **sans coupure**, avec un
+retour arrière instantané et un domaine HTTPS via Caddy. Un dossier compose déjà en place
+se lie aussi à son repo : même mise à jour au push, bouton **Vérifier** et **Mettre à jour**,
+et ses scripts s'affichent à côté de ses conteneurs.
 
 </td>
 <td width="33%" valign="top">

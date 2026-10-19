@@ -152,6 +152,15 @@ var migrations = []string{
 		output    TEXT NOT NULL DEFAULT ''
 	);
 	CREATE INDEX script_runs_script ON script_runs(script, started);`,
+
+	// dir: an existing compose folder on the server, updated with git instead of being
+	// built from a tarball. The commands override the generated Dockerfile steps.
+	`ALTER TABLE apps ADD COLUMN dir TEXT NOT NULL DEFAULT '';
+	ALTER TABLE apps ADD COLUMN install_cmd TEXT NOT NULL DEFAULT '';
+	ALTER TABLE apps ADD COLUMN build_cmd TEXT NOT NULL DEFAULT '';
+	ALTER TABLE apps ADD COLUMN start_cmd TEXT NOT NULL DEFAULT '';
+	ALTER TABLE apps ADD COLUMN dockerfile TEXT NOT NULL DEFAULT '';
+	ALTER TABLE apps ADD COLUMN compose_file TEXT NOT NULL DEFAULT '';`,
 }
 
 func Open(dataDir string) (*Store, error) {

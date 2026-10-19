@@ -169,6 +169,12 @@ export interface App {
   keep: number
   memoryMb: number
   createdAt: string
+  dir: string
+  installCmd: string
+  buildCmd: string
+  startCmd: string
+  dockerfile: string
+  composeFile: string
 }
 
 export interface Deployment {
@@ -237,8 +243,19 @@ export interface AppInput {
   autoDeploy: boolean
   keep: number
   memoryMb: number
+  installCmd?: string
+  buildCmd?: string
+  startCmd?: string
+  dockerfile?: string
+  composeFile?: string
   env?: EnvVar[]
   deploy?: boolean
+}
+
+export interface UpdateCheck {
+  current: string
+  latest: { sha: string; message: string }
+  upToDate: boolean
 }
 
 export interface AssistantSettings {
@@ -294,6 +311,7 @@ export interface Script {
   executable: boolean
   missing: boolean
   running: boolean
+  dir?: string
 }
 
 export interface ScriptRun {
@@ -403,6 +421,11 @@ export const api = {
   deleteApp: (id: string, volumes: boolean) => request<void>('DELETE', `/api/apps/${id}${volumes ? '?volumes=1' : ''}`),
   setEnv: (id: string, env: EnvVar[]) => request<void>('PUT', `/api/apps/${id}/env`, { env }),
   deploy: (id: string) => request<Deployment>('POST', `/api/apps/${id}/deploy`),
+  checkApp: (id: string) => request<UpdateCheck>('GET', `/api/apps/${id}/check`),
+  inspectFolder: (project: string) =>
+    request<{ dir: string; folder: { repo: string; branch: string; head: string } }>('GET', `/api/folders/inspect?project=${encodeURIComponent(project)}`),
+  linkFolder: (l: { project: string; repo: string; branch: string; rootDir: string; autoDeploy: boolean }) =>
+    request<{ app: App }>('POST', '/api/apps/link', l),
   rollback: (id: string, dep: number) => request<Deployment>('POST', `/api/apps/${id}/rollback/${dep}`),
   restartApp: (id: string) => request<void>('POST', `/api/apps/${id}/restart`),
   assistant: () => request<{ settings: AssistantSettings; models: { id: string; label: string }[] }>('GET', '/api/assistant'),
