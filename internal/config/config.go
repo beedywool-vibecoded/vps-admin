@@ -24,7 +24,7 @@ type Config struct {
 	// WebhookURL is the public origin GitHub sends pushes to, when the panel itself is
 	// private (reachable through Tailscale only, for instance). Empty means PublicURL.
 	WebhookURL string `json:"webhook_url,omitempty"`
-	DataDir   string `json:"data_dir"`
+	DataDir    string `json:"data_dir"`
 	// TrustedProxies are the peers allowed to set X-Forwarded-For.
 	TrustedProxies []string `json:"trusted_proxies"`
 	DockerSocket   string   `json:"docker_socket"`
