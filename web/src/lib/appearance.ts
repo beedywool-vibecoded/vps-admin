@@ -6,9 +6,10 @@ export interface Appearance {
   background: boolean
   opacity: number
   version: string
+  groupIcons: Record<string, string> // compose project -> icon name
 }
 
-export const appearance = reactive<Appearance>({ background: false, opacity: 0.35, version: '' })
+export const appearance = reactive<Appearance>({ background: false, opacity: 0.35, version: '', groupIcons: {} })
 
 export async function loadAppearance() {
   Object.assign(appearance, await request<Appearance>('GET', '/api/appearance'))

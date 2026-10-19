@@ -4,6 +4,8 @@ import { useRoute } from 'vue-router'
 import Icon, { type IconName } from './Icon.vue'
 import M3Shape from './M3Shape.vue'
 import ServerBackground from './ServerBackground.vue'
+import WidgetBar from './WidgetBar.vue'
+import { barOpen, barShown, wide } from '@/lib/widgets'
 import { loadAppearance } from '@/lib/appearance'
 import { streamSystem } from '@/lib/api'
 import { loadSystem, session } from '@/lib/session'
@@ -103,12 +105,16 @@ onBeforeUnmount(() => {
           {{ session.host.os }} · up {{ duration(session.snapshot.uptime) }}
         </span>
         <span class="spacer" />
+        <button v-if="wide && !barOpen" class="btn btn-tonal st" type="button" @click="barOpen = true">
+          <Icon name="chart" :size="18" /> Widgets
+        </button>
       </header>
 
       <main class="content">
         <slot />
       </main>
     </div>
+    <WidgetBar v-if="barShown" />
 
   </div>
 </template>

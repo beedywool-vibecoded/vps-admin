@@ -1,10 +1,12 @@
 package api
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"time"
 )
@@ -19,12 +21,48 @@ var backgroundTypes = map[string]bool{"image/jpeg": true, "image/png": true, "im
 func (s *Server) backgroundPath() string { return filepath.Join(s.Cfg.DataDir, "background") }
 
 func (s *Server) appearance(w http.ResponseWriter, r *http.Request) {
-	res := map[string]any{"background": false, "opacity": s.opacity(r), "version": ""}
+	res := map[string]any{"background": false, "opacity": s.opacity(r), "version": "", "groupIcons": s.groupIcons(r)}
 	if st, err := os.Stat(s.backgroundPath()); err == nil {
 		res["background"] = true
 		res["version"] = strconv.FormatInt(st.ModTime().Unix(), 36) // cache buster
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// Icons of the container groups (compose projects), chosen in the panel for everyone.
+const groupIconsSetting = "appearance.group_icons"
+
+var iconName = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
+
+func (s *Server) groupIcons(r *http.Request) map[string]string {
+	m := map[string]string{}
+	json.Unmarshal([]byte(s.Store.Setting(r.Context(), groupIconsSetting, "{}")), &m)
+	return m
+}
+
+func (s *Server) setGroupIcon(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Project string `json:"project"`
+		Icon    string `json:"icon"` // empty goes back to the default shape
+	}
+	if err := readJSON(r, &body); err != nil || body.Project == "" || len(body.Project) > 128 || (body.Icon != "" && !iconName.MatchString(body.Icon)) {
+		writeErrorMsg(w, http.StatusBadRequest, "invalid", "a project and an icon name are expected")
+		return
+	}
+	icons := s.groupIcons(r)
+	if body.Icon == "" {
+		delete(icons, body.Project)
+	} else {
+		icons[body.Project] = body.Icon
+	}
+	b, _ := json.Marshal(icons)
+	err := s.Store.SetSetting(r.Context(), groupIconsSetting, string(b))
+	s.audit(r, "appearance.icon", body.Project, err)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal")
+		return
+	}
+	s.appearance(w, r)
 }
 
 func (s *Server) opacity(r *http.Request) float64 {

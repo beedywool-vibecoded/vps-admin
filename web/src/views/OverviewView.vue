@@ -8,6 +8,7 @@ import UsageChart from '@/components/UsageChart.vue'
 import RebootDialog from '@/components/RebootDialog.vue'
 import { api, type Container, type Point, type Security, type Service, type UpdateStatus } from '@/lib/api'
 import { session } from '@/lib/session'
+import { barShown } from '@/lib/widgets'
 import { bytes, image, pct, rate } from '@/lib/format'
 import { toastError } from '@/lib/ui'
 
@@ -132,7 +133,8 @@ onBeforeUnmount(() => clearInterval(timer))
       <RouterLink :to="alert.to" class="btn st banner-btn">View</RouterLink>
     </div>
 
-    <section class="metrics" aria-label="Resources">
+    <!-- The widget bar shows these while it is open -->
+    <section v-if="!barShown" class="metrics" aria-label="Resources">
       <MetricCard
         :label="`CPU · ${session.host?.cores ?? '?'} cores`"
         :value="snap ? pct(snap.cpu) : '…'"

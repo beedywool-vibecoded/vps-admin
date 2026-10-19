@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import Icon from '@/components/Icon.vue'
-import M3Shape from '@/components/M3Shape.vue'
 import StatusDot, { type Tone } from '@/components/StatusDot.vue'
 import LogViewer from '@/components/LogViewer.vue'
 import LinkFolderDialog from '@/components/LinkFolderDialog.vue'
 import ScriptRunDialog from '@/components/ScriptRunDialog.vue'
 import RebuildDialog from '@/components/RebuildDialog.vue'
+import GroupBadge from '@/components/GroupBadge.vue'
+import IconPicker from '@/components/IconPicker.vue'
 import { api, type AppView, type Container, type ContainerStats, type Script, type UpdateCheck } from '@/lib/api'
 import { bytes, image } from '@/lib/format'
 import { confirm, toast, toastError } from '@/lib/ui'
-import type { ShapeKind } from '@/lib/shapes'
 
 const list = ref<Container[]>([])
 const stats = ref<Record<string, ContainerStats>>({})
@@ -22,7 +22,6 @@ const logsFor = ref<Container | null>(null)
 const logsOpen = computed({ get: () => logsFor.value !== null, set: (v) => !v && (logsFor.value = null) })
 const loadLogs = () => api.containerLogs(logsFor.value!.id).then((r) => r.logs)
 
-const SHAPES: ShapeKind[] = ['cookie', 'clover', 'sunny', 'flower']
 
 // GitHub links and scripts of each compose folder
 const apps = ref<AppView[]>([])
@@ -31,6 +30,32 @@ const github = ref(false)
 const checks = ref<Record<string, UpdateCheck | 'checking'>>({})
 const linkFor = ref<{ project: string; dir?: string } | null>(null)
 const linkOpen = computed({ get: () => linkFor.value !== null, set: (v) => !v && (linkFor.value = null) })
+// Groups are collapsed by default; the open ones are remembered in this browser.
+const OPEN_KEY = 'vpsadmin.openGroups'
+function readOpen(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(OPEN_KEY) ?? '[]')
+    return Array.isArray(v) ? v : []
+  } catch {
+    return []
+  }
+}
+const openGroups = ref(new Set<string>(readOpen()))
+const isOpen = (name: string) => query.value.trim() !== '' || openGroups.value.has(name)
+function toggle(name: string) {
+  const next = new Set(openGroups.value)
+  if (next.has(name)) next.delete(name)
+  else next.add(name)
+  openGroups.value = next
+  try {
+    localStorage.setItem(OPEN_KEY, JSON.stringify([...next]))
+  } catch {
+    // storage unavailable: the state lasts for this visit
+  }
+}
+const iconFor = ref<string | null>(null)
+const iconOpen = computed({ get: () => iconFor.value !== null, set: (v) => !v && (iconFor.value = null) })
+
 const rebuildFor = ref<{ project: string; dir?: string } | null>(null)
 const rebuildOpen = ref(false)
 const runFor = ref<Script | null>(null)
@@ -153,12 +178,24 @@ onBeforeUnmount(() => clearInterval(timer))
     </section>
     <p v-else-if="!groups.length" class="muted">No container.</p>
 
-    <section v-for="([name, items], gi) in groups" :key="name" class="card">
-      <div class="card-head">
-        <M3Shape :kind="SHAPES[gi % SHAPES.length]!" :size="28" :fill="gi % 2 ? 'var(--secc)' : 'var(--pc)'" />
-        <h2 class="gname">{{ name }}<code v-if="items[0]?.workDir" class="path plain">{{ items[0].workDir }}</code></h2>
-        <span class="chip">{{ items.length }}</span>
+    <section v-for="([name, items], gi) in groups" :key="name" class="card group" :class="{ open: isOpen(name) }">
+      <div class="ghead">
+        <button v-if="name !== 'Standalone'" type="button" class="badge-btn st" :aria-label="`Change the icon of ${name}`" v-tip="'Change the icon'" @click="iconFor = name">
+          <GroupBadge :project="name" :index="gi" />
+        </button>
+        <GroupBadge v-else :project="name" :index="gi" />
+        <button type="button" class="gtoggle st" :aria-expanded="isOpen(name)" :aria-controls="`grp-${gi}`" @click="toggle(name)">
+          <span class="gtitle">
+            <span class="gname">{{ name }}</span>
+            <code v-if="items[0]?.workDir" class="path plain">{{ items[0].workDir }}</code>
+          </span>
+          <span class="dots" aria-hidden="true"><StatusDot v-for="c in items.slice(0, 12)" :key="c.id" :tone="tone(c)" :label="c.state" /></span>
+          <span class="chip">{{ items.length }}</span>
+          <Icon name="chevron" :size="20" class="chev" />
+        </button>
       </div>
+      <div :id="`grp-${gi}`" class="gbody" :inert="!isOpen(name)">
+      <div class="ginner">
       <div v-if="items[0]?.workDir" class="links">
         <template v-if="appFor(items[0].workDir)">
           <RouterLink :to="`/apps/${appFor(items[0].workDir)!.id}`" class="chip chip-outline gh">
@@ -210,9 +247,12 @@ onBeforeUnmount(() => clearInterval(timer))
           </button>
         </span>
       </div>
+      </div>
+      </div>
     </section>
 
     <LinkFolderDialog v-if="linkFor" v-model="linkOpen" :project="linkFor.project" :dir="linkFor.dir" @linked="loadLinks" />
+    <IconPicker v-if="iconFor" v-model="iconOpen" :project="iconFor" />
     <RebuildDialog v-if="rebuildFor" v-model="rebuildOpen" :project="rebuildFor.project" :dir="rebuildFor.dir" @done="load" />
     <ScriptRunDialog v-model="runOpen" :script="runFor" @done="loadLinks" />
     <LogViewer
@@ -227,6 +267,71 @@ onBeforeUnmount(() => clearInterval(timer))
 <style scoped>
 .search {
   width: min(380px, 100%);
+}
+.ghead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.badge-btn {
+  display: grid;
+  padding: 0;
+  border: none;
+  border-radius: 12px;
+  background: none;
+}
+.gtoggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 16px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+}
+.gtitle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+}
+.gname {
+  font-size: 20px;
+  font-weight: 500;
+}
+.dots {
+  display: flex;
+  gap: 4px;
+}
+.chev {
+  flex-shrink: 0;
+  transition: rotate 0.25s var(--ease);
+}
+.group.open .chev {
+  rotate: 180deg;
+}
+/* Animates to the content height without measuring it */
+.gbody {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s var(--ease-decel);
+}
+.group.open .gbody {
+  grid-template-rows: 1fr;
+}
+.ginner {
+  overflow: hidden;
+  min-height: 0;
+}
+.ginner > :first-child {
+  margin-top: 12px;
 }
 .links {
   display: flex;
@@ -257,13 +362,6 @@ onBeforeUnmount(() => clearInterval(timer))
   height: 8px;
   border-radius: 4px;
   background: var(--warn);
-}
-.gname {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  min-width: 0;
 }
 .path {
   font-size: 12px;
