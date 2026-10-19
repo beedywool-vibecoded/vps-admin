@@ -163,7 +163,8 @@ if [ "$TAILSCALE" != no ] && command -v tailscale >/dev/null && tailscale status
 fi
 if [ "$TAILSCALE" = yes ]; then
 	[ -n "$TS_NAME" ] || die "--tailscale: Tailscale is not running here (tailscale up first)"
-	if ! tailscale status --json 2>/dev/null | grep -q '"CertDomains": *\[ *"'; then
+	# The JSON spreads the list over lines: join them before looking.
+	if ! tailscale status --json 2>/dev/null | tr -d ' \n\t' | grep -q '"CertDomains":\["'; then
 		die "--tailscale needs HTTPS certificates in your tailnet: Tailscale admin console, DNS, enable HTTPS. Then rerun."
 	fi
 fi
