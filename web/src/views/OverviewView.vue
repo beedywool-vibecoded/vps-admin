@@ -6,6 +6,10 @@ import Icon from '@/components/Icon.vue'
 import StatusDot, { type Tone } from '@/components/StatusDot.vue'
 import UsageChart from '@/components/UsageChart.vue'
 import RebootDialog from '@/components/RebootDialog.vue'
+import GroupBadge from '@/components/GroupBadge.vue'
+import { appearance } from '@/lib/appearance'
+import { groupTitle } from '@/lib/groupIcons'
+import { openGroups, toggleGroup } from '@/lib/openGroups'
 import { api, type Container, type Point, type Security, type Service, type UpdateStatus } from '@/lib/api'
 import { session } from '@/lib/session'
 import { barShown } from '@/lib/widgets'
@@ -255,21 +259,32 @@ onBeforeUnmount(() => clearInterval(timer))
       </div>
     </section>
 
-    <section v-for="g in groups" :key="g.name" class="card" :aria-label="g.name">
-      <div class="card-head">
-        <StatusDot :tone="groupTone(g)" :label="groupTone(g) === 'ok' ? 'Running' : 'Needs attention'" />
-        <h2 class="gname">{{ g.name }}<code v-if="g.items[0]?.workDir" class="path plain">{{ g.items[0].workDir }}</code></h2>
-        <span class="chip">{{ g.items.length }}</span>
+    <section v-for="(g, gi) in groups" :key="g.name" class="card group" :class="{ open: openGroups.has(g.name) }" :aria-label="groupTitle(g.name)">
+      <div class="ghead">
+        <GroupBadge :project="g.name" :index="gi" />
+        <button type="button" class="gtoggle st" :aria-expanded="openGroups.has(g.name)" :aria-controls="`ov-grp-${gi}`" @click="toggleGroup(g.name)">
+          <span class="gtitle">
+            <span class="gname">{{ groupTitle(g.name) }}<span v-if="appearance.groupTitles?.[g.name]" class="orig"> ({{ g.name }})</span></span>
+            <code v-if="g.items[0]?.workDir" class="path plain">{{ g.items[0].workDir }}</code>
+          </span>
+          <span class="dots" aria-hidden="true"><StatusDot v-for="c in g.items.slice(0, 12)" :key="c.id" :tone="tone(c)" :label="c.state" /></span>
+          <span class="chip">{{ g.items.length }}</span>
+          <Icon name="chevron" :size="20" class="chev" />
+        </button>
         <RouterLink to="/containers" class="btn btn-text st">Manage</RouterLink>
       </div>
-      <div v-for="c in g.items" :key="c.id" class="row">
-        <StatusDot :tone="tone(c)" :label="c.health ?? c.state" />
-        <div class="grow">
-          <div class="name">{{ c.name }}</div>
-          <div class="muted small ellipsis">{{ image(c.image) }}</div>
+      <div :id="`ov-grp-${gi}`" class="gbody" :inert="!openGroups.has(g.name)">
+        <div class="ginner">
+          <div v-for="c in g.items" :key="c.id" class="row">
+            <StatusDot :tone="tone(c)" :label="c.health ?? c.state" />
+            <div class="grow">
+              <div class="name">{{ c.name }}</div>
+              <div class="muted small ellipsis">{{ image(c.image) }}</div>
+            </div>
+            <span v-if="c.exposed" class="chip chip-outline" v-tip="'Published on every interface'">public port</span>
+            <span class="muted small status">{{ c.status }}</span>
+          </div>
         </div>
-        <span v-if="c.exposed" class="chip chip-outline" v-tip="'Published on every interface'">public port</span>
-        <span class="muted small status">{{ c.status }}</span>
       </div>
     </section>
 
@@ -279,12 +294,67 @@ onBeforeUnmount(() => clearInterval(timer))
 </template>
 
 <style scoped>
-.gname {
+.ghead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.gtoggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 16px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+}
+.gtitle {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 4px 12px;
-  min-width: 0;
+  gap: 2px 12px;
+}
+.gname {
+  font-size: 20px;
+  font-weight: 500;
+}
+.orig {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--on-sv);
+}
+.dots {
+  display: flex;
+  gap: 4px;
+}
+.chev {
+  flex-shrink: 0;
+  transition: rotate 0.25s var(--ease);
+}
+.group.open .chev {
+  rotate: 180deg;
+}
+.gbody {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s var(--ease-decel);
+}
+.group.open .gbody {
+  grid-template-rows: 1fr;
+}
+.ginner {
+  overflow: hidden;
+  min-height: 0;
+}
+.ginner > :first-child {
+  margin-top: 12px;
 }
 .path {
   font-size: 12px;

@@ -26,7 +26,12 @@ enum Seed {
   teal('Teal', Color(0xFF006A6A)),
   blue('Blue', Color(0xFF0061A4)),
   pink('Pink', Color(0xFF984061)),
-  green('Green', Color(0xFF386A20));
+  green('Green', Color(0xFF386A20)),
+  orange('Orange', Color(0xFF8B5000)),
+  red('Red', Color(0xFFB3261E)),
+  indigo('Indigo', Color(0xFF4355B9)),
+  olive('Olive', Color(0xFF5B6300)),
+  slate('Slate', Color(0xFF5B5F72));
 
   const Seed(this.label, this.color);
   final String label;

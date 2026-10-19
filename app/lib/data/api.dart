@@ -269,6 +269,73 @@ class Api {
   Future<ToolCall> decide(String call, bool approve) async =>
       ToolCall(await post('/api/assistant/tools/$call', {'approve': approve}));
 
+  // Raw JSON endpoints used by the panel-style pages ------------------------------
+
+  Future<List<Map<String, dynamic>>> history(String span) async =>
+      ((await get('/api/system/history?span=$span'))['points'] as List)
+          .cast<Map<String, dynamic>>();
+  Future<Map<String, Map<String, dynamic>>> containerStats() async => {
+    for (final s
+        in ((await get('/api/docker/stats'))['stats'] as List)
+            .cast<Map<String, dynamic>>())
+      s['id'] as String: s,
+  };
+  Future<Map<String, dynamic>> securityRaw({bool refresh = false}) =>
+      get('/api/security${refresh ? '?refresh=1' : ''}');
+  Future<Map<String, dynamic>> updateRaw() => get('/api/update');
+  Future<Map<String, dynamic>> appsRaw() => get('/api/apps');
+  Future<Map<String, dynamic>> appFull(String id) => get('/api/apps/$id');
+  Future<Map<String, dynamic>> createApp(Map<String, dynamic> a) =>
+      post('/api/apps', a);
+  Future<void> deleteApp(String id, {bool volumes = false}) =>
+      delete('/api/apps/$id${volumes ? '?volumes=1' : ''}');
+  Future<void> setEnv(String id, List<Map<String, dynamic>> env) =>
+      put('/api/apps/$id/env', {'env': env});
+  Future<Map<String, dynamic>> github() => get('/api/github');
+  Future<List<Map<String, dynamic>>> repos() async =>
+      ((await get('/api/github/repos'))['repos'] as List)
+          .cast<Map<String, dynamic>>();
+  Future<Map<String, dynamic>> detect(
+    Map<String, dynamic> repo,
+    String ref,
+    String root,
+  ) => get(
+    '/api/github/detect?installation=${repo['installationId']}'
+    '&repo=${Uri.encodeQueryComponent(repo['fullName'] as String)}'
+    '&ref=${Uri.encodeQueryComponent(ref)}&root=${Uri.encodeQueryComponent(root)}',
+  );
+  Future<Map<String, dynamic>> assistantUpdate(Map<String, dynamic> s) =>
+      put('/api/assistant', s);
+  Future<void> deleteConversation(String id) =>
+      delete('/api/assistant/conversations/$id');
+  Future<Map<String, dynamic>> setAppearance(double opacity) =>
+      put('/api/appearance', {'opacity': opacity});
+  Future<Map<String, dynamic>> setGroupIcon(String project, String icon) =>
+      put('/api/appearance/icons', {'project': project, 'icon': icon});
+  Future<Map<String, dynamic>> removeBackground() =>
+      delete('/api/appearance/background');
+  Future<Map<String, dynamic>> uploadBackground(
+    List<int> bytes,
+    String type,
+  ) async {
+    final res = await http
+        .put(
+          Uri.parse('$base/api/appearance/background'),
+          headers: {..._headers, 'Content-Type': type},
+          body: bytes,
+        )
+        .timeout(const Duration(seconds: 60));
+    final data = _decode(res);
+    if (res.statusCode >= 400) {
+      throw ApiException(
+        res.statusCode,
+        data['error'] as String? ?? 'http_${res.statusCode}',
+        data['message'] as String? ?? 'Upload failed',
+      );
+    }
+    return data;
+  }
+
   /// Server-sent events from [path], as (event, data) pairs. Reconnects are left to
   /// the caller, which reloads state anyway.
   Stream<(String, dynamic)> events(String path) async* {

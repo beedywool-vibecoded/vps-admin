@@ -245,13 +245,56 @@ String duration(double seconds) {
   return '$m min';
 }
 
+const _months = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/// Relative time worded like the panel (Intl.RelativeTimeFormat, en).
 String ago(DateTime t) {
-  final s = DateTime.now().difference(t).inSeconds;
-  if (s < 60) return 'just now';
-  if (s < 3600) return '${s ~/ 60} min ago';
-  if (s < 86400) return '${s ~/ 3600} h ago';
-  return '${s ~/ 86400} d ago';
+  final s = t.difference(DateTime.now()).inSeconds;
+  final a = s.abs();
+  String unit(int n, String u) {
+    if (n == 0) return 'now';
+    if (n == -1) return u == 'day' ? 'yesterday' : '1 $u ago';
+    if (n == 1) return u == 'day' ? 'tomorrow' : 'in 1 $u';
+    return n < 0 ? '${-n} ${u}s ago' : 'in $n ${u}s';
+  }
+
+  if (a < 60) return 'just now';
+  if (a < 3600) return unit((s / 60).round(), 'minute');
+  if (a < 86400) return unit((s / 3600).round(), 'hour');
+  if (a < 86400 * 30) return unit((s / 86400).round(), 'day');
+  return '${_months[t.month - 1]} ${t.day}, ${t.year}';
 }
+
+String agoIso(String? iso) =>
+    iso == null || iso.isEmpty ? 'never' : ago(DateTime.parse(iso).toLocal());
+
+/// "Oct 19, 09:41 PM" like the panel's dateTime.
+String dateTime(String iso) {
+  final t = DateTime.parse(iso).toLocal();
+  final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
+  final m = t.minute.toString().padLeft(2, '0');
+  return '${_months[t.month - 1]} ${t.day}, ${h.toString().padLeft(2, '0')}:$m ${t.hour < 12 ? 'AM' : 'PM'}';
+}
+
+String rate(double n) => '${bytes(n)}/s';
+String pct(double n) => '${n.round()}%';
+
+/// Untagged images come back as a digest; the short form is what docker ps shows.
+String imageName(String ref) =>
+    ref.startsWith('sha256:') ? ref.substring(7, 19) : ref;
 
 /// Commands sit on a dark surface in both themes, so they stand apart from prose.
 TextStyle cmdStyle(BuildContext context, {double? fontSize}) {

@@ -97,6 +97,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/appearance", full(s.appearance))
 	mux.Handle("PUT /api/appearance", full(s.setAppearance))
 	mux.Handle("PUT /api/appearance/icons", full(s.setGroupIcon))
+	mux.Handle("PUT /api/appearance/titles", full(s.setGroupTitle))
 	mux.Handle("GET /api/appearance/background", full(s.backgroundGet))
 	mux.Handle("PUT /api/appearance/background", full(s.backgroundPut))
 	mux.Handle("DELETE /api/appearance/background", full(s.backgroundDelete))

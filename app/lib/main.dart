@@ -5,6 +5,7 @@ import 'data/servers.dart';
 import 'data/updater.dart';
 import 'ui/add_server_screen.dart';
 import 'ui/scope.dart';
+import 'ui/kit.dart';
 import 'ui/shell.dart';
 
 Future<void> main() async {
@@ -36,28 +37,6 @@ class VpsAdminApp extends StatelessWidget {
   const VpsAdminApp({super.key, this.startError});
   final Object? startError;
 
-  ThemeData _theme(ColorScheme scheme) => ThemeData(
-    colorScheme: scheme,
-    cardTheme: CardThemeData(
-      elevation: 0,
-      color: scheme.surfaceContainer,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(24)),
-      ),
-    ),
-    navigationBarTheme: NavigationBarThemeData(
-      labelTextStyle: WidgetStateProperty.resolveWith(
-        (s) => TextStyle(
-          fontSize: 12,
-          fontWeight: s.contains(WidgetState.selected)
-              ? FontWeight.w600
-              : FontWeight.w500,
-        ),
-      ),
-    ),
-    snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
-  );
-
   @override
   Widget build(BuildContext context) {
     final state = AppScope.of(context);
@@ -68,20 +47,19 @@ class VpsAdminApp extends StatelessWidget {
             state.useDynamicColor &&
             lightDynamic != null &&
             darkDynamic != null;
-        final light = dyn
-            ? lightDynamic.harmonized()
-            : ColorScheme.fromSeed(seedColor: state.seed.color);
-        final dark = dyn
-            ? darkDynamic.harmonized()
-            : ColorScheme.fromSeed(
-                seedColor: state.seed.color,
-                brightness: Brightness.dark,
-              );
+        // The palette is generated like the panel's (tonal spot from one seed), so every
+        // container role exists; Material You only changes the seed.
+        final seed = dyn ? lightDynamic.primary : state.seed.color;
+        final light = ColorScheme.fromSeed(seedColor: seed);
+        final dark = ColorScheme.fromSeed(
+          seedColor: seed,
+          brightness: Brightness.dark,
+        );
         return MaterialApp(
           title: 'VPS Admin',
           debugShowCheckedModeBanner: false,
-          theme: _theme(light),
-          darkTheme: _theme(dark),
+          theme: webTheme(light),
+          darkTheme: webTheme(dark),
           themeMode: state.themeMode,
           home: startError != null
               ? _StartError(error: startError!)

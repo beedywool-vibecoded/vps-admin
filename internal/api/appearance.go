@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strconv"
 	"time"
+
+	"github.com/beedywool/vps-admin/internal/auth"
 )
 
 // The server background: one image chosen by an administrator, shown to everyone on
@@ -21,7 +23,7 @@ var backgroundTypes = map[string]bool{"image/jpeg": true, "image/png": true, "im
 func (s *Server) backgroundPath() string { return filepath.Join(s.Cfg.DataDir, "background") }
 
 func (s *Server) appearance(w http.ResponseWriter, r *http.Request) {
-	res := map[string]any{"background": false, "opacity": s.opacity(r), "version": "", "groupIcons": s.groupIcons(r)}
+	res := map[string]any{"background": false, "opacity": s.opacity(r), "version": "", "groupIcons": s.groupMap(r, groupIconsSetting), "groupTitles": s.groupMap(r, groupTitlesSetting)}
 	if st, err := os.Stat(s.backgroundPath()); err == nil {
 		res["background"] = true
 		res["version"] = strconv.FormatInt(st.ModTime().Unix(), 36) // cache buster
@@ -30,14 +32,45 @@ func (s *Server) appearance(w http.ResponseWriter, r *http.Request) {
 }
 
 // Icons of the container groups (compose projects), chosen in the panel for everyone.
-const groupIconsSetting = "appearance.group_icons"
+const (
+	groupIconsSetting  = "appearance.group_icons"
+	groupTitlesSetting = "appearance.group_titles"
+)
 
 var iconName = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
 
-func (s *Server) groupIcons(r *http.Request) map[string]string {
+func (s *Server) groupMap(r *http.Request, key string) map[string]string {
 	m := map[string]string{}
-	json.Unmarshal([]byte(s.Store.Setting(r.Context(), groupIconsSetting, "{}")), &m)
+	json.Unmarshal([]byte(s.Store.Setting(r.Context(), key, "{}")), &m)
 	return m
+}
+
+// setGroupTitle names a container group for everyone; the compose project keeps its
+// name, which the panel shows next to the title.
+func (s *Server) setGroupTitle(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Project string `json:"project"`
+		Title   string `json:"title"` // empty goes back to the project name
+	}
+	if err := readJSON(r, &body); err != nil || body.Project == "" || len(body.Project) > 128 {
+		writeErrorMsg(w, http.StatusBadRequest, "invalid", "a project is expected")
+		return
+	}
+	title := auth.CleanName(body.Title, "")
+	titles := s.groupMap(r, groupTitlesSetting)
+	if title == "" || title == body.Project {
+		delete(titles, body.Project)
+	} else {
+		titles[body.Project] = title
+	}
+	b, _ := json.Marshal(titles)
+	err := s.Store.SetSetting(r.Context(), groupTitlesSetting, string(b))
+	s.audit(r, "appearance.group_title", body.Project, err)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal")
+		return
+	}
+	s.appearance(w, r)
 }
 
 func (s *Server) setGroupIcon(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +82,7 @@ func (s *Server) setGroupIcon(w http.ResponseWriter, r *http.Request) {
 		writeErrorMsg(w, http.StatusBadRequest, "invalid", "a project and an icon name are expected")
 		return
 	}
-	icons := s.groupIcons(r)
+	icons := s.groupMap(r, groupIconsSetting)
 	if body.Icon == "" {
 		delete(icons, body.Project)
 	} else {

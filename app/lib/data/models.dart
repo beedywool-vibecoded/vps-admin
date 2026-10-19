@@ -32,12 +32,23 @@ class Snapshot {
       load = ((j['load'] as List?) ?? [0, 0, 0]).map(_d).toList(),
       memTotal = _d(j['memTotal']),
       memUsed = _d(j['memUsed']),
+      swapTotal = _d(j['swapTotal']),
+      swapUsed = _d(j['swapUsed']),
+      time = j['time'] as String? ?? '',
       netRx = _d(j['netRx']),
       netTx = _d(j['netTx']),
       disks = ((j['disks'] as List?) ?? [])
           .map((d) => Disk(d as Map<String, dynamic>))
           .toList();
-  final double uptime, cpu, memTotal, memUsed, netRx, netTx;
+  final double uptime,
+      cpu,
+      memTotal,
+      memUsed,
+      swapTotal,
+      swapUsed,
+      netRx,
+      netTx;
+  final String time;
   final List<double> load;
   final List<Disk> disks;
   double get memPercent => memTotal == 0 ? 0 : 100 * memUsed / memTotal;
@@ -66,9 +77,11 @@ class DockerContainer {
       project = j['project'] as String?,
       workDir = j['workDir'] as String?,
       service = j['service'] as String?,
+      ports = ((j['ports'] as List?) ?? []).cast<Map<String, dynamic>>(),
       exposed = j['exposed'] as bool? ?? false;
   final String id, name, image, state, status;
   final String? health, project, workDir, service;
+  final List<Map<String, dynamic>> ports;
   final bool exposed;
   bool get bad =>
       health == 'unhealthy' || state == 'restarting' || state == 'dead';

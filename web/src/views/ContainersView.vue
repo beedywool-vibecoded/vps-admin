@@ -7,6 +7,10 @@ import ScriptRunDialog from '@/components/ScriptRunDialog.vue'
 import RebuildDialog from '@/components/RebuildDialog.vue'
 import GroupBadge from '@/components/GroupBadge.vue'
 import IconPicker from '@/components/IconPicker.vue'
+import M3Dialog from '@/components/M3Dialog.vue'
+import { appearance } from '@/lib/appearance'
+import { groupTitle, setGroupTitle } from '@/lib/groupIcons'
+import { openGroups, toggleGroup } from '@/lib/openGroups'
 import { api, type Container, type ContainerStats, type Script } from '@/lib/api'
 import { bytes, image } from '@/lib/format'
 import { confirm, toast, toastError } from '@/lib/ui'
@@ -25,26 +29,25 @@ const loadLogs = () => api.containerLogs(logsFor.value!.id).then((r) => r.logs)
 // GitHub links and scripts of each compose folder
 const scripts = ref<Script[]>([])
 // Groups are collapsed by default; the open ones are remembered in this browser.
-const OPEN_KEY = 'vpsadmin.openGroups'
-function readOpen(): string[] {
-  try {
-    const v = JSON.parse(localStorage.getItem(OPEN_KEY) ?? '[]')
-    return Array.isArray(v) ? v : []
-  } catch {
-    return []
-  }
-}
-const openGroups = ref(new Set<string>(readOpen()))
 const isOpen = (name: string) => query.value.trim() !== '' || openGroups.value.has(name)
-function toggle(name: string) {
-  const next = new Set(openGroups.value)
-  if (next.has(name)) next.delete(name)
-  else next.add(name)
-  openGroups.value = next
+const toggle = toggleGroup
+
+// Renaming a group: the title is shared, the compose name stays in parentheses.
+const renameFor = ref<string | null>(null)
+const renameOpen = computed({ get: () => renameFor.value !== null, set: (v) => !v && (renameFor.value = null) })
+const newTitle = ref('')
+function startRename(project: string) {
+  renameFor.value = project
+  newTitle.value = groupTitle(project)
+}
+async function saveTitle(title = newTitle.value.trim()) {
+  const p = renameFor.value
+  if (!p) return
   try {
-    localStorage.setItem(OPEN_KEY, JSON.stringify([...next]))
-  } catch {
-    // storage unavailable: the state lasts for this visit
+    await setGroupTitle(p, title)
+    renameFor.value = null
+  } catch (e) {
+    toastError(e)
   }
 }
 const iconFor = ref<string | null>(null)
@@ -156,9 +159,12 @@ onBeforeUnmount(() => clearInterval(timer))
           <GroupBadge :project="name" :index="gi" />
         </button>
         <GroupBadge v-else :project="name" :index="gi" />
+        <button v-if="name !== 'Standalone'" type="button" class="icon-btn st ren" :aria-label="`Rename ${groupTitle(name)}`" v-tip="'Rename'" @click="startRename(name)">
+          <Icon name="edit" :size="16" />
+        </button>
         <button type="button" class="gtoggle st" :aria-expanded="isOpen(name)" :aria-controls="`grp-${gi}`" @click="toggle(name)">
           <span class="gtitle">
-            <span class="gname">{{ name }}</span>
+            <span class="gname">{{ groupTitle(name) }}<span v-if="appearance.groupTitles?.[name]" class="orig"> ({{ name }})</span></span>
             <code v-if="items[0]?.workDir" class="path plain">{{ items[0].workDir }}</code>
           </span>
           <span class="dots" aria-hidden="true"><StatusDot v-for="c in items.slice(0, 12)" :key="c.id" :tone="tone(c)" :label="c.state" /></span>
@@ -206,6 +212,17 @@ onBeforeUnmount(() => clearInterval(timer))
       </div>
     </section>
 
+    <M3Dialog v-model="renameOpen" title="Rename the group">
+      <p class="muted small" style="margin: 0">Everyone sees this name, on the panel and in the app. Compose keeps <code>{{ renameFor }}</code>.</p>
+      <form @submit.prevent="saveTitle()">
+        <label class="field"><input v-model="newTitle" :placeholder="renameFor ?? ''" aria-label="Name shown" maxlength="60" /></label>
+      </form>
+      <template #actions>
+        <button v-if="renameFor && appearance.groupTitles?.[renameFor]" class="btn btn-text st" type="button" @click="saveTitle('')">Reset</button>
+        <button class="btn btn-text st" type="button" @click="renameOpen = false">Cancel</button>
+        <button class="btn btn-filled st" type="button" @click="saveTitle()">Save</button>
+      </template>
+    </M3Dialog>
     <IconPicker v-if="iconFor" v-model="iconOpen" :project="iconFor" />
     <RebuildDialog v-if="rebuildFor" v-model="rebuildOpen" :container="rebuildFor" @done="load" />
     <ScriptRunDialog v-model="runOpen" :script="runFor" @done="loadLinks" />
@@ -259,6 +276,15 @@ onBeforeUnmount(() => clearInterval(timer))
 .gname {
   font-size: 20px;
   font-weight: 500;
+}
+.orig {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--on-sv);
+}
+.ren {
+  width: 32px;
+  height: 32px;
 }
 .dots {
   display: flex;

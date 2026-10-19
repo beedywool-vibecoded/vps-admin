@@ -9,3 +9,10 @@ export const GROUP_ICONS: IconName[] = ['database', 'game', 'music', 'film', 'ch
 export async function setGroupIcon(project: string, icon: string) {
   Object.assign(appearance, await request<Appearance>('PUT', '/api/appearance/icons', { project, icon }))
 }
+
+export async function setGroupTitle(project: string, title: string) {
+  Object.assign(appearance, await request<Appearance>('PUT', '/api/appearance/titles', { project, title }))
+}
+
+/** The name shown for a compose project: its title if one was given. */
+export const groupTitle = (project: string) => appearance.groupTitles?.[project] || project
