@@ -6,6 +6,7 @@ import StatusDot, { type Tone } from '@/components/StatusDot.vue'
 import LogViewer from '@/components/LogViewer.vue'
 import LinkFolderDialog from '@/components/LinkFolderDialog.vue'
 import ScriptRunDialog from '@/components/ScriptRunDialog.vue'
+import RebuildDialog from '@/components/RebuildDialog.vue'
 import { api, type AppView, type Container, type ContainerStats, type Script, type UpdateCheck } from '@/lib/api'
 import { bytes, image } from '@/lib/format'
 import { confirm, toast, toastError } from '@/lib/ui'
@@ -30,6 +31,8 @@ const github = ref(false)
 const checks = ref<Record<string, UpdateCheck | 'checking'>>({})
 const linkFor = ref<{ project: string; dir?: string } | null>(null)
 const linkOpen = computed({ get: () => linkFor.value !== null, set: (v) => !v && (linkFor.value = null) })
+const rebuildFor = ref<{ project: string; dir?: string } | null>(null)
+const rebuildOpen = ref(false)
 const runFor = ref<Script | null>(null)
 const runOpen = computed({ get: () => runFor.value !== null, set: (v) => !v && (runFor.value = null) })
 
@@ -174,6 +177,9 @@ onBeforeUnmount(() => clearInterval(timer))
           <Icon name="github" :size="16" /> Update from GitHub
         </button>
         <span class="spacer" />
+        <button v-if="name !== 'Standalone'" class="btn btn-outlined st script-btn" type="button" v-tip="'Pull and rebuild, then recreate what changed'" @click="(rebuildFor = { project: name, dir: items[0].workDir }), (rebuildOpen = true)">
+          <Icon name="restart" :size="16" /> Rebuild
+        </button>
         <button v-for="sc in scriptsFor(items[0].workDir)" :key="sc.name" class="btn btn-outlined st script-btn" type="button" v-tip="sc.description || sc.target" @click="runFor = sc">
           <Icon name="terminal" :size="16" /> {{ sc.name }}<span v-if="sc.running" class="dotr" />
         </button>
@@ -207,6 +213,7 @@ onBeforeUnmount(() => clearInterval(timer))
     </section>
 
     <LinkFolderDialog v-if="linkFor" v-model="linkOpen" :project="linkFor.project" :dir="linkFor.dir" @linked="loadLinks" />
+    <RebuildDialog v-if="rebuildFor" v-model="rebuildOpen" :project="rebuildFor.project" :dir="rebuildFor.dir" @done="load" />
     <ScriptRunDialog v-model="runOpen" :script="runFor" @done="loadLinks" />
     <LogViewer
       v-if="logsFor"

@@ -371,7 +371,8 @@ onBeforeUnmount(() => {
   align-items: flex-start;
 }
 .list {
-  flex: 1 1 460px;
+  flex: 1 1 min(460px, 100%);
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -428,7 +429,7 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 .logcard {
-  flex: 1.3 1 520px;
+  flex: 1.3 1 min(520px, 100%);
   display: flex;
   flex-direction: column;
   gap: 10px;

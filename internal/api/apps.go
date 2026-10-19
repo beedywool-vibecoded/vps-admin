@@ -764,3 +764,68 @@ func (s *Server) appCheck(w http.ResponseWriter, r *http.Request) {
 	current := s.Deploy.CurrentCommit(r.Context(), *a)
 	writeJSON(w, http.StatusOK, map[string]any{"current": current, "latest": c, "upToDate": current != "" && current == c.SHA})
 }
+
+// rebuilding holds the compose projects being rebuilt, one rebuild at a time each.
+var rebuilding sync.Map
+
+// projectRebuild pulls and rebuilds a running compose project from its folder, streaming
+// the output as plain text. It goes on if the browser leaves.
+func (s *Server) projectRebuild(w http.ResponseWriter, r *http.Request) {
+	project := r.PathValue("project")
+	dir, err := s.composeFolder(r.Context(), project)
+	if err != nil {
+		writeErrorMsg(w, http.StatusNotFound, "not_found", err.Error())
+		return
+	}
+	if _, busy := rebuilding.LoadOrStore(project, true); busy {
+		writeErrorMsg(w, http.StatusConflict, "busy", "a rebuild of this project is already running")
+		return
+	}
+	defer rebuilding.Delete(project)
+	composeFile := ""
+	if apps, err := s.Store.Apps(r.Context()); err == nil {
+		for _, a := range apps {
+			if a.Dir == dir {
+				composeFile = a.ComposeFile
+			}
+		}
+	}
+
+	rc := http.NewResponseController(w)
+	rc.SetWriteDeadline(time.Time{})
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	out := &flushWriter{w: w, rc: rc}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Minute)
+	defer cancel()
+	err = s.Deploy.RebuildFolder(ctx, out, project, dir, composeFile)
+	s.audit(r, "compose.rebuild", project, err)
+	if err != nil {
+		fmt.Fprintf(out, "\n==> FAILED: %v\n", err)
+		return
+	}
+	fmt.Fprintln(out, "\n==> Done")
+}
+
+// flushWriter sends each write right away and ignores a gone client, so the command
+// it serves keeps running to the end.
+type flushWriter struct {
+	mu   sync.Mutex
+	w    io.Writer
+	rc   *http.ResponseController
+	gone bool
+}
+
+func (f *flushWriter) Write(p []byte) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.gone {
+		if _, err := f.w.Write(p); err != nil {
+			f.gone = true
+		} else {
+			f.rc.Flush()
+		}
+	}
+	return len(p), nil
+}

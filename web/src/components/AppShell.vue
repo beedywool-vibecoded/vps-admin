@@ -1,51 +1,44 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import Icon, { type IconName } from './Icon.vue'
 import M3Shape from './M3Shape.vue'
-import M3Dialog from './M3Dialog.vue'
 import ServerBackground from './ServerBackground.vue'
 import { loadAppearance } from '@/lib/appearance'
 import { streamSystem } from '@/lib/api'
 import { loadSystem, session } from '@/lib/session'
-import { forget, normalizeServerURL, servers } from '@/lib/servers'
+import { lockScroll, unlockScroll } from '@/lib/scrollLock'
 import { duration } from '@/lib/format'
 import { toastError } from '@/lib/ui'
 
 const route = useRoute()
 
+// On phones the bar keeps the first four, the others go in the More sheet.
 const NAV: { to: string; label: string; icon: IconName; mobile: boolean }[] = [
   { to: '/', label: 'Overview', icon: 'overview', mobile: true },
   { to: '/containers', label: 'Containers', icon: 'containers', mobile: true },
-  { to: '/services', label: 'Services', icon: 'services', mobile: true },
+  { to: '/services', label: 'Services', icon: 'services', mobile: false },
   { to: '/security', label: 'Security', icon: 'security', mobile: false },
   { to: '/apps', label: 'Apps', icon: 'apps', mobile: true },
   { to: '/assistant', label: 'Assistant', icon: 'assistant', mobile: true },
   { to: '/scripts', label: 'Scripts', icon: 'terminal', mobile: false },
   { to: '/updates', label: 'Updates', icon: 'updates', mobile: false },
-  { to: '/settings', label: 'Settings', icon: 'settings', mobile: true },
+  { to: '/settings', label: 'Settings', icon: 'settings', mobile: false },
 ]
+const MORE = NAV.filter((n) => !n.mobile)
 const isActive = (to: string) => (to === '/' ? route.path === '/' : route.path.startsWith(to))
+const moreActive = computed(() => MORE.some((n) => isActive(n.to)))
 
-const menuOpen = ref(false)
-const addOpen = ref(false)
-const newURL = ref('')
-const here = location.origin
-const others = computed(() => servers.value.filter((s) => s.url !== here))
-
-function addServer() {
-  const url = normalizeServerURL(newURL.value)
-  if (!url) return toastError('Enter the address of the other panel, like admin.example.com')
-  location.href = url
-}
-
-function closeMenu(e: MouseEvent) {
-  if (!(e.target as HTMLElement).closest('.switcher')) menuOpen.value = false
+const moreOpen = ref(false)
+watch(moreOpen, (v) => (v ? lockScroll() : unlockScroll()))
+watch(() => route.path, () => (moreOpen.value = false))
+function onKey(e: KeyboardEvent) {
+  if (e.key === 'Escape') moreOpen.value = false
 }
 
 let stop: (() => void) | undefined
 onMounted(async () => {
-  document.addEventListener('click', closeMenu)
+  document.addEventListener('keydown', onKey)
   try {
     loadAppearance().catch(() => {})
     await loadSystem()
@@ -55,7 +48,8 @@ onMounted(async () => {
   }
 })
 onBeforeUnmount(() => {
-  document.removeEventListener('click', closeMenu)
+  document.removeEventListener('keydown', onKey)
+  if (moreOpen.value) unlockScroll()
   stop?.()
 })
 </script>
@@ -80,42 +74,31 @@ onBeforeUnmount(() => {
         <span class="pill st"><Icon :name="n.icon" /></span>
         {{ n.label }}
       </RouterLink>
+      <button type="button" class="nav-item more-btn" :class="{ active: moreActive || moreOpen }" :aria-expanded="moreOpen" @click="moreOpen = !moreOpen">
+        <span class="pill st"><Icon name="more" /></span>
+        More
+      </button>
     </nav>
+
+    <Transition name="sheet">
+      <div v-if="moreOpen" class="scrim" @click.self="moreOpen = false">
+        <nav class="sheet" aria-label="More sections">
+          <span class="handle" aria-hidden="true" />
+          <RouterLink v-for="n in MORE" :key="n.to" :to="n.to" class="sheet-item st" :class="{ active: isActive(n.to) }" :aria-current="isActive(n.to) ? 'page' : undefined">
+            <span class="pill"><Icon :name="n.icon" /></span>
+            {{ n.label }}
+          </RouterLink>
+        </nav>
+      </div>
+    </Transition>
 
     <div class="main-col">
       <header class="topbar">
         <span class="brand">VPS ADMIN</span>
-        <div class="switcher">
-          <button
-            class="server st"
-            type="button"
-            aria-haspopup="menu"
-            :aria-expanded="menuOpen"
-            @click.stop="menuOpen = !menuOpen"
-          >
-            <span class="online" aria-hidden="true" />
-            <span class="ellipsis">{{ session.host?.hostname ?? 'Connecting…' }}</span>
-            <Icon name="chevron" :size="18" />
-          </button>
-          <div v-if="menuOpen" class="menu" role="menu">
-            <div class="menu-item current" role="menuitem" aria-current="true">
-              <Icon name="check" :size="18" />
-              <span class="grow ellipsis">{{ session.host?.hostname }}<br /><small class="muted">{{ here }}</small></span>
-            </div>
-            <div v-for="s in others" :key="s.url" class="menu-row">
-              <a class="menu-item st" role="menuitem" :href="s.url">
-                <Icon name="globe" :size="18" />
-                <span class="grow ellipsis">{{ s.name }}<br /><small class="muted">{{ s.url }}</small></span>
-              </a>
-              <button class="icon-btn st" type="button" :aria-label="`Forget ${s.name}`" @click="forget(s.url)">
-                <Icon name="close" :size="18" />
-              </button>
-            </div>
-            <button class="menu-item st" role="menuitem" type="button" @click="(addOpen = true), (menuOpen = false)">
-              <Icon name="plus" :size="18" /> Add a server
-            </button>
-          </div>
-        </div>
+        <span class="server">
+          <span class="online" aria-hidden="true" />
+          <span class="ellipsis">{{ session.host?.hostname ?? 'Connecting…' }}</span>
+        </span>
         <span v-if="session.host && session.snapshot" class="chip os">
           {{ session.host.os }} · up {{ duration(session.snapshot.uptime) }}
         </span>
@@ -127,23 +110,6 @@ onBeforeUnmount(() => {
       </main>
     </div>
 
-    <M3Dialog v-model="addOpen" title="Add a server">
-      <p class="muted" style="margin: 0">
-        Install VPS Admin on the other server, then open its panel here. Each server has its own
-        address and its own passkey.
-      </p>
-      <code class="install">curl -fsSL https://github.com/beedywool/vps-admin/releases/latest/download/install.sh | sudo bash -s -- --domain admin.example.com</code>
-      <form @submit.prevent="addServer">
-        <label class="field">
-          <Icon name="globe" :size="20" />
-          <input v-model="newURL" placeholder="admin.example.com" aria-label="Panel address" autocomplete="url" />
-        </label>
-      </form>
-      <template #actions>
-        <button class="btn btn-text st" type="button" @click="addOpen = false">Cancel</button>
-        <button class="btn btn-filled st" type="button" @click="addServer">Open panel</button>
-      </template>
-    </M3Dialog>
   </div>
 </template>
 
@@ -198,6 +164,7 @@ onBeforeUnmount(() => {
 .main-col {
   flex: 1;
   min-width: 0;
+  overflow-x: clip;
   padding: 24px 32px 48px;
 }
 .content {
@@ -216,19 +183,15 @@ onBeforeUnmount(() => {
   letter-spacing: 0.14em;
   margin-right: 8px;
 }
-.switcher {
-  position: relative;
-}
 .server {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   max-width: 320px;
   height: 40px;
-  padding: 0 12px 0 14px;
+  padding: 0 16px 0 14px;
   border-radius: 20px;
   border: 1px solid var(--outline-v);
-  background: transparent;
   color: var(--on-surface);
   font-size: 14px;
 }
@@ -239,55 +202,20 @@ onBeforeUnmount(() => {
   background: var(--ok);
   flex-shrink: 0;
 }
-.menu {
-  position: absolute;
-  top: 46px;
-  left: 0;
-  z-index: 20;
-  min-width: 300px;
-  padding: 8px 0;
-  border-radius: 16px;
-  background: var(--schh);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-}
-.menu-row {
-  display: flex;
-  align-items: center;
-  padding-right: 6px;
-}
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-height: 48px;
-  padding: 8px 16px;
-  border: none;
-  background: transparent;
-  color: var(--on-surface);
-  font-size: 14px;
-  text-align: left;
-  text-decoration: none;
-}
-.menu-item.current {
-  color: var(--primary);
-}
 .os {
   font-size: 13px;
 }
+.more-btn,
+.scrim {
+  display: none;
+}
+.more-btn {
+  border: none;
+  background: none;
+  font-family: inherit;
+}
 .spacer {
   flex: 1;
-}
-.install {
-  display: block;
-  padding: 12px;
-  border-radius: 12px;
-  background: var(--scc);
-  border: 1px solid var(--outline-v);
-  color: var(--primary);
-  font-size: 12px;
-  line-height: 1.5;
-  word-break: break-all;
 }
 
 /* Phones: the rail becomes a bottom navigation bar */
@@ -310,6 +238,71 @@ onBeforeUnmount(() => {
   .logo,
   .nav-item.desktop {
     display: none;
+  }
+  .more-btn {
+    display: flex;
+  }
+  .scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: rgba(0, 0, 0, 0.4);
+  }
+  .sheet {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 10px 12px 24px;
+    border-radius: 28px 28px 0 0;
+    background: var(--scl, var(--sc));
+    transition: translate 0.3s var(--ease-decel);
+  }
+  .handle {
+    align-self: center;
+    width: 32px;
+    height: 4px;
+    margin-bottom: 14px;
+    border-radius: 2px;
+    background: var(--on-sv);
+    opacity: 0.5;
+  }
+  .sheet-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-height: 56px;
+    padding: 0 12px;
+    border-radius: 28px;
+    color: var(--on-surface);
+    font-size: 16px;
+    font-weight: 500;
+    text-decoration: none;
+  }
+  .sheet-item.active {
+    background: var(--secc);
+    color: var(--on-secc);
+  }
+  .sheet-item .pill {
+    width: 40px;
+  }
+  .sheet-enter-from,
+  .sheet-leave-to {
+    opacity: 0;
+  }
+  .sheet-enter-from .sheet,
+  .sheet-leave-to .sheet {
+    translate: 0 100%;
+  }
+  .sheet-enter-active,
+  .sheet-leave-active {
+    transition: opacity 0.25s;
+  }
+  .server {
+    max-width: 100%;
   }
   .nav-item {
     width: auto;

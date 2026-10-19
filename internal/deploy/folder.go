@@ -155,3 +155,15 @@ func (e *Engine) updateFolder(ctx context.Context, l *logger, app store.App, d *
 	l.Printf("docker compose up (project %s)", e.projectName(app))
 	return e.compose(ctx, l, app, root, "up", "-d", "--build", "--remove-orphans")
 }
+
+// RebuildFolder refreshes a compose stack in place: newer images for the services that
+// use one, a rebuild for those with a build section, then up.
+func (e *Engine) RebuildFolder(ctx context.Context, out io.Writer, project, dir, composeFile string) error {
+	app := store.App{ID: project, Dir: dir, ComposeFile: composeFile}
+	fmt.Fprintf(out, "==> docker compose pull (project %s)\n", project)
+	if err := e.compose(ctx, out, app, dir, "pull", "--quiet", "--ignore-buildable"); err != nil {
+		fmt.Fprintf(out, "pull failed, going on with the local images: %v\n", err)
+	}
+	fmt.Fprintln(out, "==> docker compose up -d --build")
+	return e.compose(ctx, out, app, dir, "up", "-d", "--build")
+}

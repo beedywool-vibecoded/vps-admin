@@ -133,7 +133,7 @@ onBeforeUnmount(() => closeStream?.())
               </div>
               <div v-if="s.description" class="muted small">{{ s.description }}</div>
               <code class="target">{{ s.target }}</code>
-              <div v-if="s.dir" class="muted small folder"><Icon name="folder" :size="14" /> Shown with the containers of <code>{{ s.dir }}</code></div>
+              <div v-if="s.dir" class="muted small folder">Shown with the containers of <code>{{ s.dir }}</code></div>
             </div>
           </div>
           <div class="actions">
@@ -201,13 +201,14 @@ onBeforeUnmount(() => closeStream?.())
   align-items: flex-start;
 }
 .list {
-  flex: 1 1 460px;
+  flex: 1 1 min(460px, 100%);
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 .side {
-  flex: 1.2 1 480px;
+  flex: 1.2 1 min(480px, 100%);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -238,10 +239,8 @@ onBeforeUnmount(() => closeStream?.())
   word-break: break-all;
 }
 .folder {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   margin-top: 4px;
+  word-break: break-all;
 }
 .actions {
   display: flex;

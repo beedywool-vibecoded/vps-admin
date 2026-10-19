@@ -137,8 +137,7 @@ fail2ban, mises à jour en attente, LLMNR, ports ouverts et ports Docker qui
 
 ### Plusieurs serveurs
 L'app Android passe d'un serveur à l'autre depuis la barre du haut. Sur le web, chaque
-serveur garde son panel (une passkey est liée à son domaine) et le menu des serveurs
-retient les autres.
+panel est celui du serveur qui l'héberge, avec sa propre passkey liée à son domaine.
 
 </td>
 <td valign="top">

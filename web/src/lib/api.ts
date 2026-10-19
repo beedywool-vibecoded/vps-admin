@@ -493,3 +493,26 @@ export function streamScript(name: string, on: { output: (chunk: string) => void
   es.onerror = () => es.close()
   return () => es.close()
 }
+
+// Rebuilds a compose project and hands over its output as it comes. Resolves with
+// whether it succeeded; the server goes on if the page is closed.
+export async function rebuildProject(project: string, output: (text: string) => void): Promise<boolean> {
+  const res = await fetch(`/api/docker/projects/${encodeURIComponent(project)}/rebuild`, {
+    method: 'POST',
+    headers: { 'X-VPS-Admin': '1' },
+    credentials: 'same-origin',
+  })
+  if (!res.ok || !res.body) {
+    const data = await res.json().catch(() => ({}))
+    throw new ApiError(res.status, data.error ?? 'http_' + res.status, data.message ?? data.error ?? 'Rebuild failed')
+  }
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
+  let all = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    all += value
+    output(value)
+  }
+  return all.trimEnd().endsWith('==> Done')
+}

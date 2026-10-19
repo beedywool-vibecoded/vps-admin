@@ -297,7 +297,8 @@ onMounted(async () => {
   align-items: flex-start;
 }
 .source {
-  flex: 1 1 380px;
+  flex: 1 1 min(380px, 100%);
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -338,7 +339,8 @@ onMounted(async () => {
   font-weight: 500;
 }
 .config {
-  flex: 1.4 1 520px;
+  flex: 1.4 1 min(520px, 100%);
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 18px;
