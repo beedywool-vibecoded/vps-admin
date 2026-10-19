@@ -38,6 +38,7 @@ TLS=1
 TAILSCALE=ask
 ALLOW=""
 TS_NAME=""
+TS_PORT=443
 TOKEN="${VPS_ADMIN_GITHUB_TOKEN:-}"
 
 say() { printf '\033[1;35m==>\033[0m %s\n' "$*"; }
@@ -173,7 +174,13 @@ PUBLIC_URL="http://localhost:$PORT"
 [ -n "$DOMAIN" ] && PUBLIC_URL="https://$DOMAIN"
 WEBHOOK_URL=""
 if [ "$TAILSCALE" = yes ]; then
+	# Port 443 on the tailnet address would block a local proxy that listens on [::]:443
+	# (nginx and Caddy do): then the panel takes 10443 on the tailnet instead.
+	if ss -Hltnp 2>/dev/null | grep -v tailscaled | awk '{print $4}' | grep -qE '(^|[]:*])443$'; then
+		TS_PORT=10443
+	fi
 	PUBLIC_URL="https://$TS_NAME"
+	[ "$TS_PORT" = 443 ] || PUBLIC_URL="https://$TS_NAME:$TS_PORT"
 	[ -n "$DOMAIN" ] && WEBHOOK_URL="https://$DOMAIN"
 fi
 if [ ! -f /etc/vps-admin/config.json ]; then
@@ -428,11 +435,17 @@ NGINX
 }
 
 if [ "$TAILSCALE" = yes ]; then
-	say "Serving the panel on https://$TS_NAME (Tailscale only)"
-	tailscale serve --bg --https=443 "http://127.0.0.1:$PORT" >/dev/null || die "tailscale serve failed, see: tailscale serve status"
+	say "Serving the panel on $PUBLIC_URL (Tailscale only)"
+	# A previous run may have served it on the other port.
+	for p in 443 10443; do
+		[ "$p" = "$TS_PORT" ] && continue
+		tailscale serve status 2>/dev/null | grep -q "127.0.0.1:$PORT" && tailscale serve --https="$p" off >/dev/null 2>&1 || true
+	done
+	tailscale serve --bg --https="$TS_PORT" "http://127.0.0.1:$PORT" >/dev/null || die "tailscale serve failed, see: tailscale serve status"
 elif command -v tailscale >/dev/null && tailscale serve status 2>/dev/null | grep -q "127.0.0.1:$PORT"; then
 	# Back to public: stop the private address a previous run set up.
 	tailscale serve --https=443 off >/dev/null 2>&1 || true
+	tailscale serve --https=10443 off >/dev/null 2>&1 || true
 fi
 
 case "$PROXY" in

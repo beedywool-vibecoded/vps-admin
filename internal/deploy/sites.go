@@ -246,7 +246,7 @@ func (e *Engine) tailscaleServe(ctx context.Context, l *logger, app store.App, p
 		return errors.New("Tailscale is not running on this server")
 	}
 	if app.TSPort == 0 {
-		used := map[int]bool{443: true}
+		used := map[int]bool{443: true, 10443: true} // the panel's own tailnet ports
 		if apps, err := e.Store.Apps(ctx); err == nil {
 			for _, a := range apps {
 				used[a.TSPort] = true
