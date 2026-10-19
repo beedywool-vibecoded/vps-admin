@@ -1,13 +1,13 @@
 <script setup lang="ts">
-// Pulls and rebuilds a compose project, with its output live.
+// Pulls or rebuilds the compose service of one container, with the output live.
 import { nextTick, ref, watch } from 'vue'
 import M3Dialog from './M3Dialog.vue'
 import Icon from './Icon.vue'
-import { rebuildProject } from '@/lib/api'
+import { rebuildContainer, type Container } from '@/lib/api'
 import { toastError } from '@/lib/ui'
 
 const open = defineModel<boolean>({ required: true })
-const props = defineProps<{ project: string; dir?: string }>()
+const props = defineProps<{ container: Container }>()
 const emit = defineEmits<{ done: [] }>()
 const output = ref('')
 const state = ref<'ready' | 'running' | 'ok' | 'failed'>('ready')
@@ -23,7 +23,7 @@ watch(open, (v) => {
 async function run() {
   state.value = 'running'
   try {
-    const ok = await rebuildProject(props.project, async (t) => {
+    const ok = await rebuildContainer(props.container.id, async (t) => {
       output.value += t
       await nextTick()
       pre.value?.scrollTo({ top: pre.value.scrollHeight })
@@ -38,15 +38,15 @@ async function run() {
 </script>
 
 <template>
-  <M3Dialog v-model="open" :title="`Rebuild ${project}`" wide>
+  <M3Dialog v-model="open" :title="`Rebuild ${container.name}`" wide>
     <template #header>
       <span v-if="state === 'running'" class="chip">running</span>
       <span v-else-if="state === 'ok'" class="chip ok">done</span>
       <span v-else-if="state === 'failed'" class="chip bad">failed</span>
     </template>
     <p v-if="state === 'ready'" class="muted" style="margin: 0">
-      Pulls newer images, rebuilds the services that have a build section and recreates the containers that changed, from
-      <code>{{ dir }}</code>. Containers that did not change keep running.
+      Pulls a newer image of <code>{{ container.service }}</code> (or rebuilds it if it has a build section), then recreates this
+      container alone from <code class="plain">{{ container.workDir }}</code>. The other containers of {{ container.project }} keep running.
     </p>
     <pre v-else ref="pre" class="out">{{ output || 'Starting…' }}</pre>
     <template #actions>

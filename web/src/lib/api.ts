@@ -101,6 +101,7 @@ export interface Container {
   ports: PortBinding[]
   project?: string
   workDir?: string
+  service?: string
   exposed: boolean
 }
 
@@ -498,10 +499,10 @@ export function streamScript(name: string, on: { output: (chunk: string) => void
   return () => es.close()
 }
 
-// Rebuilds a compose project and hands over its output as it comes. Resolves with
+// Rebuilds the compose service of a container and hands over its output as it comes. Resolves with
 // whether it succeeded; the server goes on if the page is closed.
-export async function rebuildProject(project: string, output: (text: string) => void): Promise<boolean> {
-  const res = await fetch(`/api/docker/projects/${encodeURIComponent(project)}/rebuild`, {
+export async function rebuildContainer(id: string, output: (text: string) => void): Promise<boolean> {
+  const res = await fetch(`/api/docker/containers/${encodeURIComponent(id)}/rebuild`, {
     method: 'POST',
     headers: { 'X-VPS-Admin': '1' },
     credentials: 'same-origin',

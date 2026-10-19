@@ -156,14 +156,20 @@ func (e *Engine) updateFolder(ctx context.Context, l *logger, app store.App, d *
 	return e.compose(ctx, l, app, root, "up", "-d", "--build", "--remove-orphans")
 }
 
-// RebuildFolder refreshes a compose stack in place: newer images for the services that
-// use one, a rebuild for those with a build section, then up.
-func (e *Engine) RebuildFolder(ctx context.Context, out io.Writer, project, dir, composeFile string) error {
-	app := store.App{ID: project, Dir: dir, ComposeFile: composeFile}
-	fmt.Fprintf(out, "==> docker compose pull (project %s)\n", project)
-	if err := e.compose(ctx, out, app, dir, "pull", "--quiet", "--ignore-buildable"); err != nil {
-		fmt.Fprintf(out, "pull failed, going on with the local images: %v\n", err)
+// RebuildService refreshes one service of a compose stack in place: a newer image if
+// it uses one, a rebuild if it has a build section, then it is recreated alone (its
+// dependencies are left as they are). files are the compose files the stack was started
+// with; empty lets compose find them in dir.
+func (e *Engine) RebuildService(ctx context.Context, out io.Writer, project, dir string, files []string, service string) error {
+	full := []string{"run", "--rm", "-v", "/var/run/docker.sock:/var/run/docker.sock", "-v", dir + ":" + dir, "-w", dir, composeImage,
+		"docker", "compose", "-p", project}
+	for _, f := range files {
+		full = append(full, "-f", f)
 	}
-	fmt.Fprintln(out, "==> docker compose up -d --build")
-	return e.compose(ctx, out, app, dir, "up", "-d", "--build")
+	fmt.Fprintf(out, "==> docker compose pull %s\n", service)
+	if err := e.docker(ctx, out, "", nil, append(full, "pull", "--quiet", "--ignore-buildable", service)...); err != nil {
+		fmt.Fprintf(out, "pull failed, going on with the local image: %v\n", err)
+	}
+	fmt.Fprintf(out, "==> docker compose up -d --build --no-deps %s\n", service)
+	return e.docker(ctx, out, "", nil, append(full, "up", "-d", "--build", "--no-deps", service)...)
 }

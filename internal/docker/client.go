@@ -117,6 +117,7 @@ type Container struct {
 	Ports   []PortBinding     `json:"ports"`
 	Project string            `json:"project,omitempty"` // compose project
 	WorkDir string            `json:"workDir,omitempty"` // folder of the compose file
+	Service string            `json:"service,omitempty"` // compose service
 	Labels  map[string]string `json:"-"`
 	// Exposed is true when a port is published on all interfaces: Docker writes its own
 	// iptables rules, so such a port is reachable even if ufw denies it.
@@ -146,7 +147,7 @@ func (c *Client) Containers(ctx context.Context) ([]Container, error) {
 	for _, r := range raw {
 		ct := Container{ID: r.ID[:12], Image: r.Image, State: r.State, Status: r.Status,
 			Created: time.Unix(r.Created, 0), Labels: r.Labels, Project: r.Labels["com.docker.compose.project"],
-			WorkDir: r.Labels["com.docker.compose.project.working_dir"], Ports: []PortBinding{}}
+			WorkDir: r.Labels["com.docker.compose.project.working_dir"], Service: r.Labels["com.docker.compose.service"], Ports: []PortBinding{}}
 		if len(r.Names) > 0 {
 			ct.Name = strings.TrimPrefix(r.Names[0], "/")
 		}

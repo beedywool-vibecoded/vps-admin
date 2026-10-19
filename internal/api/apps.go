@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/beedywool/vps-admin/internal/deploy"
+	"github.com/beedywool/vps-admin/internal/docker"
 	"github.com/beedywool/vps-admin/internal/github"
 	"github.com/beedywool/vps-admin/internal/store"
 )
@@ -765,29 +766,43 @@ func (s *Server) appCheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"current": current, "latest": c, "upToDate": current != "" && current == c.SHA})
 }
 
-// rebuilding holds the compose projects being rebuilt, one rebuild at a time each.
+// rebuilding holds the containers being rebuilt, one rebuild at a time each.
 var rebuilding sync.Map
 
-// projectRebuild pulls and rebuilds a running compose project from its folder, streaming
-// the output as plain text. It goes on if the browser leaves.
-func (s *Server) projectRebuild(w http.ResponseWriter, r *http.Request) {
-	project := r.PathValue("project")
-	dir, err := s.composeFolder(r.Context(), project)
+// containerRebuild pulls or rebuilds the compose service of one container and recreates
+// it, streaming the output as plain text. It goes on if the browser leaves.
+func (s *Server) containerRebuild(w http.ResponseWriter, r *http.Request) {
+	list, err := s.Docker.Containers(r.Context())
 	if err != nil {
-		writeErrorMsg(w, http.StatusNotFound, "not_found", err.Error())
+		writeErrorMsg(w, http.StatusBadGateway, "docker", err.Error())
 		return
 	}
-	if _, busy := rebuilding.LoadOrStore(project, true); busy {
-		writeErrorMsg(w, http.StatusConflict, "busy", "a rebuild of this project is already running")
+	id := r.PathValue("id")
+	var c *docker.Container
+	for i := range list {
+		if list[i].ID == id || list[i].Name == id {
+			c = &list[i]
+		}
+	}
+	if c == nil {
+		writeError(w, http.StatusNotFound, "not_found")
 		return
 	}
-	defer rebuilding.Delete(project)
-	composeFile := ""
-	if apps, err := s.Store.Apps(r.Context()); err == nil {
-		for _, a := range apps {
-			if a.Dir == dir {
-				composeFile = a.ComposeFile
-			}
+	if c.Project == "" || c.WorkDir == "" || c.Service == "" {
+		writeErrorMsg(w, http.StatusBadRequest, "not_compose", "only containers started by docker compose can be rebuilt")
+		return
+	}
+	if _, busy := rebuilding.LoadOrStore(c.Project+"/"+c.Service, true); busy {
+		writeErrorMsg(w, http.StatusConflict, "busy", "this container is already being rebuilt")
+		return
+	}
+	defer rebuilding.Delete(c.Project + "/" + c.Service)
+	// The compose files it was started with, when they sit in its folder (the only
+	// folder the compose container sees).
+	var files []string
+	for _, f := range strings.Split(c.Labels["com.docker.compose.project.config_files"], ",") {
+		if f = strings.TrimSpace(f); f != "" && strings.HasPrefix(f, c.WorkDir+"/") {
+			files = append(files, f)
 		}
 	}
 
@@ -799,8 +814,8 @@ func (s *Server) projectRebuild(w http.ResponseWriter, r *http.Request) {
 	out := &flushWriter{w: w, rc: rc}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Minute)
 	defer cancel()
-	err = s.Deploy.RebuildFolder(ctx, out, project, dir, composeFile)
-	s.audit(r, "compose.rebuild", project, err)
+	err = s.Deploy.RebuildService(ctx, out, c.Project, c.WorkDir, files, c.Service)
+	s.audit(r, "container.rebuild", c.Name, err)
 	if err != nil {
 		fmt.Fprintf(out, "\n==> FAILED: %v\n", err)
 		return

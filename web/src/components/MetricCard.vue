@@ -2,15 +2,16 @@
 import M3Shape from './M3Shape.vue'
 import type { ShapeKind } from '@/lib/shapes'
 
-defineProps<{ label: string; value: string; percent: number; sub: string; shape: ShapeKind; tint: string }>()
+// compact: the smaller size of the widget bar. Without percent there is no progress line.
+defineProps<{ label: string; value: string; percent?: number; sub: string; shape: ShapeKind; tint: string; compact?: boolean }>()
 </script>
 
 <template>
-  <div class="metric">
-    <M3Shape :kind="shape" :size="120" :fill="tint" class="deco" />
+  <div class="metric" :class="{ compact }">
+    <M3Shape :kind="shape" :size="compact ? 96 : 120" :fill="tint" class="deco" />
     <span class="label">{{ label }}</span>
     <span class="value">{{ value }}</span>
-    <div class="track" role="meter" :aria-label="label" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.round(percent)">
+    <div v-if="percent !== undefined" class="track" role="meter" :aria-label="label" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.round(percent)">
       <div class="wave" :style="{ width: `${Math.min(Math.max(percent, 0), 100)}%` }" />
       <div class="stop" />
       <div class="rest" />
@@ -87,5 +88,23 @@ defineProps<{ label: string; value: string; percent: number; sub: string; shape:
 .sub {
   font-size: 13px;
   color: var(--on-sv);
+}
+.compact {
+  padding: 16px 18px;
+  gap: 8px;
+  border-radius: 24px;
+}
+.compact .value {
+  font-size: 34px;
+}
+.compact .label {
+  font-size: 14px;
+}
+.compact .sub {
+  font-size: 12px;
+}
+.compact .deco {
+  right: -26px;
+  top: -30px;
 }
 </style>

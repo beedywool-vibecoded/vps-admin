@@ -3,12 +3,11 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import Icon from '@/components/Icon.vue'
 import StatusDot, { type Tone } from '@/components/StatusDot.vue'
 import LogViewer from '@/components/LogViewer.vue'
-import LinkFolderDialog from '@/components/LinkFolderDialog.vue'
 import ScriptRunDialog from '@/components/ScriptRunDialog.vue'
 import RebuildDialog from '@/components/RebuildDialog.vue'
 import GroupBadge from '@/components/GroupBadge.vue'
 import IconPicker from '@/components/IconPicker.vue'
-import { api, type AppView, type Container, type ContainerStats, type Script, type UpdateCheck } from '@/lib/api'
+import { api, type Container, type ContainerStats, type Script } from '@/lib/api'
 import { bytes, image } from '@/lib/format'
 import { confirm, toast, toastError } from '@/lib/ui'
 
@@ -24,12 +23,7 @@ const loadLogs = () => api.containerLogs(logsFor.value!.id).then((r) => r.logs)
 
 
 // GitHub links and scripts of each compose folder
-const apps = ref<AppView[]>([])
 const scripts = ref<Script[]>([])
-const github = ref(false)
-const checks = ref<Record<string, UpdateCheck | 'checking'>>({})
-const linkFor = ref<{ project: string; dir?: string } | null>(null)
-const linkOpen = computed({ get: () => linkFor.value !== null, set: (v) => !v && (linkFor.value = null) })
 // Groups are collapsed by default; the open ones are remembered in this browser.
 const OPEN_KEY = 'vpsadmin.openGroups'
 function readOpen(): string[] {
@@ -56,43 +50,21 @@ function toggle(name: string) {
 const iconFor = ref<string | null>(null)
 const iconOpen = computed({ get: () => iconFor.value !== null, set: (v) => !v && (iconFor.value = null) })
 
-const rebuildFor = ref<{ project: string; dir?: string } | null>(null)
+const rebuildFor = ref<Container | null>(null)
 const rebuildOpen = ref(false)
 const runFor = ref<Script | null>(null)
 const runOpen = computed({ get: () => runFor.value !== null, set: (v) => !v && (runFor.value = null) })
 
-const appFor = (dir?: string) => (dir ? apps.value.find((a) => a.dir === dir) : undefined)
 const scriptsFor = (dir?: string) => (dir ? scripts.value.filter((s) => s.dir === dir) : [])
 
 async function loadLinks() {
-  const [a, s, g] = await Promise.allSettled([api.apps(), api.scripts(), api.github()])
-  if (a.status === 'fulfilled') apps.value = a.value.apps
-  if (s.status === 'fulfilled') scripts.value = s.value.scripts
-  if (g.status === 'fulfilled') github.value = g.value.connected
-}
-
-async function check(app: AppView) {
-  checks.value[app.id] = 'checking'
   try {
-    const c = await api.checkApp(app.id)
-    checks.value[app.id] = c
-    if (c.upToDate) toast(`${app.id} is up to date`)
-  } catch (e) {
-    delete checks.value[app.id]
-    toastError(e)
+    scripts.value = (await api.scripts()).scripts
+  } catch {
+    // scripts are optional here
   }
 }
 
-async function update(app: AppView) {
-  try {
-    await api.deploy(app.id)
-    delete checks.value[app.id]
-    toast(`Updating ${app.id}: follow it in Apps`)
-    loadLinks()
-  } catch (e) {
-    toastError(e)
-  }
-}
 const groups = computed(() => {
   const q = query.value.trim().toLowerCase()
   const map = new Map<string, Container[]>()
@@ -196,28 +168,8 @@ onBeforeUnmount(() => clearInterval(timer))
       </div>
       <div :id="`grp-${gi}`" class="gbody" :inert="!isOpen(name)">
       <div class="ginner">
-      <div v-if="items[0]?.workDir" class="links">
-        <template v-if="appFor(items[0].workDir)">
-          <RouterLink :to="`/apps/${appFor(items[0].workDir)!.id}`" class="chip chip-outline gh">
-            <Icon name="github" :size="14" /> {{ appFor(items[0].workDir)!.repo }} · {{ appFor(items[0].workDir)!.branch }}
-            <template v-if="appFor(items[0].workDir)!.autoDeploy"> · on push</template>
-          </RouterLink>
-          <span v-if="checks[appFor(items[0].workDir)!.id] && checks[appFor(items[0].workDir)!.id] !== 'checking' && !(checks[appFor(items[0].workDir)!.id] as UpdateCheck).upToDate" class="small new">
-            New: <code>{{ (checks[appFor(items[0].workDir)!.id] as UpdateCheck).latest.sha.slice(0, 7) }}</code> {{ (checks[appFor(items[0].workDir)!.id] as UpdateCheck).latest.message }}
-          </span>
-          <button class="btn btn-text st" type="button" :disabled="checks[appFor(items[0].workDir)!.id] === 'checking'" @click="check(appFor(items[0].workDir)!)">
-            {{ checks[appFor(items[0].workDir)!.id] === 'checking' ? 'Checking…' : 'Check' }}
-          </button>
-          <button class="btn btn-tonal st" type="button" :disabled="appFor(items[0].workDir)!.busy" @click="update(appFor(items[0].workDir)!)">Update</button>
-        </template>
-        <button v-else-if="github && name !== 'Standalone'" class="btn btn-text st" type="button" @click="linkFor = { project: name, dir: items[0].workDir }">
-          <Icon name="github" :size="16" /> Update from GitHub
-        </button>
-        <span class="spacer" />
-        <button v-if="name !== 'Standalone'" class="btn btn-outlined st script-btn" type="button" v-tip="'Pull and rebuild, then recreate what changed'" @click="(rebuildFor = { project: name, dir: items[0].workDir }), (rebuildOpen = true)">
-          <Icon name="restart" :size="16" /> Rebuild
-        </button>
-        <button v-for="sc in scriptsFor(items[0].workDir)" :key="sc.name" class="btn btn-outlined st script-btn" type="button" v-tip="sc.description || sc.target" @click="runFor = sc">
+      <div v-if="scriptsFor(items[0]?.workDir).length" class="links">
+        <button v-for="sc in scriptsFor(items[0]?.workDir)" :key="sc.name" class="btn btn-outlined st script-btn" type="button" v-tip="sc.description || sc.target" @click="runFor = sc">
           <Icon name="terminal" :size="16" /> {{ sc.title || sc.name }}<span v-if="sc.running" class="dotr" />
         </button>
       </div>
@@ -242,6 +194,9 @@ onBeforeUnmount(() => clearInterval(timer))
           <button class="icon-btn st" type="button" :aria-label="`Stop ${c.name}`" :disabled="busy[c.id] || c.state !== 'running'" @click="act(c, 'stop')">
             <Icon name="stop" :size="18" />
           </button>
+          <button v-if="c.service" class="icon-btn st" type="button" :aria-label="`Rebuild ${c.name}`" v-tip="'Rebuild: newer image or new build, then recreate'" @click="(rebuildFor = c), (rebuildOpen = true)">
+            <Icon name="wrench" :size="18" />
+          </button>
           <button class="icon-btn st" type="button" :aria-label="`Logs of ${c.name}`" @click="logsFor = c">
             <Icon name="logs" :size="20" />
           </button>
@@ -251,9 +206,8 @@ onBeforeUnmount(() => clearInterval(timer))
       </div>
     </section>
 
-    <LinkFolderDialog v-if="linkFor" v-model="linkOpen" :project="linkFor.project" :dir="linkFor.dir" @linked="loadLinks" />
     <IconPicker v-if="iconFor" v-model="iconOpen" :project="iconFor" />
-    <RebuildDialog v-if="rebuildFor" v-model="rebuildOpen" :project="rebuildFor.project" :dir="rebuildFor.dir" @done="load" />
+    <RebuildDialog v-if="rebuildFor" v-model="rebuildOpen" :container="rebuildFor" @done="load" />
     <ScriptRunDialog v-model="runOpen" :script="runFor" @done="loadLinks" />
     <LogViewer
       v-if="logsFor"
@@ -344,13 +298,6 @@ onBeforeUnmount(() => clearInterval(timer))
 }
 .links .spacer {
   flex: 1;
-}
-.gh {
-  text-decoration: none;
-  color: var(--on-surface);
-}
-.new {
-  color: var(--warn);
 }
 .script-btn {
   height: 34px;

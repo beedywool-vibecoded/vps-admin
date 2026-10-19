@@ -472,8 +472,8 @@ onBeforeUnmount(() => {
   gap: 4px;
   padding: 10px 16px 8px;
   border-radius: 12px 12px 4px 4px;
-  background: var(--sch);
-  border-bottom: 2px solid var(--on-sv);
+  background: var(--schh);
+  border-bottom: 1px solid var(--on-sv);
 }
 .tf span {
   font-size: 12px;

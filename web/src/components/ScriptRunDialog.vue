@@ -79,13 +79,6 @@ async function run() {
   gap: 8px;
   align-items: center;
 }
-.run-row .field {
-  background: var(--surface);
-  border: 1px solid var(--outline-v);
-}
-.run-row .field:focus-within {
-  border-color: var(--primary);
-}
 .run-row input {
   font-family: var(--mono);
   font-size: 13px;

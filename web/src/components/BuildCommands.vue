@@ -78,11 +78,12 @@ const node = computed(() => props.build === 'node' || props.build === 'static')
   gap: 4px;
   padding: 10px 16px 8px;
   border-radius: 12px 12px 4px 4px;
-  background: var(--sch);
-  border-bottom: 2px solid var(--on-sv);
+  background: var(--schh);
+  border-bottom: 1px solid var(--on-sv);
 }
 .tf:focus-within {
   border-bottom-color: var(--primary);
+  box-shadow: inset 0 -1px 0 var(--primary);
 }
 .tf span {
   font-size: 12px;

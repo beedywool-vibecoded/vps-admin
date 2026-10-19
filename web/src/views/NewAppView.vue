@@ -134,7 +134,7 @@ onMounted(async () => {
     <div class="cols">
       <section class="card source">
         <h2>Pick a repository</h2>
-        <label class="field">
+        <label class="field search">
           <Icon name="search" :size="20" />
           <input v-model="query" placeholder="Search repositories" aria-label="Search repositories" />
         </label>
@@ -310,15 +310,18 @@ onMounted(async () => {
 .repos {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   max-height: 640px;
   overflow: auto;
 }
 .repo {
+  /* the state layer clips (overflow: hidden), which would let the list squash rows */
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
+  min-height: 64px;
+  padding: 12px 16px;
   border-radius: 16px;
   border: 2px solid transparent;
   background: transparent;
@@ -361,11 +364,12 @@ onMounted(async () => {
   gap: 4px;
   padding: 10px 16px 8px;
   border-radius: 12px 12px 4px 4px;
-  background: var(--sch);
-  border-bottom: 2px solid var(--on-sv);
+  background: var(--schh);
+  border-bottom: 1px solid var(--on-sv);
 }
 .tf:focus-within {
   border-bottom-color: var(--primary);
+  box-shadow: inset 0 -1px 0 var(--primary);
 }
 .tf span {
   font-size: 12px;
