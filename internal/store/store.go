@@ -139,6 +139,19 @@ var migrations = []string{
 		decided_at  INTEGER
 	);
 	CREATE INDEX tool_calls_conv ON tool_calls(conv_id, batch, ord);`,
+
+	`CREATE TABLE script_runs (
+		id        TEXT PRIMARY KEY,
+		script    TEXT NOT NULL,
+		args      TEXT NOT NULL DEFAULT '',
+		device_id TEXT,
+		started   INTEGER NOT NULL,
+		finished  INTEGER,
+		exit_code INTEGER,
+		error     TEXT NOT NULL DEFAULT '',
+		output    TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX script_runs_script ON script_runs(script, started);`,
 }
 
 func Open(dataDir string) (*Store, error) {

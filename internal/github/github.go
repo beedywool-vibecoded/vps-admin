@@ -106,10 +106,13 @@ func Manifest(publicURL, name string) map[string]any {
 			"url":    publicURL + "/api/github/webhook",
 			"active": true,
 		},
-		"redirect_url":        publicURL + "/api/github/manifest/callback",
-		"setup_url":           publicURL + "/apps?github=installed",
-		"setup_on_update":     true,
-		"public":              false,
+		"redirect_url":    publicURL + "/api/github/manifest/callback",
+		"setup_url":       publicURL + "/apps?github=installed",
+		"setup_on_update": true,
+		// Public so the install page offers every account and organization the user
+		// belongs to. Installing grants this server read access; it cannot deploy
+		// anything that is not set up in this panel.
+		"public":              true,
 		"default_permissions": map[string]string{"contents": "read", "metadata": "read"},
 		"default_events":      []string{"push"},
 	}

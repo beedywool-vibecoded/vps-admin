@@ -14,7 +14,11 @@ class Server {
   String name;
 
   Map<String, dynamic> toJson() => {'id': id, 'url': url, 'name': name};
-  static Server fromJson(Map<String, dynamic> j) => Server(id: j['id'] as String, url: j['url'] as String, name: j['name'] as String);
+  static Server fromJson(Map<String, dynamic> j) => Server(
+    id: j['id'] as String,
+    url: j['url'] as String,
+    name: j['name'] as String,
+  );
 }
 
 enum Seed {
@@ -32,8 +36,11 @@ enum Seed {
 /// App-wide state: servers, the current one, appearance.
 class AppState extends ChangeNotifier {
   AppState._(this._prefs);
-  final SharedPreferences _prefs;
-  static const _secure = FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true));
+  // null when the stored settings cannot be read: the app still works, without saving.
+  final SharedPreferences? _prefs;
+  static const _secure = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
 
   List<Server> servers = [];
   String? currentId;
@@ -42,17 +49,32 @@ class AppState extends ChangeNotifier {
   Seed seed = Seed.purple;
   final Map<String, Api> _apis = {};
 
+  /// A state with nothing stored, used when the stored one cannot be read.
+  static Future<AppState> empty() async {
+    try {
+      return AppState._(await SharedPreferences.getInstance());
+    } catch (_) {
+      return AppState._(null);
+    }
+  }
+
   static Future<AppState> load() async {
     final s = AppState._(await SharedPreferences.getInstance());
-    final raw = s._prefs.getString('servers');
+    final prefs = s._prefs!;
+    final raw = prefs.getString('servers');
     if (raw != null) {
-      s.servers = (jsonDecode(raw) as List).map((e) => Server.fromJson(e as Map<String, dynamic>)).toList();
+      s.servers = (jsonDecode(raw) as List)
+          .map((e) => Server.fromJson(e as Map<String, dynamic>))
+          .toList();
     }
-    s.currentId = s._prefs.getString('current');
-    if (s.servers.every((x) => x.id != s.currentId)) s.currentId = s.servers.firstOrNull?.id;
-    s.themeMode = ThemeMode.values[s._prefs.getInt('themeMode') ?? 0];
-    s.useDynamicColor = s._prefs.getBool('dynamic') ?? true;
-    s.seed = Seed.values[(s._prefs.getInt('seed') ?? 0).clamp(0, Seed.values.length - 1)];
+    s.currentId = prefs.getString('current');
+    if (s.servers.every((x) => x.id != s.currentId)) {
+      s.currentId = s.servers.firstOrNull?.id;
+    }
+    s.themeMode = ThemeMode.values[prefs.getInt('themeMode') ?? 0];
+    s.useDynamicColor = prefs.getBool('dynamic') ?? true;
+    s.seed = Seed
+        .values[(prefs.getInt('seed') ?? 0).clamp(0, Seed.values.length - 1)];
     for (final srv in s.servers) {
       final token = await _secure.read(key: 'token:${srv.id}');
       if (token != null) s._apis[srv.id] = Api(srv.url, token);
@@ -65,14 +87,23 @@ class AppState extends ChangeNotifier {
   Api? apiFor(Server s) => _apis[s.id];
 
   Future<void> _save() async {
-    await _prefs.setString('servers', jsonEncode(servers.map((s) => s.toJson()).toList()));
-    if (currentId != null) await _prefs.setString('current', currentId!);
+    await _prefs?.setString(
+      'servers',
+      jsonEncode(servers.map((s) => s.toJson()).toList()),
+    );
+    if (currentId != null) await _prefs?.setString('current', currentId!);
   }
 
   /// Pairs with a server using a code from `sudo vps-admin pair`.
   Future<Server> pair(String input, String code, String deviceName) async {
     final url = normalizeUrl(input);
-    if (url == null) throw ApiException(0, 'invalid_url', 'Enter the address of the panel, like admin.example.com');
+    if (url == null) {
+      throw ApiException(
+        0,
+        'invalid_url',
+        'Enter the address of the panel, like admin.example.com',
+      );
+    }
     final token = await Api.pair(url, code, deviceName);
     final api = Api(url, token);
     String name = Uri.parse(url).host;
@@ -102,22 +133,22 @@ class AppState extends ChangeNotifier {
     await _secure.delete(key: 'token:${s.id}');
     if (currentId == s.id) currentId = servers.firstOrNull?.id;
     await _save();
-    if (currentId == null) await _prefs.remove('current');
+    if (currentId == null) await _prefs?.remove('current');
     notifyListeners();
   }
 
   Future<void> setTheme({ThemeMode? mode, bool? dynamic, Seed? seed}) async {
     if (mode != null) {
       themeMode = mode;
-      await _prefs.setInt('themeMode', mode.index);
+      await _prefs?.setInt('themeMode', mode.index);
     }
     if (dynamic != null) {
       useDynamicColor = dynamic;
-      await _prefs.setBool('dynamic', dynamic);
+      await _prefs?.setBool('dynamic', dynamic);
     }
     if (seed != null) {
       this.seed = seed;
-      await _prefs.setInt('seed', seed.index);
+      await _prefs?.setInt('seed', seed.index);
     }
     notifyListeners();
   }

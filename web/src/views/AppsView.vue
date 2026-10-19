@@ -2,7 +2,6 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import Icon from '@/components/Icon.vue'
-import M3Expand from '@/components/M3Expand.vue'
 import M3Shape from '@/components/M3Shape.vue'
 import StatusDot from '@/components/StatusDot.vue'
 import { api, type AppView, type GitHubStatus } from '@/lib/api'
@@ -16,7 +15,6 @@ const apps = ref<AppView[]>([])
 const gh = ref<GitHubStatus | null>(null)
 const loading = ref(true)
 const connecting = ref(false)
-const org = ref('')
 const SHAPES: ShapeKind[] = ['cookie', 'clover', 'sunny', 'flower']
 
 async function load() {
@@ -35,7 +33,7 @@ async function load() {
 async function connect() {
   connecting.value = true
   try {
-    const { url, manifest } = await api.githubManifest(org.value.trim())
+    const { url, manifest } = await api.githubManifest()
     const form = document.createElement('form')
     form.method = 'post'
     form.action = url
@@ -92,14 +90,9 @@ onBeforeUnmount(() => clearInterval(timer))
         <h2>Deploy from GitHub</h2>
         <p class="muted">
           Creates a private GitHub App for this server in one click: it can only read the repositories you
-          choose, and tells the server when you push so it redeploys by itself.
+          choose, and tells the server when you push so it redeploys by itself. GitHub then lets
+          you pick your account or any of your organizations.
         </p>
-        <M3Expand class="small muted org-x">
-          <template #summary>For an organization</template>
-          <label class="field org">
-            <input v-model="org" placeholder="organization name" aria-label="GitHub organization" />
-          </label>
-        </M3Expand>
       </div>
       <button class="btn btn-filled btn-lg st" type="button" :disabled="connecting" @click="connect">
         <Icon name="github" :size="20" /> Connect GitHub
@@ -167,17 +160,6 @@ onBeforeUnmount(() => clearInterval(timer))
 .connect p {
   margin: 0 0 8px;
   max-width: 640px;
-}
-.org {
-  margin: 8px 2px 2px;
-  max-width: 320px;
-}
-.org-x {
-  max-width: 340px;
-}
-.org-x :deep(.head) {
-  padding: 4px 8px;
-  width: auto;
 }
 .gh {
   display: flex;

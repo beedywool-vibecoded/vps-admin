@@ -49,6 +49,11 @@ android {
             val release = signingConfigs.getByName("release")
             // Without the release key, fall back to debug keys so `flutter run --release` still works.
             signingConfig = if (release.storeFile != null) release else signingConfigs.getByName("debug")
+            // No R8: plugins generated with jnigen (shared_preferences, path_provider) call
+            // their Kotlin side by name through JNI, and R8 strips what it cannot see used,
+            // which crashed the app at startup in release builds. The Java part is tiny.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }

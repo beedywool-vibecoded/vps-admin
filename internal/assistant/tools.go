@@ -14,6 +14,7 @@ import (
 
 	"github.com/beedywool/vps-admin/internal/deploy"
 	"github.com/beedywool/vps-admin/internal/docker"
+	"github.com/beedywool/vps-admin/internal/scripts"
 	"github.com/beedywool/vps-admin/internal/store"
 	"github.com/beedywool/vps-admin/internal/system"
 )
@@ -27,6 +28,7 @@ type Deps struct {
 	Docker    *docker.Client
 	Collector *system.Collector
 	Deploy    *deploy.Engine
+	Scripts   *scripts.Runner
 	Host      system.Host
 	DataDir   string
 }
@@ -52,6 +54,9 @@ var defs = []toolDef{
 	{"security_report", "The panel's security audit: SSH settings, firewall, brute force protection, updates, exposed ports.", map[string]any{}, Read},
 	{"list_apps", "Apps deployed from GitHub by the panel, with their live deployment and status.", map[string]any{}, Read},
 	{"deployment_log", "Build and start log of an app deployment.", map[string]any{"app": str("App name"), "deployment_id": num("Deployment id, 0 for the latest")}, Read},
+	{"list_scripts", "Scripts the administrator linked for the panel (sudo vps-admin link), with their description.", map[string]any{}, Read},
+	{"run_script", "Run one of the linked scripts and wait for it (up to 10 minutes). Always needs the administrator's approval.",
+		map[string]any{"name": str("Script name, from list_scripts"), "args": str("Arguments, space separated, quotes allowed; empty for none"), "purpose": str("One sentence: why")}, Change},
 	{"run_command", "Run a shell command on the server as the unprivileged vps-admin user (sh -c, 60 s timeout). Read-only commands may run right away; anything that changes the system waits for the administrator's approval. `sudo` only works for systemctl start/stop/restart/reload and a few status commands.",
 		map[string]any{"command": str("The command line"), "purpose": str("One sentence for the administrator: what this does and why")}, ""},
 	{"service_action", "Start, stop, restart or reload a systemd service. Always needs the administrator's approval.",
@@ -108,6 +113,7 @@ type call struct {
 	Command      string `json:"command"`
 	Purpose      string `json:"purpose"`
 	Action       string `json:"action"`
+	Args         string `json:"args"`
 }
 
 var ErrInvalidInput = errors.New("invalid tool input")
@@ -147,6 +153,8 @@ func kindOf(d *toolDef, c *call) (Kind, string) {
 		return Change, fmt.Sprintf("docker %s %s", c.Action, c.Container)
 	case "deploy_app":
 		return Change, "redeploy " + c.App
+	case "run_script":
+		return Change, strings.TrimSpace("script " + c.Name + " " + c.Args)
 	}
 	return d.kind, d.name
 }
@@ -188,7 +196,11 @@ func truncate(s string) string {
 
 // execute runs a call and returns the text sent back to the model.
 func (dp *Deps) execute(ctx context.Context, d *toolDef, c *call) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	limit := 2 * time.Minute
+	if d.name == "run_script" {
+		limit = 11 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	switch d.name {
 	case "server_overview":
@@ -273,6 +285,35 @@ func (dp *Deps) execute(ctx context.Context, d *toolDef, c *call) (string, error
 		return fmt.Sprintf("status: %s\nerror: %s\n\n%s", d.Status, d.Error, log), nil
 	case "run_command":
 		return dp.shell(ctx, c.Command)
+	case "list_scripts":
+		list, err := dp.Scripts.List()
+		if err != nil {
+			return "", err
+		}
+		return asJSON(list), nil
+	case "run_script":
+		args, err := scripts.SplitArgs(c.Args)
+		if err != nil {
+			return "", err
+		}
+		run, err := dp.Scripts.Start(c.Name, args, func(run *scripts.Run) {
+			dp.Store.AddScriptRun(context.WithoutCancel(ctx), run.ID, c.Name, c.Args, "", run.Started)
+		}, func(run *scripts.Run) {
+			dp.Store.FinishScriptRun(context.WithoutCancel(ctx), run.ID, *run.Finished, run.ExitCode, run.Error, run.Output())
+		})
+		if err != nil {
+			return "", err
+		}
+		select {
+		case <-run.Done():
+		case <-time.After(10 * time.Minute):
+			return run.Output() + "\n[still running after 10 minutes, it keeps going; see the Scripts page]", nil
+		}
+		code := -1
+		if run.ExitCode != nil {
+			code = *run.ExitCode
+		}
+		return fmt.Sprintf("%s\n[exit status %d]%s", run.Output(), code, map[bool]string{true: " " + run.Error, false: ""}[run.Error != ""]), nil
 	case "service_action":
 		if err := dp.Runner.ServiceAction(ctx, c.Name, c.Action); err != nil {
 			return "", err

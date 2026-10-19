@@ -5,6 +5,7 @@ import M3Shape from '@/components/M3Shape.vue'
 import Icon from '@/components/Icon.vue'
 import StatusDot, { type Tone } from '@/components/StatusDot.vue'
 import UsageChart from '@/components/UsageChart.vue'
+import RebootDialog from '@/components/RebootDialog.vue'
 import { api, type Container, type Point, type Security, type Service, type UpdateStatus } from '@/lib/api'
 import { session } from '@/lib/session'
 import { bytes, image, pct, rate } from '@/lib/format'
@@ -17,6 +18,8 @@ const update = ref<UpdateStatus | null>(null)
 const containers = ref<Container[] | null>(null)
 const dockerError = ref('')
 const services = ref<Service[]>([])
+const rebootOpen = ref(false)
+const rebootNeeded = computed(() => security.value?.checks.find((c) => c.id === 'reboot')?.status === 'warn')
 
 const snap = computed(() => session.snapshot)
 const memPct = computed(() => (snap.value?.memTotal ? (100 * snap.value.memUsed) / snap.value.memTotal : 0))
@@ -228,8 +231,9 @@ onBeforeUnmount(() => clearInterval(timer))
           <M3Shape kind="clover" :size="40" fill="var(--tc)" />
           <div class="grow">
             <div class="tile-title">System packages</div>
-            <div class="muted small">{{ packages?.detail ?? 'Checking…' }}</div>
+            <div class="muted small">{{ packages?.detail ?? 'Checking…' }}<template v-if="rebootNeeded"> · a reboot is waiting</template></div>
           </div>
+          <button v-if="rebootNeeded" class="btn btn-tonal st" type="button" @click="rebootOpen = true">Restart</button>
         </div>
       </div>
     </section>
@@ -268,6 +272,7 @@ onBeforeUnmount(() => clearInterval(timer))
     </section>
 
     <p v-if="dockerError" class="muted small">Docker: {{ dockerError }}</p>
+    <RebootDialog v-model="rebootOpen" />
   </div>
 </template>
 

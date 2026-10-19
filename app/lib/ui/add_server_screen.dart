@@ -17,20 +17,29 @@ class _CodeFormatter extends TextInputFormatter {
   static final _allowed = RegExp('[23456789ABCDEFGHJKMNPQRSTUVWXYZ]');
   @override
   TextEditingValue formatEditUpdate(TextEditingValue old, TextEditingValue v) {
-    final raw = v.text.toUpperCase().split('').where(_allowed.hasMatch).take(9).join();
+    final raw = v.text
+        .toUpperCase()
+        .split('')
+        .where(_allowed.hasMatch)
+        .take(9)
+        .join();
     final out = StringBuffer();
     for (var i = 0; i < raw.length; i++) {
       if (i > 0 && i % 3 == 0) out.write('-');
       out.write(raw[i]);
     }
     final s = out.toString();
-    return TextEditingValue(text: s, selection: TextSelection.collapsed(offset: s.length));
+    return TextEditingValue(
+      text: s,
+      selection: TextSelection.collapsed(offset: s.length),
+    );
   }
 }
 
 class _AddServerScreenState extends State<AddServerScreen> {
   final _url = TextEditingController();
   final _code = TextEditingController();
+  final _codeFocus = FocusNode();
   bool _busy = false;
 
   Future<void> _pair() async {
@@ -46,61 +55,158 @@ class _AddServerScreenState extends State<AddServerScreen> {
   }
 
   @override
+  void dispose() {
+    _url.dispose();
+    _code.dispose();
+    _codeFocus.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final t = Theme.of(context);
     final cs = t.colorScheme;
-    Widget step(int n, String title, Widget child) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          CircleAvatar(radius: 14, backgroundColor: cs.primaryContainer, child: Text('$n', style: TextStyle(color: cs.onPrimaryContainer, fontWeight: FontWeight.w600, fontSize: 14))),
-          const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: t.textTheme.titleSmall), const SizedBox(height: 8), child])),
-        ]);
+    Widget step(int n, String title, Widget child) => Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CircleAvatar(
+          radius: 14,
+          backgroundColor: cs.primaryContainer,
+          child: Text(
+            '$n',
+            style: TextStyle(
+              color: cs.onPrimaryContainer,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: t.textTheme.titleSmall),
+              const SizedBox(height: 8),
+              child,
+            ],
+          ),
+        ),
+      ],
+    );
     return Scaffold(
       appBar: widget.first ? null : AppBar(title: const Text('Add a server')),
       body: SafeArea(
-        child: ListView(padding: const EdgeInsets.all(20), children: [
-          if (widget.first) ...[
-            const SizedBox(height: 24),
-            Center(child: ShapeIcon(M3Shape.cookie, size: 80, color: cs.primaryContainer, child: Icon(Icons.dns_rounded, color: cs.onPrimaryContainer, size: 34))),
-            const SizedBox(height: 16),
-            Center(child: Text('VPS ADMIN', style: t.textTheme.titleMedium?.copyWith(letterSpacing: 4, fontWeight: FontWeight.w600))),
-            const SizedBox(height: 24),
-          ],
-          Card(
-            margin: EdgeInsets.zero,
-            child: Padding(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: ListView(
+              shrinkWrap: true,
               padding: const EdgeInsets.all(20),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                Text('Add a server', style: t.textTheme.titleLarge),
-                const SizedBox(height: 8),
-                Text('Works with any Linux VPS running the VPS Admin agent.', style: t.textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
-                const SizedBox(height: 20),
-                step(1, 'Address of the panel', TextField(
-                  controller: _url,
-                  keyboardType: TextInputType.url,
-                  autocorrect: false,
-                  decoration: const InputDecoration(hintText: 'admin.example.com', filled: true),
-                )),
-                const SizedBox(height: 16),
-                step(2, 'On the server, run sudo vps-admin pair and type the code', TextField(
-                  controller: _code,
-                  inputFormatters: [_CodeFormatter()],
-                  textCapitalization: TextCapitalization.characters,
-                  autocorrect: false,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 24, letterSpacing: 3),
-                  textAlign: TextAlign.center,
-                  decoration: const InputDecoration(hintText: 'XXX-XXX-XXX', border: OutlineInputBorder()),
-                  onChanged: (_) => setState(() {}),
-                )),
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: _busy || _code.text.length != 11 ? null : _pair,
-                  style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-                  child: Text(_busy ? 'Pairing…' : 'Pair server'),
+              children: [
+                if (widget.first) ...[
+                  const SizedBox(height: 24),
+                  Center(
+                    child: ShapeIcon(
+                      M3Shape.cookie,
+                      size: 80,
+                      color: cs.primaryContainer,
+                      child: Icon(
+                        Icons.dns_rounded,
+                        color: cs.onPrimaryContainer,
+                        size: 34,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Center(
+                    child: Text(
+                      'VPS ADMIN',
+                      style: t.textTheme.titleMedium?.copyWith(
+                        letterSpacing: 4,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+                Card(
+                  margin: EdgeInsets.zero,
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text('Add a server', style: t.textTheme.titleLarge),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Works with any Linux VPS running the VPS Admin agent.',
+                          style: t.textTheme.bodyMedium?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        step(
+                          1,
+                          'Address of the panel',
+                          TextField(
+                            controller: _url,
+                            keyboardType: TextInputType.url,
+                            autocorrect: false,
+                            textInputAction: TextInputAction.next,
+                            onSubmitted: (_) => _codeFocus.requestFocus(),
+                            decoration: const InputDecoration(
+                              hintText: 'admin.example.com',
+                              filled: true,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        step(
+                          2,
+                          'On the server, run sudo vps-admin pair and type the code',
+                          TextField(
+                            controller: _code,
+                            focusNode: _codeFocus,
+                            inputFormatters: [_CodeFormatter()],
+                            textInputAction: TextInputAction.done,
+                            onSubmitted: (_) =>
+                                _code.text.length == 11 && !_busy
+                                ? _pair()
+                                : null,
+                            textCapitalization: TextCapitalization.characters,
+                            autocorrect: false,
+                            style: const TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 24,
+                              letterSpacing: 3,
+                            ),
+                            textAlign: TextAlign.center,
+                            decoration: const InputDecoration(
+                              hintText: 'XXX-XXX-XXX',
+                              border: OutlineInputBorder(),
+                            ),
+                            onChanged: (_) => setState(() {}),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        FilledButton(
+                          onPressed: _busy || _code.text.length != 11
+                              ? null
+                              : _pair,
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(48),
+                          ),
+                          child: Text(_busy ? 'Pairing…' : 'Pair server'),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ]),
+              ],
             ),
           ),
-        ]),
+        ),
       ),
     );
   }

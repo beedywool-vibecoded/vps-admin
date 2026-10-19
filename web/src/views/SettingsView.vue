@@ -2,6 +2,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Icon from '@/components/Icon.vue'
+import M3Slider from '@/components/M3Slider.vue'
+import { appearance, loadAppearance, removeBackground, setOpacity, uploadBackground } from '@/lib/appearance'
 import { api, type AuditEntry, type Device } from '@/lib/api'
 import { passkeysSupported, registerPasskey } from '@/lib/passkey'
 import { SEEDS, mode, seed, type ThemeMode } from '@/lib/theme'
@@ -15,6 +17,40 @@ const current = ref('')
 const audit = ref<AuditEntry[]>([])
 const moreAudit = ref(true)
 const addingKey = ref(false)
+const fileInput = ref<HTMLInputElement>()
+const uploading = ref(false)
+const opacity = ref(appearance.opacity)
+
+async function pickBackground(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  ;(e.target as HTMLInputElement).value = ''
+  if (!file) return
+  uploading.value = true
+  try {
+    await uploadBackground(file)
+    toast('Background updated for everyone')
+  } catch (err) {
+    toastError(err)
+  } finally {
+    uploading.value = false
+  }
+}
+async function commitOpacity(v: number) {
+  try {
+    await setOpacity(v)
+  } catch (err) {
+    toastError(err)
+  }
+}
+async function dropBackground() {
+  const ok = await confirm({ title: 'Remove the background?', body: 'Everyone gets the plain background again.', action: 'Remove' })
+  if (!ok) return
+  try {
+    await removeBackground()
+  } catch (err) {
+    toastError(err)
+  }
+}
 
 const MODES: { id: ThemeMode; label: string }[] = [
   { id: 'system', label: 'System' },
@@ -95,7 +131,8 @@ const describe = (e: AuditEntry) => {
 
 onMounted(async () => {
   try {
-    await Promise.all([loadDevices(), loadAudit()])
+    await Promise.all([loadDevices(), loadAudit(), loadAppearance()])
+    opacity.value = appearance.opacity
   } catch (e) {
     toastError(e)
   }
@@ -150,6 +187,33 @@ onMounted(async () => {
             :style="{ background: s.hex }"
             @click="seed = s.hex"
           />
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Server background</h2>
+        <span class="muted small">Shown to everyone, on the panel and in the app</span>
+      </div>
+      <div class="bg-row">
+        <div class="preview" :class="{ empty: !appearance.background }">
+          <img v-if="appearance.background" :src="`/api/appearance/background?v=${appearance.version}`" alt="" :style="{ opacity }" />
+          <span v-else class="muted small">Plain</span>
+        </div>
+        <div class="grow bg-controls">
+          <div class="bg-buttons">
+            <button class="btn btn-tonal st" type="button" :disabled="uploading" @click="fileInput?.click()">
+              <Icon name="plus" :size="18" /> {{ appearance.background ? 'Change image' : 'Choose an image' }}
+            </button>
+            <button v-if="appearance.background" class="btn btn-text st" type="button" @click="dropBackground">Use a plain background</button>
+            <input ref="fileInput" class="sr-only" type="file" accept="image/jpeg,image/png,image/webp" tabindex="-1" aria-hidden="true" @change="pickBackground" />
+          </div>
+          <div v-if="appearance.background">
+            <div class="small muted">Opacity</div>
+            <M3Slider v-model="opacity" label="Background opacity" :min="0.05" :max="1" :step="0.05" :format="(v) => `${Math.round(v * 100)}%`" @update:model-value="appearance.opacity = $event" @commit="commitOpacity" />
+          </div>
+          <p class="muted small" style="margin: 0">JPEG, PNG or WebP, up to 8 MB. Cards stay opaque so text keeps its contrast.</p>
         </div>
       </div>
     </section>
@@ -214,6 +278,38 @@ onMounted(async () => {
 .setting.col {
   flex-direction: column;
   align-items: stretch;
+}
+.bg-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: flex-start;
+}
+.preview {
+  width: 240px;
+  aspect-ratio: 16 / 10;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--outline-v);
+  display: grid;
+  place-items: center;
+}
+.preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.bg-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 240px;
+}
+.bg-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .seg {
   display: inline-flex;

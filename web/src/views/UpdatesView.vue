@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import M3Shape from '@/components/M3Shape.vue'
 import M3Switch from '@/components/M3Switch.vue'
 import Icon from '@/components/Icon.vue'
+import RebootDialog from '@/components/RebootDialog.vue'
 import { api, type Check, type UpdateStatus } from '@/lib/api'
 import { ago, dateTime } from '@/lib/format'
 import { confirm, toast, toastError } from '@/lib/ui'
@@ -12,6 +13,7 @@ const packages = ref<Check | null>(null)
 const reboot = ref<Check | null>(null)
 const checking = ref(false)
 const installing = ref(false)
+const rebootOpen = ref(false)
 
 const auto = computed({
   get: () => st.value?.auto ?? false,
@@ -151,6 +153,9 @@ onMounted(async () => {
           <h2>System packages</h2>
           <div class="muted small">{{ packages?.detail ?? 'Checking…' }}</div>
         </div>
+        <button class="btn st" :class="reboot && reboot.status !== 'ok' ? 'btn-filled' : 'btn-outlined'" type="button" @click="rebootOpen = true">
+          <Icon name="power" :size="18" /> Restart the server
+        </button>
       </div>
       <div v-if="reboot && reboot.status !== 'ok'" class="note"><Icon name="info" :size="18" /> {{ reboot.detail }}</div>
       <p class="muted small" style="margin: 0">
@@ -158,6 +163,7 @@ onMounted(async () => {
         step. Until then, use <code>sudo apt full-upgrade</code> (or your distribution's equivalent) over SSH.
       </p>
     </section>
+    <RebootDialog v-model="rebootOpen" />
   </div>
 </template>
 

@@ -18,36 +18,85 @@ class AssistantScreen extends StatelessWidget {
       refreshEvery: const Duration(seconds: 15),
       load: () async {
         final s = await api.assistant();
-        final configured = (s['settings'] as Map<String, dynamic>)['configured'] as bool? ?? false;
-        return (configured, configured ? await api.conversations() : <Conversation>[]);
+        final configured =
+            (s['settings'] as Map<String, dynamic>)['configured'] as bool? ??
+            false;
+        return (
+          configured,
+          configured ? await api.conversations() : <Conversation>[],
+        );
       },
       builder: (context, d, reload) {
         final (configured, list) = d;
         final cs = Theme.of(context).colorScheme;
         if (!configured) {
-          return ListView(padding: const EdgeInsets.all(32), children: [
-            ShapeIcon(M3Shape.flower, size: 72, color: cs.primaryContainer, child: Icon(Icons.auto_awesome, color: cs.onPrimaryContainer)),
-            const SizedBox(height: 16),
-            const Text('Connect an Anthropic API key in the web panel (Assistant) to let Claude look into this server with you.', textAlign: TextAlign.center),
-          ]);
-        }
-        void open(String? id) => Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(id: id))).then((_) => reload());
-        return Stack(children: [
-          ListView(padding: const EdgeInsets.fromLTRB(12, 12, 12, 96), children: [
-            if (list.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Text('No conversation yet.', textAlign: TextAlign.center)),
-            for (final c in list)
-              Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                child: ListTile(
-                  title: Text(c.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text(c.state == 'awaiting' ? 'Waiting for your approval' : ago(c.updatedAt)),
-                  leading: c.state == 'awaiting' ? Icon(Icons.shield_outlined, color: cs.primary) : const Icon(Icons.chat_bubble_outline),
-                  onTap: () => open(c.id),
-                ),
+          return ListView(
+            padding: const EdgeInsets.all(32),
+            children: [
+              ShapeIcon(
+                M3Shape.flower,
+                size: 72,
+                color: cs.primaryContainer,
+                child: Icon(Icons.auto_awesome, color: cs.onPrimaryContainer),
               ),
-          ]),
-          Positioned(right: 16, bottom: 16, child: FloatingActionButton.extended(onPressed: () => open(null), icon: const Icon(Icons.add), label: const Text('New'))),
-        ]);
+              const SizedBox(height: 16),
+              const Text(
+                'Connect an Anthropic API key in the web panel (Assistant) to let Claude look into this server with you.',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          );
+        }
+        void open(String? id) => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => ChatScreen(id: id)),
+        ).then((_) => reload());
+        return Stack(
+          children: [
+            ListView(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
+              children: [
+                if (list.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'No conversation yet.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                for (final c in list)
+                  Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      title: Text(
+                        c.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        c.state == 'awaiting'
+                            ? 'Waiting for your approval'
+                            : ago(c.updatedAt),
+                      ),
+                      leading: c.state == 'awaiting'
+                          ? Icon(Icons.shield_outlined, color: cs.primary)
+                          : const Icon(Icons.chat_bubble_outline),
+                      onTap: () => open(c.id),
+                    ),
+                  ),
+              ],
+            ),
+            Positioned(
+              right: 16,
+              bottom: 16,
+              child: FloatingActionButton.extended(
+                onPressed: () => open(null),
+                icon: const Icon(Icons.add),
+                label: const Text('New'),
+              ),
+            ),
+          ],
+        );
       },
     );
   }
@@ -81,7 +130,9 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     id = widget.id;
-    if (id != null) WidgetsBinding.instance.addPostFrameCallback((_) => _open());
+    if (id != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _open());
+    }
   }
 
   @override
@@ -101,7 +152,11 @@ class _ChatScreenState extends State<ChatScreen> {
         messages = (j['messages'] as List).cast<Map<String, dynamic>>();
         calls
           ..clear()
-          ..addEntries((j['toolCalls'] as List).map((t) => ToolCall(t as Map<String, dynamic>)).map((t) => MapEntry(t.id, t)));
+          ..addEntries(
+            (j['toolCalls'] as List)
+                .map((t) => ToolCall(t as Map<String, dynamic>))
+                .map((t) => MapEntry(t.id, t)),
+          );
       });
       _down();
       _listen();
@@ -112,37 +167,59 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _listen() {
     _sub?.cancel();
-    _sub = api.events('/api/assistant/conversations/$id/stream').listen((ev) {
-      final (type, data) = ev;
-      setState(() {
-        switch (type) {
-          case 'message':
-            final m = data as Map<String, dynamic>;
-            if (!messages.any((x) => x['seq'] == m['seq'])) messages.add(m);
-            if (m['role'] == 'assistant') draft.clear();
-          case 'text' || 'thinking':
-            final d = data as Map<String, dynamic>;
-            final i = (d['index'] as num).toInt();
-            draft[i] = (type, (draft[i]?.$2 ?? '') + (d['text'] as String));
-          case 'tool':
-            final t = ToolCall(data as Map<String, dynamic>);
-            calls[t.id] = t;
-          case 'state':
-            final s = data as Map<String, dynamic>;
-            state = s['state'] as String;
-            error = s['error'] as String? ?? '';
-        }
-      });
-      _down();
-    }, onError: (_) {}, onDone: () {
-      // Reconnect while the screen is open, e.g. after the phone slept.
-      if (mounted) Future.delayed(const Duration(seconds: 2), () => mounted ? _open() : null);
-    });
+    _sub = api
+        .events('/api/assistant/conversations/$id/stream')
+        .listen(
+          (ev) {
+            final (type, data) = ev;
+            setState(() {
+              switch (type) {
+                case 'message':
+                  final m = data as Map<String, dynamic>;
+                  if (!messages.any((x) => x['seq'] == m['seq'])) {
+                    messages.add(m);
+                  }
+                  if (m['role'] == 'assistant') draft.clear();
+                case 'text' || 'thinking':
+                  final d = data as Map<String, dynamic>;
+                  final i = (d['index'] as num).toInt();
+                  draft[i] = (
+                    type,
+                    (draft[i]?.$2 ?? '') + (d['text'] as String),
+                  );
+                case 'tool':
+                  final t = ToolCall(data as Map<String, dynamic>);
+                  calls[t.id] = t;
+                case 'state':
+                  final s = data as Map<String, dynamic>;
+                  state = s['state'] as String;
+                  error = s['error'] as String? ?? '';
+              }
+            });
+            _down();
+          },
+          onError: (_) {},
+          onDone: () {
+            // Reconnect while the screen is open, e.g. after the phone slept.
+            if (mounted) {
+              Future.delayed(
+                const Duration(seconds: 2),
+                () => mounted ? _open() : null,
+              );
+            }
+          },
+        );
   }
 
   void _down() => WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scroll.hasClients) _scroll.animateTo(_scroll.position.maxScrollExtent, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
-      });
+    if (_scroll.hasClients) {
+      _scroll.animateTo(
+        _scroll.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    }
+  });
 
   Future<void> _send() async {
     final text = _input.text.trim();
@@ -180,19 +257,42 @@ class _ChatScreenState extends State<ChatScreen> {
     final out = <Widget>[];
     for (final m in messages) {
       final content = (m['content'] as Map<String, dynamic>)['content'];
-      final blocks = content is String ? [<String, dynamic>{'type': 'text', 'text': content}] : (content as List).cast<Map<String, dynamic>>();
+      final blocks = content is String
+          ? [
+              <String, dynamic>{'type': 'text', 'text': content},
+            ]
+          : (content as List).cast<Map<String, dynamic>>();
       if (m['role'] == 'user') {
-        final text = blocks.where((b) => b['type'] == 'text').map((b) => b['text']).join('\n');
+        final text = blocks
+            .where((b) => b['type'] == 'text')
+            .map((b) => b['text'])
+            .join('\n');
         if (text.isNotEmpty) {
-          out.add(Align(
-            alignment: Alignment.centerRight,
-            child: Container(
-              margin: const EdgeInsets.only(left: 48, bottom: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(color: cs.primaryContainer, borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), topRight: Radius.circular(24), bottomLeft: Radius.circular(24), bottomRight: Radius.circular(6))),
-              child: Text(text, style: TextStyle(color: cs.onPrimaryContainer)),
+          out.add(
+            Align(
+              alignment: Alignment.centerRight,
+              child: Container(
+                margin: const EdgeInsets.only(left: 48, bottom: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: cs.primaryContainer,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
+                    bottomLeft: Radius.circular(24),
+                    bottomRight: Radius.circular(6),
+                  ),
+                ),
+                child: Text(
+                  text,
+                  style: TextStyle(color: cs.onPrimaryContainer),
+                ),
+              ),
             ),
-          ));
+          );
         }
         continue;
       }
@@ -212,10 +312,29 @@ class _ChatScreenState extends State<ChatScreen> {
       out.add(d.$1 == 'text' ? _Reply(d.$2) : _Thinking(d.$2));
     }
     if (state == 'running' && draft.isEmpty) {
-      out.add(const Padding(padding: EdgeInsets.all(8), child: Row(children: [SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2)), SizedBox(width: 10), Text('Claude is working…')])));
+      out.add(
+        const Padding(
+          padding: EdgeInsets.all(8),
+          child: Row(
+            children: [
+              SizedBox.square(
+                dimension: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 10),
+              Text('Claude is working…'),
+            ],
+          ),
+        ),
+      );
     }
     if (error.isNotEmpty) {
-      out.add(Card(color: state == 'error' ? cs.errorContainer : null, child: Padding(padding: const EdgeInsets.all(12), child: Text(error))));
+      out.add(
+        Card(
+          color: state == 'error' ? cs.errorContainer : null,
+          child: Padding(padding: const EdgeInsets.all(12), child: Text(error)),
+        ),
+      );
     }
     return out;
   }
@@ -225,50 +344,82 @@ class _ChatScreenState extends State<ChatScreen> {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: Text(title, overflow: TextOverflow.ellipsis)),
-      body: Column(children: [
-        Expanded(
-          child: messages.isEmpty && id == null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      ShapeIcon(M3Shape.sunny, size: 64, color: cs.tertiaryContainer),
-                      const SizedBox(height: 12),
-                      const Text('Ask Claude about this server. Every change waits for your approval.', textAlign: TextAlign.center),
-                    ]),
+      body: Column(
+        children: [
+          Expanded(
+            child: messages.isEmpty && id == null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ShapeIcon(
+                            M3Shape.sunny,
+                            size: 64,
+                            color: cs.tertiaryContainer,
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'Ask Claude about this server. Every change waits for your approval.',
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : ListView(
+                    controller: _scroll,
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                    children: _items(context),
                   ),
-                )
-              : ListView(controller: _scroll, padding: const EdgeInsets.fromLTRB(12, 12, 12, 12), children: _items(context)),
-        ),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-            child: Row(children: [
-              Expanded(
-                child: TextField(
-                  controller: _input,
-                  minLines: 1,
-                  maxLines: 5,
-                  textInputAction: TextInputAction.send,
-                  onSubmitted: (_) => _send(),
-                  decoration: InputDecoration(
-                    hintText: 'Ask Claude about this server',
-                    filled: true,
-                    fillColor: cs.surfaceContainerHigh,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(28), borderSide: BorderSide.none),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              state == 'running'
-                  ? IconButton.filled(tooltip: 'Stop', onPressed: () => api.stopConversation(id!), icon: const Icon(Icons.stop))
-                  : IconButton.filled(tooltip: 'Send', onPressed: _sending ? null : _send, icon: const Icon(Icons.arrow_upward)),
-            ]),
           ),
-        ),
-      ]),
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _input,
+                      minLines: 1,
+                      maxLines: 5,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => _send(),
+                      decoration: InputDecoration(
+                        hintText: 'Ask Claude about this server',
+                        filled: true,
+                        fillColor: cs.surfaceContainerHigh,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(28),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  state == 'running'
+                      ? IconButton.filled(
+                          tooltip: 'Stop',
+                          onPressed: () => api.stopConversation(id!),
+                          icon: const Icon(Icons.stop),
+                        )
+                      : IconButton.filled(
+                          tooltip: 'Send',
+                          onPressed: _sending ? null : _send,
+                          icon: const Icon(Icons.arrow_upward),
+                        ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -285,19 +436,39 @@ class _Reply extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(right: 24, bottom: 12),
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: cs.surfaceContainer, borderRadius: const BorderRadius.only(topLeft: Radius.circular(6), topRight: Radius.circular(24), bottomLeft: Radius.circular(24), bottomRight: Radius.circular(24))),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        for (var i = 0; i < parts.length; i++)
-          if (i.isOdd)
-            Container(
-              margin: const EdgeInsets.symmetric(vertical: 6),
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(color: cs.surfaceContainerLowest, borderRadius: BorderRadius.circular(12)),
-              child: SelectableText(parts[i].replaceFirst(RegExp(r'^\w*\n'), '').trimRight(), style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
-            )
-          else if (parts[i].trim().isNotEmpty)
-            SelectableText(parts[i].trim().replaceAll('**', ''), style: const TextStyle(height: 1.5)),
-      ]),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainer,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(6),
+          topRight: Radius.circular(24),
+          bottomLeft: Radius.circular(24),
+          bottomRight: Radius.circular(24),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < parts.length; i++)
+            if (i.isOdd)
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 6),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerLowest,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: SelectableText(
+                  parts[i].replaceFirst(RegExp(r'^\w*\n'), '').trimRight(),
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                ),
+              )
+            else if (parts[i].trim().isNotEmpty)
+              SelectableText(
+                parts[i].trim().replaceAll('**', ''),
+                style: const TextStyle(height: 1.5),
+              ),
+        ],
+      ),
     );
   }
 }
@@ -308,14 +479,25 @@ class _Thinking extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          dense: true,
-          tilePadding: const EdgeInsets.symmetric(horizontal: 4),
-          title: Text('Reasoning', style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-          children: [Padding(padding: const EdgeInsets.fromLTRB(8, 0, 8, 8), child: Text(text, style: const TextStyle(fontSize: 13)))],
+    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+    child: ExpansionTile(
+      dense: true,
+      tilePadding: const EdgeInsets.symmetric(horizontal: 4),
+      title: Text(
+        'Reasoning',
+        style: TextStyle(
+          fontSize: 13,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
-      );
+      ),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+          child: Text(text, style: const TextStyle(fontSize: 13)),
+        ),
+      ],
+    ),
+  );
 }
 
 class _ToolCard extends StatelessWidget {
@@ -329,47 +511,122 @@ class _ToolCard extends StatelessWidget {
     if (t.status == 'pending') {
       String? purpose;
       try {
-        purpose = (jsonDecode(t.input) as Map<String, dynamic>)['purpose'] as String?;
+        purpose =
+            (jsonDecode(t.input) as Map<String, dynamic>)['purpose'] as String?;
       } catch (_) {}
       return Card(
         margin: const EdgeInsets.only(bottom: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24), side: BorderSide(color: cs.primary, width: 2)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: BorderSide(color: cs.primary, width: 2),
+        ),
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [Icon(Icons.shield_outlined, color: cs.primary), const SizedBox(width: 8), const Expanded(child: Text('Claude wants to run an action', style: TextStyle(fontWeight: FontWeight.w500)))]),
-            const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: cs.surfaceContainerLowest, borderRadius: BorderRadius.circular(12)),
-              child: SelectableText(t.summary, style: TextStyle(fontFamily: 'monospace', fontSize: 13, color: cs.primary)),
-            ),
-            if (purpose != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(purpose, style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant))),
-            const SizedBox(height: 12),
-            Row(children: [
-              FilledButton(onPressed: () => onDecide(t, true), child: const Text('Approve')),
-              const SizedBox(width: 8),
-              OutlinedButton(onPressed: () => onDecide(t, false), child: const Text('Deny')),
-            ]),
-          ]),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.shield_outlined, color: cs.primary),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Claude wants to run an action',
+                      style: TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerLowest,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: SelectableText(
+                  t.summary,
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 13,
+                    color: cs.primary,
+                  ),
+                ),
+              ),
+              if (purpose != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    purpose,
+                    style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+                  ),
+                ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  FilledButton(
+                    onPressed: () => onDecide(t, true),
+                    child: const Text('Approve'),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    onPressed: () => onDecide(t, false),
+                    child: const Text('Deny'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       );
     }
     final ok = t.status == 'done' && !t.isError;
-    final label = switch (t.status) { 'running' => 'running…', 'done' => t.isError ? 'failed' : 'done', 'denied' => 'denied', 'blocked' => 'blocked', _ => t.status };
+    final label = switch (t.status) {
+      'running' => 'running…',
+      'done' => t.isError ? 'failed' : 'done',
+      'denied' => 'denied',
+      'blocked' => 'blocked',
+      _ => t.status,
+    };
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: cs.outlineVariant)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: cs.outlineVariant),
+      ),
       child: ExpansionTile(
         dense: true,
         shape: const Border(),
-        leading: Icon(ok ? Icons.check : t.status == 'running' ? Icons.hourglass_top : Icons.warning_amber, size: 16, color: ok ? StatusDot.color(Tone.ok, cs) : t.status == 'running' ? cs.primary : cs.error),
-        title: Text(t.summary.isEmpty ? t.name : t.summary, style: const TextStyle(fontFamily: 'monospace', fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
+        leading: Icon(
+          ok
+              ? Icons.check
+              : t.status == 'running'
+              ? Icons.hourglass_top
+              : Icons.warning_amber,
+          size: 16,
+          color: ok
+              ? StatusDot.color(Tone.ok, cs)
+              : t.status == 'running'
+              ? cs.primary
+              : cs.error,
+        ),
+        title: Text(
+          t.summary.isEmpty ? t.name : t.summary,
+          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         trailing: Text(label, style: const TextStyle(fontSize: 12)),
         children: [
           if (t.result.isNotEmpty)
-            Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 12), child: SelectableText(t.result, style: const TextStyle(fontFamily: 'monospace', fontSize: 11))),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: SelectableText(
+                t.result,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+              ),
+            ),
         ],
       ),
     );

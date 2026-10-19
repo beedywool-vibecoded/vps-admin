@@ -4,6 +4,8 @@ import { useRoute } from 'vue-router'
 import Icon, { type IconName } from './Icon.vue'
 import M3Shape from './M3Shape.vue'
 import M3Dialog from './M3Dialog.vue'
+import ServerBackground from './ServerBackground.vue'
+import { loadAppearance } from '@/lib/appearance'
 import { streamSystem } from '@/lib/api'
 import { loadSystem, session } from '@/lib/session'
 import { forget, normalizeServerURL, servers } from '@/lib/servers'
@@ -19,6 +21,7 @@ const NAV: { to: string; label: string; icon: IconName; mobile: boolean }[] = [
   { to: '/security', label: 'Security', icon: 'security', mobile: false },
   { to: '/apps', label: 'Apps', icon: 'apps', mobile: true },
   { to: '/assistant', label: 'Assistant', icon: 'assistant', mobile: true },
+  { to: '/scripts', label: 'Scripts', icon: 'terminal', mobile: false },
   { to: '/updates', label: 'Updates', icon: 'updates', mobile: false },
   { to: '/settings', label: 'Settings', icon: 'settings', mobile: true },
 ]
@@ -44,6 +47,7 @@ let stop: (() => void) | undefined
 onMounted(async () => {
   document.addEventListener('click', closeMenu)
   try {
+    loadAppearance().catch(() => {})
     await loadSystem()
     stop = streamSystem((s) => (session.snapshot = s))
   } catch (e) {
@@ -58,6 +62,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="shell">
+    <ServerBackground />
     <nav class="rail" aria-label="Sections">
       <RouterLink to="/" class="logo" aria-label="VPS Admin home">
         <M3Shape kind="cookie" :size="48" fill="var(--pc)">

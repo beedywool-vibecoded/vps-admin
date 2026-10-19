@@ -11,10 +11,10 @@ import 'api.dart';
 
 class AppRelease {
   AppRelease(Map<String, dynamic> j)
-      : versionCode = (j['versionCode'] as num).toInt(),
-        versionName = j['versionName'] as String,
-        sha256 = j['sha256'] as String?,
-        size = (j['size'] as num?)?.toInt();
+    : versionCode = (j['versionCode'] as num).toInt(),
+      versionName = j['versionName'] as String,
+      sha256 = j['sha256'] as String?,
+      size = (j['size'] as num?)?.toInt();
   final int versionCode;
   final String versionName;
   final String? sha256;
@@ -34,8 +34,14 @@ class Updater extends ChangeNotifier {
   String? error;
   String? _waitingInstall;
 
-  String get currentLabel => currentName == null ? '?' : '$currentName ($currentCode)';
-  AppRelease? get available => latest != null && currentCode != null && latest!.versionCode > currentCode! ? latest : null;
+  String get currentLabel =>
+      currentName == null ? '?' : '$currentName ($currentCode)';
+  AppRelease? get available =>
+      latest != null &&
+          currentCode != null &&
+          latest!.versionCode > currentCode!
+      ? latest
+      : null;
 
   Future<void> init() async {
     try {
@@ -71,7 +77,8 @@ class Updater extends ChangeNotifier {
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/updates/vps-admin-${rel.versionCode}.apk');
       await file.parent.create(recursive: true);
-      final req = http.Request('GET', Uri.parse('${api.base}/api/app/apk'))..headers['Authorization'] = 'Bearer ${api.token}';
+      final req = http.Request('GET', Uri.parse('${api.base}/api/app/apk'))
+        ..headers['Authorization'] = 'Bearer ${api.token}';
       final res = await http.Client().send(req);
       if (res.statusCode != 200) throw HttpException('HTTP ${res.statusCode}');
       final sink = file.openWrite();
@@ -94,7 +101,8 @@ class Updater extends ChangeNotifier {
         await file.delete();
         throw const FormatException('The download is corrupted, try again');
       }
-      final canInstall = await _channel.invokeMethod<bool>('canInstall') ?? false;
+      final canInstall =
+          await _channel.invokeMethod<bool>('canInstall') ?? false;
       if (!canInstall) {
         _waitingInstall = file.path;
         await _channel.invokeMethod('openInstallSettings');

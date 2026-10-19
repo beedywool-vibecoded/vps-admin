@@ -22,6 +22,7 @@ import (
 	"github.com/beedywool/vps-admin/internal/deploy"
 	"github.com/beedywool/vps-admin/internal/docker"
 	"github.com/beedywool/vps-admin/internal/github"
+	"github.com/beedywool/vps-admin/internal/scripts"
 	"github.com/beedywool/vps-admin/internal/secret"
 	"github.com/beedywool/vps-admin/internal/store"
 	"github.com/beedywool/vps-admin/internal/system"
@@ -41,6 +42,7 @@ type Server struct {
 	GitHub    *github.Client
 	Deploy    *deploy.Engine
 	Assistant *assistant.Engine
+	Scripts   *scripts.Runner
 	Host      system.Host
 	// Restart is called after an update is installed; the process exits and systemd
 	// starts the new binary.
@@ -89,6 +91,18 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/app/apk", full(s.appAPK))
 
 	mux.Handle("GET /api/audit", full(s.auditLog))
+	mux.Handle("POST /api/system/reboot", full(s.reboot))
+	mux.Handle("GET /api/appearance", full(s.appearance))
+	mux.Handle("PUT /api/appearance", full(s.setAppearance))
+	mux.Handle("GET /api/appearance/background", full(s.backgroundGet))
+	mux.Handle("PUT /api/appearance/background", full(s.backgroundPut))
+	mux.Handle("DELETE /api/appearance/background", full(s.backgroundDelete))
+
+	mux.Handle("GET /api/scripts", full(s.scriptsList))
+	mux.Handle("POST /api/scripts/{name}/run", full(s.scriptRun))
+	mux.Handle("POST /api/scripts/{name}/stop", full(s.scriptStop))
+	mux.Handle("GET /api/scripts/{name}/stream", full(s.scriptStream))
+	mux.Handle("GET /api/script-runs/{run}", full(s.scriptRunOutput))
 
 	mux.Handle("GET /api/github", full(s.githubStatus))
 	mux.Handle("POST /api/github/manifest", full(s.githubManifest))
@@ -135,7 +149,7 @@ func securityHeaders(h http.Handler) http.Handler {
 		hd.Set("Referrer-Policy", "no-referrer")
 		hd.Set("X-Frame-Options", "DENY")
 		// form-action allows github.com: connecting GitHub posts the App manifest there.
-		hd.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self' https://github.com")
+		hd.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self' https://github.com")
 		hd.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			hd.Set("Cache-Control", "no-store")

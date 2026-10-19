@@ -287,6 +287,26 @@ export interface ToolCall {
   createdAt: string
 }
 
+export interface Script {
+  name: string
+  target: string
+  description: string
+  executable: boolean
+  missing: boolean
+  running: boolean
+}
+
+export interface ScriptRun {
+  id: string
+  script: string
+  args: string
+  device?: string
+  started: string
+  finished?: string
+  exitCode?: number
+  error?: string
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -358,6 +378,11 @@ export const api = {
 
   devices: () => request<{ devices: Device[]; current: string }>('GET', '/api/devices'),
   revokeDevice: (id: string) => request<void>('DELETE', `/api/devices/${encodeURIComponent(id)}`),
+  reboot: (confirm: string) => request<{ rebooting: boolean }>('POST', '/api/system/reboot', { confirm }),
+  scripts: () => request<{ scripts: Script[]; runs: ScriptRun[]; dir: string }>('GET', '/api/scripts'),
+  runScript: (name: string, args: string) => request<{ id: string }>('POST', `/api/scripts/${encodeURIComponent(name)}/run`, { args }),
+  stopScript: (name: string) => request<void>('POST', `/api/scripts/${encodeURIComponent(name)}/stop`),
+  scriptRunOutput: (id: string) => request<{ output: string }>('GET', `/api/script-runs/${encodeURIComponent(id)}`),
   audit: (before = 0) => request<{ entries: AuditEntry[] }>('GET', `/api/audit?limit=50&before=${before}`),
 
   github: () => request<GitHubStatus>('GET', '/api/github'),
@@ -431,5 +456,17 @@ export function streamConversation(id: string, on: AssistantEvents): () => void 
   for (const type of ['message', 'text', 'thinking', 'tool', 'state'] as const) {
     es.addEventListener(type, (e) => (on[type] as (v: unknown) => void)(JSON.parse((e as MessageEvent).data)))
   }
+  return () => es.close()
+}
+
+// Live output of a running script: what it printed so far, then new chunks, then the end.
+export function streamScript(name: string, on: { output: (chunk: string) => void; end: (r: { exitCode?: number; error?: string }) => void }): () => void {
+  const es = new EventSource(`/api/scripts/${encodeURIComponent(name)}/stream`)
+  es.addEventListener('output', (e) => on.output(JSON.parse((e as MessageEvent).data)))
+  es.addEventListener('end', (e) => {
+    on.end(JSON.parse((e as MessageEvent).data))
+    es.close()
+  })
+  es.onerror = () => es.close()
   return () => es.close()
 }

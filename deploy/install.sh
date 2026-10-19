@@ -116,6 +116,8 @@ done
 install -d -o vps-admin -g vps-admin -m 755 /opt/vps-admin/bin
 install -d -o vps-admin -g vps-admin -m 700 /var/lib/vps-admin
 install -d -o root -g vps-admin -m 750 /etc/vps-admin
+# Scripts linked with `sudo vps-admin link`: root-owned, so the agent cannot add any.
+install -d -o root -g root -m 755 /etc/vps-admin/scripts
 
 PUBLIC_URL="http://localhost:$PORT"
 [ -n "$DOMAIN" ] && PUBLIC_URL="https://$DOMAIN"
@@ -161,7 +163,7 @@ allow ufw "status" "status verbose"
 allow nft "list ruleset"
 allow fail2ban-client "status" "status *"
 allow ss "-tulnpH"
-allow systemctl "start *" "stop *" "restart *" "reload *"
+allow systemctl "start *" "stop *" "restart *" "reload *" "reboot"
 printf '# Managed by the VPS Admin installer, rewritten on every run.\nDefaults:vps-admin !requiretty\n%s' "$rules" > "$TMP/sudoers"
 visudo -cf "$TMP/sudoers" >/dev/null || die "generated sudoers file is invalid"
 install -o root -g root -m 440 "$TMP/sudoers" /etc/sudoers.d/vps-admin

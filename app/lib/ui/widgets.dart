@@ -30,7 +30,13 @@ enum M3Shape {
 }
 
 class ShapeIcon extends StatelessWidget {
-  const ShapeIcon(this.shape, {super.key, this.size = 40, required this.color, this.child});
+  const ShapeIcon(
+    this.shape, {
+    super.key,
+    this.size = 40,
+    required this.color,
+    this.child,
+  });
   final M3Shape shape;
   final double size;
   final Color color;
@@ -38,9 +44,12 @@ class ShapeIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox.square(
-        dimension: size,
-        child: CustomPaint(painter: _ShapePainter(shape, color), child: Center(child: child)),
-      );
+    dimension: size,
+    child: CustomPaint(
+      painter: _ShapePainter(shape, color),
+      child: Center(child: child),
+    ),
+  );
 }
 
 class _ShapePainter extends CustomPainter {
@@ -48,9 +57,11 @@ class _ShapePainter extends CustomPainter {
   final M3Shape shape;
   final Color color;
   @override
-  void paint(Canvas canvas, Size size) => canvas.drawPath(shape.path(size), Paint()..color = color);
+  void paint(Canvas canvas, Size size) =>
+      canvas.drawPath(shape.path(size), Paint()..color = color);
   @override
-  bool shouldRepaint(_ShapePainter old) => old.color != color || old.shape != shape;
+  bool shouldRepaint(_ShapePainter old) =>
+      old.color != color || old.shape != shape;
 }
 
 /// M3 Expressive wavy progress: a wave up to [value], then a flat track.
@@ -61,7 +72,13 @@ class WaveProgress extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return SizedBox(height: 14, child: CustomPaint(painter: _WavePainter(value.clamp(0, 1), cs.primary, cs.outlineVariant), size: Size.infinite));
+    return SizedBox(
+      height: 14,
+      child: CustomPaint(
+        painter: _WavePainter(value.clamp(0, 1), cs.primary, cs.outlineVariant),
+        size: Size.infinite,
+      ),
+    );
   }
 }
 
@@ -78,21 +95,29 @@ class _WavePainter extends CustomPainter {
     for (double x = 0; x <= end; x += 1) {
       wave.lineTo(x, mid + 3.5 * math.sin(x / 24 * 2 * math.pi));
     }
-    canvas.drawPath(wave, Paint()
-      ..color = active
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4
-      ..strokeCap = StrokeCap.round);
-    if (end + 8 < size.width) {
-      canvas.drawLine(Offset(end + 8, mid), Offset(size.width, mid), Paint()
-        ..color = track
+    canvas.drawPath(
+      wave,
+      Paint()
+        ..color = active
+        ..style = PaintingStyle.stroke
         ..strokeWidth = 4
-        ..strokeCap = StrokeCap.round);
+        ..strokeCap = StrokeCap.round,
+    );
+    if (end + 8 < size.width) {
+      canvas.drawLine(
+        Offset(end + 8, mid),
+        Offset(size.width, mid),
+        Paint()
+          ..color = track
+          ..strokeWidth = 4
+          ..strokeCap = StrokeCap.round,
+      );
     }
   }
 
   @override
-  bool shouldRepaint(_WavePainter old) => old.value != value || old.active != active;
+  bool shouldRepaint(_WavePainter old) =>
+      old.value != value || old.active != active;
 }
 
 enum Tone { ok, warn, bad, idle }
@@ -103,11 +128,17 @@ class StatusDot extends StatelessWidget {
   final String label;
 
   static Color color(Tone t, ColorScheme cs) => switch (t) {
-        Tone.ok => cs.brightness == Brightness.dark ? const Color(0xFF8FD694) : const Color(0xFF2E7D32),
-        Tone.warn => cs.brightness == Brightness.dark ? const Color(0xFFF6C177) : const Color(0xFF8A5A00),
-        Tone.bad => cs.error,
-        Tone.idle => cs.outline,
-      };
+    Tone.ok =>
+      cs.brightness == Brightness.dark
+          ? const Color(0xFF8FD694)
+          : const Color(0xFF2E7D32),
+    Tone.warn =>
+      cs.brightness == Brightness.dark
+          ? const Color(0xFFF6C177)
+          : const Color(0xFF8A5A00),
+    Tone.bad => cs.error,
+    Tone.idle => cs.outline,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -117,14 +148,28 @@ class StatusDot extends StatelessWidget {
       child: Container(
         width: 12,
         height: 12,
-        decoration: BoxDecoration(color: c, shape: BoxShape.circle, boxShadow: [BoxShadow(color: c.withValues(alpha: .25), spreadRadius: 4)]),
+        decoration: BoxDecoration(
+          color: c,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(color: c.withValues(alpha: .25), spreadRadius: 4),
+          ],
+        ),
       ),
     );
   }
 }
 
 class MetricCard extends StatelessWidget {
-  const MetricCard({super.key, required this.label, required this.value, required this.percent, required this.sub, required this.shape, required this.tint});
+  const MetricCard({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.percent,
+    required this.sub,
+    required this.shape,
+    required this.tint,
+  });
   final String label, value, sub;
   final double percent;
   final M3Shape shape;
@@ -136,21 +181,45 @@ class MetricCard extends StatelessWidget {
     return Card(
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
-      child: Stack(children: [
-        Positioned(right: -24, top: -26, child: Opacity(opacity: .55, child: ShapeIcon(shape, size: 84, color: tint))),
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: t.textTheme.labelLarge?.copyWith(color: t.colorScheme.onSurfaceVariant)),
-            const SizedBox(height: 6),
-            Text(value, style: t.textTheme.headlineMedium),
-            const SizedBox(height: 8),
-            WaveProgress(percent / 100),
-            const SizedBox(height: 6),
-            Text(sub, style: t.textTheme.bodySmall?.copyWith(color: t.colorScheme.onSurfaceVariant), maxLines: 1, overflow: TextOverflow.ellipsis),
-          ]),
-        ),
-      ]),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -24,
+            top: -26,
+            child: Opacity(
+              opacity: .55,
+              child: ShapeIcon(shape, size: 84, color: tint),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: t.textTheme.labelLarge?.copyWith(
+                    color: t.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(value, style: t.textTheme.headlineMedium),
+                const SizedBox(height: 8),
+                WaveProgress(percent / 100),
+                const SizedBox(height: 6),
+                Text(
+                  sub,
+                  style: t.textTheme.bodySmall?.copyWith(
+                    color: t.colorScheme.onSurfaceVariant,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -166,7 +235,9 @@ String bytes(double n) {
 }
 
 String duration(double seconds) {
-  final d = seconds ~/ 86400, h = (seconds % 86400) ~/ 3600, m = (seconds % 3600) ~/ 60;
+  final d = seconds ~/ 86400,
+      h = (seconds % 86400) ~/ 3600,
+      m = (seconds % 3600) ~/ 60;
   if (d >= 7) return '${d ~/ 7} w ${d % 7} d';
   if (d > 0) return '$d d $h h';
   if (h > 0) return '$h h $m min';
@@ -182,17 +253,26 @@ String ago(DateTime t) {
 }
 
 void showError(BuildContext context, Object e) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-    content: Text(e is ApiException ? e.message : e.toString()),
-    backgroundColor: Theme.of(context).colorScheme.errorContainer,
-    showCloseIcon: true,
-  ));
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(e is ApiException ? e.message : e.toString()),
+      backgroundColor: Theme.of(context).colorScheme.errorContainer,
+      showCloseIcon: true,
+    ),
+  );
 }
 
-void showInfo(BuildContext context, String text) =>
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text), showCloseIcon: true));
+void showInfo(BuildContext context, String text) => ScaffoldMessenger.of(
+  context,
+).showSnackBar(SnackBar(content: Text(text), showCloseIcon: true));
 
-Future<bool> confirmAction(BuildContext context, {required String title, required String body, required String action, bool danger = false}) async {
+Future<bool> confirmAction(
+  BuildContext context, {
+  required String title,
+  required String body,
+  required String action,
+  bool danger = false,
+}) async {
   final cs = Theme.of(context).colorScheme;
   return await showDialog<bool>(
         context: context,
@@ -200,9 +280,17 @@ Future<bool> confirmAction(BuildContext context, {required String title, require
           title: Text(title),
           content: Text(body),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+            TextButton(
+              onPressed: () => Navigator.pop(c, false),
+              child: const Text('Cancel'),
+            ),
             FilledButton(
-              style: danger ? FilledButton.styleFrom(backgroundColor: cs.error, foregroundColor: cs.onError) : null,
+              style: danger
+                  ? FilledButton.styleFrom(
+                      backgroundColor: cs.error,
+                      foregroundColor: cs.onError,
+                    )
+                  : null,
               onPressed: () => Navigator.pop(c, true),
               child: Text(action),
             ),
@@ -214,9 +302,19 @@ Future<bool> confirmAction(BuildContext context, {required String title, require
 
 /// Loads data with pull-to-refresh, an error view with retry, and a spinner.
 class Loader<T> extends StatefulWidget {
-  const Loader({super.key, required this.load, required this.builder, this.refreshEvery});
+  const Loader({
+    super.key,
+    required this.load,
+    required this.builder,
+    this.refreshEvery,
+  });
   final Future<T> Function() load;
-  final Widget Function(BuildContext context, T data, Future<void> Function() reload) builder;
+  final Widget Function(
+    BuildContext context,
+    T data,
+    Future<void> Function() reload,
+  )
+  builder;
   final Duration? refreshEvery;
 
   @override
@@ -236,10 +334,10 @@ class _LoaderState<T> extends State<Loader<T>> {
   }
 
   void _tick() => Future.delayed(widget.refreshEvery!, () {
-        if (_disposed) return;
-        reload();
-        _tick();
-      });
+    if (_disposed) return;
+    reload();
+    _tick();
+  });
 
   @override
   void dispose() {
@@ -267,18 +365,33 @@ class _LoaderState<T> extends State<Loader<T>> {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.cloud_off, size: 48, color: Theme.of(context).colorScheme.error),
-            const SizedBox(height: 12),
-            Text(error is ApiException ? (error as ApiException).message : 'Cannot reach the server', textAlign: TextAlign.center),
-            const SizedBox(height: 12),
-            FilledButton.tonal(onPressed: reload, child: const Text('Retry')),
-          ]),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.cloud_off,
+                size: 48,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                error is ApiException
+                    ? (error as ApiException).message
+                    : 'Cannot reach the server',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              FilledButton.tonal(onPressed: reload, child: const Text('Retry')),
+            ],
+          ),
         ),
       );
     }
     if (data == null) return const Center(child: CircularProgressIndicator());
-    return RefreshIndicator(onRefresh: reload, child: widget.builder(context, data as T, reload));
+    return RefreshIndicator(
+      onRefresh: reload,
+      child: widget.builder(context, data as T, reload),
+    );
   }
 }
 
@@ -289,15 +402,24 @@ class LogsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: Text(title)),
-        body: Loader<String>(
-          load: load,
-          refreshEvery: const Duration(seconds: 5),
-          builder: (c, logs, _) => ListView(
-            reverse: true,
-            padding: const EdgeInsets.all(12),
-            children: [SelectableText(logs.isEmpty ? 'No output yet.' : logs, style: const TextStyle(fontFamily: 'monospace', fontSize: 12, height: 1.5))],
+    appBar: AppBar(title: Text(title)),
+    body: Loader<String>(
+      load: load,
+      refreshEvery: const Duration(seconds: 5),
+      builder: (c, logs, _) => ListView(
+        reverse: true,
+        padding: const EdgeInsets.all(12),
+        children: [
+          SelectableText(
+            logs.isEmpty ? 'No output yet.' : logs,
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 12,
+              height: 1.5,
+            ),
           ),
-        ),
-      );
+        ],
+      ),
+    ),
+  );
 }

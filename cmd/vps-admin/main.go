@@ -21,6 +21,7 @@ import (
 	"github.com/beedywool/vps-admin/internal/deploy"
 	"github.com/beedywool/vps-admin/internal/docker"
 	"github.com/beedywool/vps-admin/internal/github"
+	"github.com/beedywool/vps-admin/internal/scripts"
 	"github.com/beedywool/vps-admin/internal/secret"
 	"github.com/beedywool/vps-admin/internal/store"
 	"github.com/beedywool/vps-admin/internal/system"
@@ -32,6 +33,9 @@ const usage = `Usage: vps-admin <command> [-config path]
 Commands:
   serve     run the agent (what the systemd unit starts)
   pair      print a one-time code to connect a browser or the app
+  link      link a script so the panel can run it: sudo vps-admin link FILE [-name NAME]
+  unlink    remove a script link: sudo vps-admin unlink NAME
+  scripts   list linked scripts
   version   print the version
 `
 
@@ -43,7 +47,18 @@ func main() {
 	cmd := os.Args[1]
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
 	cfgPath := fs.String("config", config.DefaultPath, "configuration file")
-	fs.Parse(os.Args[2:])
+	linkName := fs.String("name", "", "name shown in the panel (link only, defaults to the file name)")
+	// Flags may come after the file: vps-admin link FILE -name NAME
+	var pos []string
+	rest := os.Args[2:]
+	for len(rest) > 0 {
+		fs.Parse(rest)
+		rest = fs.Args()
+		if len(rest) > 0 {
+			pos = append(pos, rest[0])
+			rest = rest[1:]
+		}
+	}
 
 	var err error
 	switch cmd {
@@ -54,6 +69,8 @@ func main() {
 		err = serve(*cfgPath)
 	case "pair":
 		err = pair(*cfgPath)
+	case "link", "unlink", "scripts":
+		err = scriptsCmd(cmd, *cfgPath, pos, *linkName)
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 		return
@@ -140,10 +157,14 @@ func serve(cfgPath string) error {
 	engine.Init()
 	go engine.Run(ctx)
 
+	scriptRunner := &scripts.Runner{Dir: cfg.ScriptsDir, DataDir: cfg.DataDir}
+	scriptRunner.Init()
+	st.InterruptedScriptRuns(ctx)
+
 	dockerClient := docker.New(cfg.DockerSocket)
 	host := system.ReadHost()
 	asst := &assistant.Engine{
-		Deps: assistant.Deps{Store: st, Runner: runner, Docker: dockerClient, Collector: collector, Deploy: engine, Host: host, DataDir: cfg.DataDir},
+		Deps: assistant.Deps{Store: st, Runner: runner, Docker: dockerClient, Collector: collector, Deploy: engine, Scripts: scriptRunner, Host: host, DataDir: cfg.DataDir},
 		Box:  box,
 		// For tests against a fake API; never set in production.
 		BaseURL: os.Getenv("VPS_ADMIN_ANTHROPIC_URL"),
@@ -153,7 +174,7 @@ func serve(cfgPath string) error {
 	srv := &api.Server{
 		Cfg: cfg, Store: st, Auth: a, Collector: collector, Runner: runner,
 		Docker: dockerClient, Updater: up, Host: host,
-		Box: box, GitHub: gh, Deploy: engine, Assistant: asst,
+		Box: box, GitHub: gh, Deploy: engine, Assistant: asst, Scripts: scriptRunner,
 		Restart: stop,
 	}
 	srv.LoadGitHub(ctx)
@@ -221,5 +242,54 @@ func chownData(dir string) {
 	entries, _ := os.ReadDir(dir)
 	for _, e := range entries {
 		os.Lchown(dir+"/"+e.Name(), int(sys.Uid), int(sys.Gid))
+	}
+}
+
+// scriptsCmd manages the script links. Linking needs root: the folder is root-owned so
+// the agent itself cannot add scripts.
+func scriptsCmd(cmd, cfgPath string, args []string, name string) error {
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return err
+	}
+	switch cmd {
+	case "link":
+		if len(args) != 1 {
+			return errors.New("usage: sudo vps-admin link FILE [-name NAME]")
+		}
+		n, err := scripts.Link(cfg.ScriptsDir, args[0], name)
+		if n != "" {
+			fmt.Printf("Linked %s as %q: run it from the Scripts page of the panel.\n", args[0], n)
+		}
+		return err
+	case "unlink":
+		if len(args) != 1 {
+			return errors.New("usage: sudo vps-admin unlink NAME")
+		}
+		if err := scripts.Unlink(cfg.ScriptsDir, args[0]); err != nil {
+			return err
+		}
+		fmt.Printf("Removed %q (the file itself is untouched).\n", args[0])
+		return nil
+	default:
+		r := &scripts.Runner{Dir: cfg.ScriptsDir}
+		r.Init()
+		list, err := r.List()
+		if err != nil {
+			return err
+		}
+		if len(list) == 0 {
+			fmt.Println("No script linked yet. Add one with: sudo vps-admin link FILE")
+		}
+		for _, s := range list {
+			state := ""
+			if s.Missing {
+				state = "  (target missing)"
+			} else if !s.Executable {
+				state = "  (not executable)"
+			}
+			fmt.Printf("%-24s -> %s%s\n", s.Name, s.Target, state)
+		}
+		return nil
 	}
 }
