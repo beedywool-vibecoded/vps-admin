@@ -4,8 +4,9 @@ import 'package:flutter/widgets.dart';
 
 import 'icons_gen.dart';
 
-/// The panel's icons, drawn from the same SVG paths (24 x 24 viewBox). Stroke icons use
-/// a 2 unit round stroke, the few filled ones are filled, exactly as on the web.
+/// The panel's icons, drawn from the same SVG paths: the official Material Symbols
+/// Rounded ones on their 960 x 960 grid, and the glyphs Google still ships on the
+/// legacy 24 x 24 grid (plus the brand marks).
 class WIcon extends StatelessWidget {
   const WIcon(this.name, {super.key, this.size = 22, this.color});
   final String name;
@@ -15,39 +16,39 @@ class WIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = color ?? IconTheme.of(context).color ?? const Color(0xFF888888);
-    final filled = filledIcons.containsKey(name);
-    final d = filledIcons[name] ?? strokeIcons[name] ?? '';
+    final small = grid24Icons.containsKey(name);
+    final d = grid24Icons[name] ?? symbolIcons[name] ?? '';
     return SizedBox.square(
       dimension: size,
-      child: CustomPaint(painter: _IconPainter(svgPath(d), c, filled)),
+      child: CustomPaint(painter: _IconPainter(svgPath(d), c, small)),
     );
   }
 }
 
 class _IconPainter extends CustomPainter {
-  _IconPainter(this.path, this.color, this.filled);
+  _IconPainter(this.path, this.color, this.small);
   final Path path;
   final Color color;
-  final bool filled;
+  final bool small;
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.scale(size.width / 24, size.height / 24);
+    final grid = small ? 24.0 : 960.0;
+    canvas.scale(size.width / grid, size.height / grid);
+    // Symbols are drawn on y = -960..0, the 24 grid ones on y = 0..24.
+    if (!small) canvas.translate(0, 960);
     canvas.drawPath(
       path,
       Paint()
         ..color = color
         ..isAntiAlias = true
-        ..style = filled ? PaintingStyle.fill : PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
+        ..style = PaintingStyle.fill,
     );
   }
 
   @override
   bool shouldRepaint(_IconPainter old) =>
-      old.path != path || old.color != color || old.filled != filled;
+      old.path != path || old.color != color || old.small != small;
 }
 
 final _cache = <String, Path>{};

@@ -325,6 +325,9 @@ class _AppDetailPageState extends State<AppDetailPage> {
   int? selected;
   String log = '';
   bool busy = false, checking = false, deleteVolumes = false;
+  // The list shows the latest deployments; older ones are one tap away.
+  static const deployLimit = 5;
+  bool showAllDeps = false;
   Map<String, dynamic>? check;
   StreamSubscription<(String, dynamic)>? _stream;
   Timer? _timer;
@@ -791,9 +794,23 @@ class _AppDetailPageState extends State<AppDetailPage> {
     );
   }
 
+  void _toggleDeps() {
+    setState(() => showAllDeps = !showAllDeps);
+    // Collapsing hides the older rows, so keep the log on a deployment that stays listed.
+    if (!showAllDeps &&
+        selected != null &&
+        deployments.isNotEmpty &&
+        !deployments.take(deployLimit).any((d) => d['id'] == selected)) {
+      _select(deployments.first['id'] as int);
+    }
+  }
+
   List<Widget> _deployments(BuildContext context, Map<String, dynamic> a) {
     final cs = Theme.of(context).colorScheme;
     final sel = deployments.where((d) => d['id'] == selected).firstOrNull;
+    final shown = showAllDeps
+        ? deployments
+        : deployments.take(deployLimit).toList();
     return [
       WCard(
         child: Column(
@@ -807,7 +824,7 @@ class _AppDetailPageState extends State<AppDetailPage> {
             ),
             if (deployments.isEmpty)
               const Muted('No deployment yet.', size: 15),
-            for (final d in deployments)
+            for (final d in shown)
               Container(
                 margin: const EdgeInsets.only(bottom: 4),
                 decoration: BoxDecoration(
@@ -867,6 +884,18 @@ class _AppDetailPageState extends State<AppDetailPage> {
                       ],
                     ),
                   ),
+                ),
+              ),
+            if (deployments.length > deployLimit)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: WButton(
+                  showAllDeps
+                      ? 'Show fewer'
+                      : 'Show all ${deployments.length} deployments',
+                  kind: BtnKind.text,
+                  icon: 'chevron',
+                  onPressed: _toggleDeps,
                 ),
               ),
           ],

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Native <dialog>: focus trap, Escape and the top layer for free.
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import Icon from './Icon.vue'
 import { lockScroll, unlockScroll } from '@/lib/scrollLock'
 
 const open = defineModel<boolean>({ required: true })
@@ -33,7 +34,7 @@ onBeforeUnmount(() => locked && unlockScroll())
         <h2>{{ title }}</h2>
         <slot name="header" />
         <button class="icon-btn st" type="button" aria-label="Close" @click="open = false">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+          <Icon name="close" :size="22" />
         </button>
       </header>
       <slot />

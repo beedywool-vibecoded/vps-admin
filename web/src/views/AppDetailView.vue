@@ -55,6 +55,11 @@ const buildOptions = (Object.keys(BUILD_LABEL) as BuildType[]).map((k) => ({ val
 const running = computed(() => deployments.value.some((d) => ['queued', 'building', 'starting'].includes(d.status)))
 const selectedDep = computed(() => deployments.value.find((d) => d.id === selected.value))
 
+// The list shows the latest deployments; older ones are one click away.
+const DEPLOY_LIMIT = 5
+const showAllDeps = ref(false)
+const visibleDeps = computed(() => (showAllDeps.value ? deployments.value : deployments.value.slice(0, DEPLOY_LIMIT)))
+
 async function load() {
   try {
     const res = await api.app(props.id)
@@ -69,6 +74,8 @@ async function load() {
       cmds.value = { installCmd: a.installCmd, buildCmd: a.buildCmd, startCmd: a.startCmd, dockerfile: a.dockerfile, composeFile: a.composeFile }
     }
     if (selected.value === null && res.deployments[0]) select(res.deployments[0].id)
+    // A link to an older deployment (a notification) opens the list far enough to show it.
+    if (!showAllDeps.value && selected.value !== null && !res.deployments.slice(0, DEPLOY_LIMIT).some((d) => d.id === selected.value)) showAllDeps.value = true
   } catch (e) {
     toastError(e)
   }
@@ -99,6 +106,13 @@ function select(id: number) {
     },
     end: () => load(),
   })
+}
+
+function toggleDeps() {
+  showAllDeps.value = !showAllDeps.value
+  // Collapsing hides the older rows, so keep the log on a deployment that stays listed.
+  const first = deployments.value[0]
+  if (!showAllDeps.value && selected.value !== null && !visibleDeps.value.some((d) => d.id === selected.value) && first) select(first.id)
 }
 
 async function action(fn: () => Promise<unknown>, done: string) {
@@ -247,7 +261,7 @@ onBeforeUnmount(() => {
           <span v-if="app.autoDeploy" class="chip">Auto-deploy on push</span>
         </div>
         <p v-if="!deployments.length" class="muted">No deployment yet.</p>
-        <div v-for="d in deployments" :key="d.id" class="dep" :class="{ sel: d.id === selected }">
+        <div v-for="d in visibleDeps" :key="d.id" class="dep" :class="{ sel: d.id === selected }">
           <button type="button" class="dep-main st" :aria-pressed="d.id === selected" @click="select(d.id)">
             <span class="status" :class="d.status"><StatusDot :tone="depTone(d)" :label="d.status" /> {{ STATUS_LABEL[d.status] }}</span>
             <code>{{ d.sha.slice(0, 7) || '…' }}</code>
@@ -256,6 +270,10 @@ onBeforeUnmount(() => {
           </button>
           <button v-if="d.status === 'superseded'" type="button" class="btn btn-outlined st rb" :disabled="busy || running" @click="rollback(d)">Roll back</button>
         </div>
+        <button v-if="deployments.length > DEPLOY_LIMIT" type="button" class="btn btn-text st more" :aria-expanded="showAllDeps" @click="toggleDeps">
+          <span class="chev"><Icon name="chevron" :size="18" /></span>
+          {{ showAllDeps ? 'Show fewer' : `Show all ${deployments.length} deployments` }}
+        </button>
       </section>
 
       <section class="card logcard">
@@ -421,6 +439,20 @@ onBeforeUnmount(() => {
 }
 .dep.sel {
   background: var(--sch);
+}
+.more {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  margin-top: 4px;
+}
+.more .chev {
+  display: inline-flex;
+  transition: rotate 0.25s var(--ease);
+}
+.more[aria-expanded='true'] .chev {
+  rotate: 180deg;
 }
 .status {
   display: inline-flex;
