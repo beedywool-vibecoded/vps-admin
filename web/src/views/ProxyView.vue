@@ -33,7 +33,11 @@ const key = (s: ProxySite) => `${s.file}|${s.domains[0]}`
 
 onMounted(async () => {
   try {
-    rep.value = await api.proxy()
+    const r = await api.proxy()
+    // A server that sends null for a list must not blank the page: the view walks all three.
+    r.sites = (r.sites ?? []).map((s) => ({ ...s, domains: s.domains ?? [] }))
+    r.unreadable = r.unreadable ?? []
+    rep.value = r
   } catch (e) {
     toastError(e)
   } finally {

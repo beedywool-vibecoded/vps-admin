@@ -96,3 +96,25 @@ func TestProxySitesReadsTheConfig(t *testing.T) {
 		t.Fatalf("site = %+v", site)
 	}
 }
+
+// Lists go out as [] and never as null: the panel walks them without a guard.
+func TestProxySitesSendsEmptyLists(t *testing.T) {
+	cfg, err := config.Load("/nonexistent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	cfg.CaddySitesDir = filepath.Join(root, "caddy")
+	cfg.NginxSitesDir = filepath.Join(root, "nginx")
+
+	s := &Server{Cfg: cfg}
+	rec := httptest.NewRecorder()
+	s.proxySites(rec, httptest.NewRequest("GET", "/api/proxy", nil))
+	body := rec.Body.String()
+	if strings.Contains(body, "null") {
+		t.Fatalf("body has a null list: %s", body)
+	}
+	if !strings.Contains(body, `"sites":[]`) || !strings.Contains(body, `"unreadable":[]`) {
+		t.Fatalf("body = %s", body)
+	}
+}

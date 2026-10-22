@@ -40,11 +40,28 @@ func Read(caddySites, nginxSites string) Report {
 	caddyRoot, nginxRoot := parent(caddySites), parent(nginxSites)
 	switch {
 	case isDir(caddySites) || isFile(filepath.Join(caddyRoot, "Caddyfile")):
-		return readCaddy(caddyRoot, caddySites)
+		return normalize(readCaddy(caddyRoot, caddySites))
 	case isDir(nginxSites) || isDir(nginxRoot):
-		return readNginx(nginxRoot, nginxSites)
+		return normalize(readNginx(nginxRoot, nginxSites))
 	}
-	return Report{}
+	return normalize(Report{})
+}
+
+// normalize gives every list a value, so the JSON says "sites": [] instead of null: a
+// client that walks it has nothing to guard against.
+func normalize(r Report) Report {
+	if r.Sites == nil {
+		r.Sites = []Site{}
+	}
+	if r.Unreadable == nil {
+		r.Unreadable = []string{}
+	}
+	for i := range r.Sites {
+		if r.Sites[i].Domains == nil {
+			r.Sites[i].Domains = []string{}
+		}
+	}
+	return r
 }
 
 // ---------------------------------------------------------------------------------

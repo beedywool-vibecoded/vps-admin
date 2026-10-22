@@ -217,3 +217,19 @@ func TestNoProxy(t *testing.T) {
 		t.Fatalf("report = %+v, want nothing", rep)
 	}
 }
+
+// The API sends these lists as JSON: nil would come out as null, which blanks a client
+// that walks them.
+func TestEmptyListsAreNotNil(t *testing.T) {
+	root := t.TempDir()
+	rep := Read(filepath.Join(root, "etc/caddy/vps-admin-apps"), filepath.Join(root, "etc/nginx/vps-admin-apps"))
+	if rep.Sites == nil || rep.Unreadable == nil {
+		t.Fatalf("report = %+v, want empty slices", rep)
+	}
+	write(t, root, "etc/caddy/Caddyfile", "import vps-admin-apps/*.caddy\n")
+	write(t, root, "etc/caddy/vps-admin-apps/empty.caddy", "empty.example.com {\n\tfile_server\n}\n")
+	rep = Read(filepath.Join(root, "etc/caddy/vps-admin-apps"), "")
+	if len(rep.Sites) != 1 || rep.Sites[0].Domains == nil || rep.Unreadable == nil {
+		t.Fatalf("report = %+v, want every list set", rep)
+	}
+}
