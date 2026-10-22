@@ -517,9 +517,9 @@ onBeforeUnmount(() => {
       <p class="muted" style="margin: 0">
         <template v-if="active?.id === 'claude-code'">
           On your own computer, run <code>claude setup-token</code> and paste the token it prints (it starts with
-          <code>sk-ant-oat</code>). It bills your Pro or Max subscription instead of an API key. The panel runs the
-          <code>claude</code> command already installed on this server, with its own tools disabled: every change still
-          waits for your approval here.
+          <code>sk-ant-oat</code>). It bills your Pro or Max subscription instead of an API key. The token is checked
+          by the <code>claude</code> command already installed on this server with one small message, then stored
+          encrypted here. That command runs with its own tools disabled: every change still waits for your approval.
         </template>
         <template v-else>
           Create a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">AI Studio</a>, no card

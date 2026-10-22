@@ -74,11 +74,15 @@ type Provider struct {
 	Install  string  `json:"install,omitempty"` // Ollama only, shown when it is not answering
 }
 
-var anthropicModels = []Model{
-	{ID: "claude-opus-5-5", Label: "Claude Opus 5.5", Hint: "Hardest incidents, highest cost"},
-	{ID: "claude-sonnet-5-5", Label: "Claude Sonnet 5.5", Hint: "Everyday work"},
-	{ID: "claude-haiku-5-5", Label: "Claude Haiku 5.5", Hint: "Quick checks, cheapest"},
-	{ID: "claude-fable-5-1", Label: "Claude Fable 5.1"},
+// Claude Code is asked for a family, not for a model name: `claude --model sonnet` is
+// resolved by the CLI to whatever Sonnet the subscription serves today. A full name
+// written here would name a model the account may not include, and every message would
+// fail on it; the CLI's own aliases are the names it knows and keeps current.
+var claudeModels = []Model{
+	{ID: "sonnet", Label: "Sonnet", Hint: "Everyday work, the default"},
+	{ID: "opus", Label: "Opus", Hint: "Hardest incidents, highest cost"},
+	{ID: "haiku", Label: "Haiku", Hint: "Quick checks, cheapest"},
+	{ID: "fable", Label: "Fable"},
 }
 
 // geminiFallback is shown before a key is saved, and whenever Google cannot answer the
@@ -113,7 +117,7 @@ func (e *Engine) Providers(ctx context.Context) []Provider {
 			ID: ProviderClaudeCode, Label: "Claude Code", Kind: "cli", Badge: "subscription",
 			Note:     "The Claude Code CLI on this server, on your Pro or Max subscription: no key, no per-use bill.",
 			NeedsKey: true, KeyHint: hint(e.keyFor(ctx, ProviderClaudeCode), "sk-ant"),
-			Models: anthropicModels, Model: e.model(ctx, ProviderClaudeCode),
+			Models: claudeModels, Model: e.model(ctx, ProviderClaudeCode),
 		},
 	}
 	list[0].Models, list[0].Ready, list[0].Hint = e.ollamaModels(ctx, list[0].URL, e.model(ctx, ProviderOllama))
@@ -424,9 +428,25 @@ func (e *Engine) model(ctx context.Context, id string) string {
 	case ProviderGemini:
 		def = "gemini-2.5-flash"
 	case ProviderClaudeCode:
-		def = "claude-sonnet-5-5"
+		def = "sonnet"
 	}
-	return e.Store.Setting(ctx, "assistant.model."+id, def)
+	got := e.Store.Setting(ctx, "assistant.model."+id, def)
+	if id == ProviderClaudeCode {
+		// An installation from before the aliases has a full name saved: keep its family.
+		return claudeAlias(got)
+	}
+	return got
+}
+
+// claudeAlias turns a saved full model name into the family alias the CLI resolves.
+func claudeAlias(name string) string {
+	low := strings.ToLower(name)
+	for _, m := range claudeModels {
+		if strings.Contains(low, m.ID) {
+			return m.ID
+		}
+	}
+	return name
 }
 
 func (e *Engine) keyName(id string) string {
@@ -561,8 +581,8 @@ func (e *Engine) fetchOllama(base string) ([]Model, bool, string) {
 }
 
 // SetModel records the model for one provider, so switching back and forth keeps the
-// choice. Anthropic is limited to the models the panel knows the parameters of;
-// Gemini and Ollama accept what the provider reports.
+// choice. Claude Code is limited to the families the CLI knows; Gemini and Ollama accept
+// what the provider reports.
 func (e *Engine) SetModel(ctx context.Context, provider, model string) error {
 	model = strings.TrimSpace(model)
 	if provider == "" {
@@ -570,7 +590,7 @@ func (e *Engine) SetModel(ctx context.Context, provider, model string) error {
 	}
 	switch provider {
 	case ProviderClaudeCode:
-		for _, m := range anthropicModels {
+		for _, m := range claudeModels {
 			if m.ID == model {
 				return e.Store.SetSetting(ctx, "assistant.model."+provider, model)
 			}

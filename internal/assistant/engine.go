@@ -134,11 +134,17 @@ func (e *Engine) SetKey(ctx context.Context, provider, key string) error {
 			slog.Warn("gemini key not verified, saved anyway", "err", err)
 		}
 	case ProviderClaudeCode:
-		// Nothing to check against: the token is an OAuth credential for the CLI, not an
-		// API key the panel can present. Its shape is checked, and the first message
-		// reports what the CLI says about it.
+		// The token is an OAuth credential for the CLI, not an API key the panel can
+		// present, so the shape is checked here and the CLI is asked whether it works:
+		// a token that no longer does should not read as connected.
 		if !strings.HasPrefix(key, "sk-ant-") {
 			return errors.New("paste the token printed by claude setup-token (it starts with sk-ant-oat), or an Anthropic API key (sk-ant-api)")
+		}
+		if err := e.checkClaudeCode(ctx, key); err != nil {
+			if errors.Is(err, errBadKey) {
+				return errors.New("Claude Code rejected this token")
+			}
+			slog.Warn("claude token not verified, saved anyway", "err", err)
 		}
 	}
 	return e.Store.SetSetting(ctx, name, e.Box.Seal(key))

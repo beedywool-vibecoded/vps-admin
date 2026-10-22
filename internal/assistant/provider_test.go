@@ -2,6 +2,8 @@ package assistant
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -24,11 +26,32 @@ func testEngine(t *testing.T) *Engine {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Nothing in these tests should reach Google: the model list points at a closed port
-	// unless a test gives it a server.
-	e := &Engine{Deps: Deps{Store: st}, Box: box, GeminiModelsURL: "http://127.0.0.1:1"}
+	// Nothing in these tests should reach Google or Anthropic: the model list points at a
+	// closed port, and the Claude Code CLI, when it is installed, at a fake that accepts a
+	// token. A test that needs its own endpoint sets it on the engine it builds.
+	e := &Engine{Deps: Deps{Store: st}, Box: box, GeminiModelsURL: "http://127.0.0.1:1", ClaudeURL: claudeAnswers(t)}
 	e.Init(context.Background())
 	return e
+}
+
+// claudeAnswers is a fake Anthropic endpoint that accepts a token: one streamed text
+// message, which is all the CLI needs to report a working credential.
+func claudeAnswers(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "count_tokens") {
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"input_tokens":1}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, ev := range textEvents("pong") {
+			raw, _ := json.Marshal(ev)
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev["type"], raw)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
 }
 
 const geminiListPayload = `{"models":[
@@ -344,13 +367,13 @@ func TestLegacyAnthropicChoiceMovesToTheSubscription(t *testing.T) {
 func TestModelChoiceIsPerProvider(t *testing.T) {
 	e := testEngine(t)
 	ctx := context.Background()
-	if err := e.SetModel(ctx, ProviderClaudeCode, "claude-sonnet-5-5"); err != nil {
+	if err := e.SetModel(ctx, ProviderClaudeCode, "sonnet"); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.SetModel(ctx, ProviderGemini, "gemini-2.5-pro"); err != nil {
 		t.Fatal(err)
 	}
-	if got := e.model(ctx, ProviderClaudeCode); got != "claude-sonnet-5-5" {
+	if got := e.model(ctx, ProviderClaudeCode); got != "sonnet" {
 		t.Fatalf("Claude Code model lost: %s", got)
 	}
 	if got := e.model(ctx, ProviderGemini); got != "gemini-2.5-pro" {
@@ -361,5 +384,27 @@ func TestModelChoiceIsPerProvider(t *testing.T) {
 	}
 	if err := e.SetProvider(ctx, "openai"); err == nil {
 		t.Fatal("unknown provider accepted")
+	}
+}
+
+// Claude Code is asked for a family. An installation that saved a full name before the
+// aliases keeps that family instead of sending a name its plan may not have.
+func TestClaudeFullNameKeepsItsFamily(t *testing.T) {
+	e := testEngine(t)
+	ctx := context.Background()
+	if err := e.Store.SetSetting(ctx, "assistant.model."+ProviderClaudeCode, "claude-opus-5-5"); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.model(ctx, ProviderClaudeCode); got != "opus" {
+		t.Fatalf("a saved full name should become its family: %q", got)
+	}
+	if err := e.Store.SetSetting(ctx, "assistant.model."+ProviderClaudeCode, "claude-sonnet-5-5"); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.model(ctx, ProviderClaudeCode); got != "sonnet" {
+		t.Fatalf("a saved full name should become its family: %q", got)
+	}
+	if err := e.SetModel(ctx, ProviderClaudeCode, "claude-sonnet-5-5"); err == nil {
+		t.Fatal("a full name is not one of the families on offer")
 	}
 }

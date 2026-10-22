@@ -107,7 +107,7 @@ class _AssistantPageState extends State<AssistantPage> {
         children: [
           Muted(
             cli
-                ? 'On your computer, run claude setup-token and paste the token it prints (sk-ant-oat…). It bills your Pro or Max subscription. The panel runs the claude command installed on this server with its own tools disabled: every change still waits for your approval here.'
+                ? 'On your computer, run claude setup-token and paste the token it prints (sk-ant-oat…). It bills your Pro or Max subscription. The claude command installed on this server checks it with one small message, then the token is stored encrypted here. That command runs with its own tools disabled: every change still waits for your approval.'
                 : 'Create a free key at aistudio.google.com/apikey, no card needed. It is encrypted on this server and never shown again. Leave empty to remove it.',
             size: 14,
           ),

@@ -82,6 +82,38 @@ func TestClaudeCodeLive(t *testing.T) {
 		assertAnswerStored(t, e, conv)
 	})
 
+	// Connecting a token asks the CLI whether it still works, so "Connected" is not just a
+	// string that starts with sk-ant. A token the subscription no longer accepts must be
+	// refused, and not stored.
+	t.Run("a revoked token is refused", func(t *testing.T) {
+		revoked := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			io.WriteString(w, `{"type":"error","error":{"type":"authentication_error","message":"OAuth access token is invalid."}}`)
+		}))
+		t.Cleanup(revoked.Close)
+		e, ctx := claudeEngine(t, revoked.URL)
+		if err := e.SetKey(ctx, ProviderClaudeCode, "sk-ant-oat01-revoked"); err == nil {
+			t.Fatal("a token the CLI cannot use must be refused")
+		}
+		if got := e.keyFor(ctx, ProviderClaudeCode); got != "" {
+			t.Fatalf("a refused token must not be stored: %q", got)
+		}
+	})
+
+	t.Run("a working token is saved", func(t *testing.T) {
+		fake := &fakeAnthropic{}
+		srv := httptest.NewServer(fake)
+		t.Cleanup(srv.Close)
+		e, ctx := claudeEngine(t, srv.URL)
+		if err := e.SetKey(ctx, ProviderClaudeCode, "sk-ant-oat01-good"); err != nil {
+			t.Fatalf("a token the CLI accepts should be saved: %v", err)
+		}
+		if got := e.keyFor(ctx, ProviderClaudeCode); got != "sk-ant-oat01-good" {
+			t.Fatalf("the token was not stored: %q", got)
+		}
+	})
+
 	t.Run("a denied change stays undone", func(t *testing.T) {
 		file := filepath.Join(t.TempDir(), "denied")
 		fake := &fakeAnthropic{tool: "run_command",
@@ -198,12 +230,10 @@ func textEvents(text string) []map[string]any {
 	}
 }
 
-// claudeConversation builds an engine on the subscription provider, pointed at the fake
-// endpoint, and sends one message.
-func claudeConversation(t *testing.T, fake *fakeAnthropic) (*Engine, string) {
+// claudeEngine builds an engine on the subscription provider, with the CLI pointed at an
+// endpoint of the test's choosing.
+func claudeEngine(t *testing.T, url string) (*Engine, context.Context) {
 	t.Helper()
-	srv := httptest.NewServer(fake)
-	t.Cleanup(srv.Close)
 	dir := t.TempDir()
 	st, err := store.Open(dir)
 	if err != nil {
@@ -214,11 +244,21 @@ func claudeConversation(t *testing.T, fake *fakeAnthropic) (*Engine, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := &Engine{Deps: Deps{Store: st, DataDir: dir, Host: system.Host{Hostname: "test-box", OS: "Debian", Kernel: "6.1", Arch: "amd64", Cores: 2}}, Box: box, ClaudeURL: srv.URL}
+	e := &Engine{Deps: Deps{Store: st, DataDir: dir, Host: system.Host{Hostname: "test-box", OS: "Debian", Kernel: "6.1", Arch: "amd64", Cores: 2}}, Box: box, ClaudeURL: url}
 	e.Init(context.Background())
 	ctx := context.Background()
 	st.SetSetting(ctx, providerName, ProviderClaudeCode)
-	st.SetSetting(ctx, "assistant.model.claude-code", "claude-sonnet-5-5")
+	st.SetSetting(ctx, "assistant.model.claude-code", "sonnet")
+	return e, ctx
+}
+
+// claudeConversation builds an engine on the subscription provider, pointed at the fake
+// endpoint, and sends one message.
+func claudeConversation(t *testing.T, fake *fakeAnthropic) (*Engine, string) {
+	t.Helper()
+	srv := httptest.NewServer(fake)
+	t.Cleanup(srv.Close)
+	e, ctx := claudeEngine(t, srv.URL)
 	if err := e.SetKey(ctx, ProviderClaudeCode, "sk-ant-oat01-test-token"); err != nil {
 		t.Fatal(err)
 	}
