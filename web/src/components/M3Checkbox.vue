@@ -39,13 +39,15 @@ defineProps<{ label?: string; disabled?: boolean }>()
   height: 18px;
   margin: 11px;
   border-radius: 3px;
-  border: 2px solid var(--on-sv);
+  /* The ring is drawn inside the box: a border would leave 14 px for an 18 px tick, which
+     then spills out of the bottom right corner instead of sitting in the middle. */
+  box-shadow: inset 0 0 0 2px var(--on-sv);
   display: grid;
   place-items: center;
   flex-shrink: 0;
   transition:
     background 0.15s var(--ease),
-    border-color 0.15s var(--ease);
+    box-shadow 0.15s var(--ease);
 }
 .box svg {
   fill: none;
@@ -59,7 +61,7 @@ defineProps<{ label?: string; disabled?: boolean }>()
 }
 .on .box {
   background: var(--primary);
-  border-color: var(--primary);
+  box-shadow: inset 0 0 0 2px var(--primary);
 }
 .on .box svg {
   stroke-dashoffset: 0;
