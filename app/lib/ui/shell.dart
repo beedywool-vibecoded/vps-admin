@@ -13,6 +13,7 @@ import 'pages/assistant.dart';
 import 'pages/containers.dart';
 import 'pages/overview.dart';
 import 'pages/scripts.dart';
+import 'pages/proxy.dart';
 import 'pages/security.dart';
 import 'pages/services.dart';
 import 'pages/settings.dart';
@@ -34,6 +35,7 @@ const _pages = [
   ('overview', 'Overview', 'overview', true),
   ('containers', 'Containers', 'containers', true),
   ('services', 'Services', 'services', false),
+  ('proxy', 'Proxy', 'globe', false),
   ('security', 'Security', 'security', false),
   ('apps', 'Apps', 'apps', true),
   ('assistant', 'Assistant', 'assistant', true),
@@ -160,6 +162,7 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
   Widget _page() => switch (page) {
     'containers' => const ContainersPage(),
     'services' => const ServicesPage(),
+    'proxy' => const ProxyPage(),
     'security' => const SecurityPage(),
     'apps' => const AppsPage(),
     'assistant' => const AssistantPage(),

@@ -132,6 +132,7 @@ class Api {
 
   Future<Security> security({bool refresh = false}) async =>
       Security(await get('/api/security${refresh ? '?refresh=1' : ''}'));
+  Future<ProxyReport> proxy() async => ProxyReport(await get('/api/proxy'));
   Future<UpdateStatus> update() async => UpdateStatus(await get('/api/update'));
   Future<UpdateStatus> checkUpdate() async =>
       UpdateStatus(await post('/api/update/check'));

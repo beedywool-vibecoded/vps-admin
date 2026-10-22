@@ -109,6 +109,49 @@ class Security {
   final List<Check> checks;
 }
 
+/// One domain the reverse proxy publishes (ProxyView.vue), and where it sends traffic.
+class ProxySite {
+  ProxySite(Map<String, dynamic> j)
+    : domains = ((j['domains'] as List?) ?? []).cast<String>(),
+      target = j['target'] as String? ?? '',
+      file = j['file'] as String? ?? '',
+      managed = j['managed'] == true,
+      id = j['id'] as String? ?? '',
+      vpnOnly = j['vpnOnly'] == true,
+      scheme = j['scheme'] as String? ?? 'https';
+  final List<String> domains;
+
+  /// Upstream it forwards to, like 127.0.0.1:8080; empty for files or a redirect.
+  final String target;
+  final String file;
+
+  /// Written by the panel, rewritten on every deploy.
+  final bool managed;
+
+  /// App id of a managed site; empty when the app is gone.
+  final String id;
+  final bool vpnOnly;
+  final String scheme;
+
+  String get url => domains.isEmpty ? '' : '$scheme://${domains.first}';
+}
+
+/// What the machine's reverse proxy serves: the engine, every site, and the files the
+/// agent could not read.
+class ProxyReport {
+  ProxyReport(Map<String, dynamic> j)
+    : engine = j['engine'] as String? ?? '',
+      root = j['root'] as String? ?? '',
+      sites = ((j['sites'] as List?) ?? [])
+          .map((s) => ProxySite(s as Map<String, dynamic>))
+          .toList(),
+      unreadable = ((j['unreadable'] as List?) ?? []).cast<String>();
+  final String engine;
+  final String root;
+  final List<ProxySite> sites;
+  final List<String> unreadable;
+}
+
 class UpdateStatus {
   UpdateStatus(Map<String, dynamic> j)
     : current = j['current'] as String? ?? '',
