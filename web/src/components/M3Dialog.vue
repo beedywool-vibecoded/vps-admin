@@ -87,6 +87,11 @@ header h2 {
   flex: 1;
   font-size: 22px;
 }
+/* The close button sits against the dialog's own surface, so it reads as a button from
+   its icon and its hover, not from an outline. */
+header .icon-btn {
+  border: none;
+}
 footer {
   display: flex;
   justify-content: flex-end;
