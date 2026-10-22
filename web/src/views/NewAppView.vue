@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Icon from '@/components/Icon.vue'
 import M3Shape from '@/components/M3Shape.vue'
@@ -117,7 +117,21 @@ async function submit() {
   }
 }
 
+// The repository list scrolls on its own, so the card stops where the window does instead of
+// running past the fold and pushing the page: it gets the height left below its top edge.
+const sourceCard = ref<HTMLElement | null>(null)
+const cardMax = ref(0)
+function fitCard() {
+  const el = sourceCard.value
+  if (!el) return
+  // The page keeps its own bottom padding, which is what the window shows below the card.
+  const shell = el.closest('.main-col')
+  const below = shell ? parseFloat(getComputedStyle(shell).paddingBottom) || 0 : 24
+  cardMax.value = Math.max(240, Math.round(window.innerHeight - el.getBoundingClientRect().top - below))
+}
+
 onMounted(async () => {
+  window.addEventListener('resize', fitCard)
   try {
     gh.value = await api.github()
     if (!gh.value.connected) return router.replace('/apps')
@@ -126,8 +140,11 @@ onMounted(async () => {
     toastError(e)
   } finally {
     loadingRepos.value = false
+    await nextTick()
+    fitCard()
   }
 })
+onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
 </script>
 
 <template>
@@ -144,7 +161,7 @@ onMounted(async () => {
     </ol>
 
     <div class="cols">
-      <section class="card source">
+      <section ref="sourceCard" class="card source" :style="{ maxHeight: cardMax ? `${cardMax}px` : undefined }">
         <h2>Pick a repository</h2>
         <label class="field search">
           <Icon name="search" :size="20" />
@@ -319,7 +336,9 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 640px;
+  /* The list is what shrinks when the window is short: it already scrolls on its own. */
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
 }
 .repo {
