@@ -48,6 +48,13 @@ const busy = computed(() => conv.value?.state === 'running')
 const providers = computed<AssistantProvider[]>(() => settings.value?.providers ?? [])
 const active = computed(() => providers.value.find((p) => p.id === settings.value?.provider) ?? null)
 const label = computed(() => active.value?.label ?? 'The assistant')
+// The sidebar keeps its provider state folded away, so the chat says out loud why
+// nothing can answer.
+const banner = computed(() =>
+  active.value?.needsKey
+    ? `${label.value} is not connected, so the assistant cannot answer yet.`
+    : `${label.value} is not answering at ${active.value?.url ?? 'its address'}.`,
+)
 const keyTitle = computed(() =>
   active.value?.id === 'claude-code' ? 'Claude subscription token' : 'Gemini API key',
 )
@@ -302,104 +309,14 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="assistant">
-    <aside class="side" aria-label="Assistant settings">
-      <h1>Assistant</h1>
+    <aside class="side" aria-label="Assistant">
+      <div class="hist-head">
+        <h1>Conversations</h1>
+        <RouterLink to="/assistant" class="btn btn-tonal st"><Icon name="plus" :size="18" /> New</RouterLink>
+      </div>
 
-      <section class="panel" aria-labelledby="acct">
-        <h2 id="acct">AI provider</h2>
-        <div class="providers" role="radiogroup" aria-label="AI provider">
-          <button
-            v-for="p in providers"
-            :key="p.id"
-            type="button"
-            class="prov st"
-            role="radio"
-            :aria-checked="p.active"
-            :class="{ sel: p.active }"
-            @click="choose(p)"
-          >
-            <span class="dot" :class="{ on: p.ready }" aria-hidden="true" />
-            <span class="grow ptext">
-              <span class="strong">{{ p.label }}</span>
-              <span class="small muted">{{ p.badge }}</span>
-            </span>
-            <Icon v-if="p.active" name="check" :size="18" />
-          </button>
-        </div>
-
-        <p v-if="active?.hint" class="small muted">{{ active.hint }}</p>
-
-        <M3Select v-if="modelOptions.length" v-model="model" label="Model" :options="modelOptions" :disabled="!settings" />
-
-        <div v-if="active?.needsKey" class="key">
-          <span class="dot" :class="{ on: active.ready }" aria-hidden="true" />
-          <div class="grow">
-            <div class="strong">{{ active.ready ? 'Connected' : 'Not connected' }}</div>
-            <code v-if="active.keyHint" class="small muted">{{ active.keyHint }}</code>
-          </div>
-          <button class="btn btn-text st" type="button" @click="keyOpen = true">{{ active.ready ? 'Change' : 'Connect' }}</button>
-        </div>
-
-        <template v-else-if="active">
-          <div class="key">
-            <span class="dot" :class="{ on: active.ready }" aria-hidden="true" />
-            <div class="grow">
-              <div class="strong">{{ active.ready ? 'Running on this server' : 'Not answering' }}</div>
-              <code class="small muted">{{ active.url }}</code>
-            </div>
-            <button class="btn btn-text st" type="button" @click="(newURL = active.url ?? ''), (urlOpen = true)">Address</button>
-          </div>
-          <M3Expand v-if="active.install && !active.ready">
-            <template #summary><span class="small">Install Ollama</span></template>
-            <pre class="install">{{ active.install }}</pre>
-          </M3Expand>
-          <button class="btn btn-outlined st" type="button" @click="loadSettings">Check again</button>
-        </template>
-
-        <!-- The CLI has to exist on the server before a token is any use. -->
-        <template v-if="active?.kind === 'cli'">
-          <M3Expand v-if="active.install && !active.ready">
-            <template #summary><span class="small">Install Claude Code</span></template>
-            <pre class="install">{{ active.install }}</pre>
-          </M3Expand>
-          <p v-if="active.ready" class="small muted">
-            The panel runs this command with its own tools disabled: every change still waits for your approval here.
-          </p>
-          <button class="btn btn-outlined st" type="button" @click="loadSettings">Check again</button>
-        </template>
-
-        <M3Select v-if="active?.kind === 'cli'" v-model="effort" label="Effort" :options="EFFORTS" :disabled="!settings" />
-        <p class="small muted">
-          {{ active?.note }}<template v-if="active?.needsKey">{{ ' ' }}{{ active.kind === 'cli' ? 'The token is encrypted on this server.' : 'The key is encrypted on this server.' }}</template>
-        </p>
-      </section>
-
-      <section class="panel" aria-labelledby="perm">
-        <h2 id="perm">What the assistant may do</h2>
-        <div class="perm">
-          <div class="grow"><div>Read the server</div><div class="small muted">Status, logs, metrics, config files</div></div>
-          <span class="chip">always</span>
-        </div>
-        <div class="perm">
-          <div class="grow"><div>Run read-only commands without asking</div><div class="small muted">Off: every command waits for you</div></div>
-          <M3Switch v-model="autoRead" label="Run read-only commands without asking" :disabled="!settings" />
-        </div>
-        <div class="perm">
-          <div class="grow"><div>Changes</div><div class="small muted">Restart, deploy, any command that modifies: you approve each one</div></div>
-          <span class="chip">ask</span>
-        </div>
-        <div class="never">
-          <span class="small muted">Never allowed</span>
-          <span v-for="n in NEVER" :key="n" class="never-chip">{{ n }}</span>
-        </div>
-      </section>
-
-      <section class="history" aria-labelledby="hist">
-        <div class="hist-head">
-          <h2 id="hist">Conversations</h2>
-          <RouterLink to="/assistant" class="btn btn-tonal st"><Icon name="plus" :size="18" /> New</RouterLink>
-        </div>
-        <p v-if="!conversations.length" class="small muted">None yet.</p>
+      <nav class="conv-list" aria-label="Conversations">
+        <p v-if="!conversations.length" class="small muted">None yet. Ask something to start one.</p>
         <div v-for="c in conversations" :key="c.id" class="conv" :class="{ sel: c.id === conv?.id }">
           <RouterLink :to="`/assistant/${c.id}`" class="conv-link st">
             <span class="ellipsis">{{ c.title }}</span>
@@ -407,6 +324,102 @@ onBeforeUnmount(() => {
           </RouterLink>
           <button class="icon-btn st" type="button" :aria-label="`Delete ${c.title}`" @click="remove(c)"><Icon name="trash" :size="18" /></button>
         </div>
+      </nav>
+
+      <section class="panel settings" aria-label="Assistant settings">
+        <M3Expand>
+          <template #summary>
+            <span class="dot" :class="{ on: active?.ready }" aria-hidden="true" />
+            <span class="strong">Assistant settings</span>
+            <span class="small muted ellipsis sum">{{ label }}</span>
+          </template>
+          <div class="settings-body">
+            <h2 id="acct">AI provider</h2>
+            <div class="providers" role="radiogroup" aria-label="AI provider">
+              <button
+                v-for="p in providers"
+                :key="p.id"
+                type="button"
+                class="prov st"
+                role="radio"
+                :aria-checked="p.active"
+                :class="{ sel: p.active }"
+                @click="choose(p)"
+              >
+                <span class="dot" :class="{ on: p.ready }" aria-hidden="true" />
+                <span class="grow ptext">
+                  <span class="strong">{{ p.label }}</span>
+                  <span class="small muted">{{ p.badge }}</span>
+                </span>
+                <Icon v-if="p.active" name="check" :size="18" />
+              </button>
+            </div>
+
+            <p v-if="active?.hint" class="small muted">{{ active.hint }}</p>
+
+            <M3Select v-if="modelOptions.length" v-model="model" label="Model" :options="modelOptions" :disabled="!settings" />
+
+            <div v-if="active?.needsKey" class="key">
+              <span class="dot" :class="{ on: active.ready }" aria-hidden="true" />
+              <div class="grow">
+                <div class="strong">{{ active.ready ? 'Connected' : 'Not connected' }}</div>
+                <code v-if="active.keyHint" class="small muted">{{ active.keyHint }}</code>
+              </div>
+              <button class="btn btn-text st" type="button" @click="keyOpen = true">{{ active.ready ? 'Change' : 'Connect' }}</button>
+            </div>
+
+            <template v-else-if="active">
+              <div class="key">
+                <span class="dot" :class="{ on: active.ready }" aria-hidden="true" />
+                <div class="grow">
+                  <div class="strong">{{ active.ready ? 'Running on this server' : 'Not answering' }}</div>
+                  <code class="small muted">{{ active.url }}</code>
+                </div>
+                <button class="btn btn-text st" type="button" @click="(newURL = active.url ?? ''), (urlOpen = true)">Address</button>
+              </div>
+              <M3Expand v-if="active.install && !active.ready">
+                <template #summary><span class="small">Install Ollama</span></template>
+                <pre class="install">{{ active.install }}</pre>
+              </M3Expand>
+              <button class="btn btn-outlined st" type="button" @click="loadSettings">Check again</button>
+            </template>
+
+            <!-- The CLI has to exist on the server before a token is any use. -->
+            <template v-if="active?.kind === 'cli'">
+              <M3Expand v-if="active.install && !active.ready">
+                <template #summary><span class="small">Install Claude Code</span></template>
+                <pre class="install">{{ active.install }}</pre>
+              </M3Expand>
+              <p v-if="active.ready" class="small muted">
+                The panel runs this command with its own tools disabled: every change still waits for your approval here.
+              </p>
+              <button class="btn btn-outlined st" type="button" @click="loadSettings">Check again</button>
+            </template>
+
+            <M3Select v-if="active?.kind === 'cli'" v-model="effort" label="Effort" :options="EFFORTS" :disabled="!settings" />
+            <p class="small muted">
+              {{ active?.note }}<template v-if="active?.needsKey">{{ ' ' }}{{ active.kind === 'cli' ? 'The token is encrypted on this server.' : 'The key is encrypted on this server.' }}</template>
+            </p>
+
+            <h2 id="perm">What the assistant may do</h2>
+            <div class="perm">
+              <div class="grow"><div>Read the server</div><div class="small muted">Status, logs, metrics, config files</div></div>
+              <span class="chip">always</span>
+            </div>
+            <div class="perm">
+              <div class="grow"><div>Run read-only commands without asking</div><div class="small muted">Off: every command waits for you</div></div>
+              <M3Switch v-model="autoRead" label="Run read-only commands without asking" :disabled="!settings" />
+            </div>
+            <div class="perm">
+              <div class="grow"><div>Changes</div><div class="small muted">Restart, deploy, any command that modifies: you approve each one</div></div>
+              <span class="chip">ask</span>
+            </div>
+            <div class="never">
+              <span class="small muted">Never allowed</span>
+              <span v-for="n in NEVER" :key="n" class="never-chip">{{ n }}</span>
+            </div>
+          </div>
+        </M3Expand>
       </section>
     </aside>
 
@@ -417,6 +430,13 @@ onBeforeUnmount(() => {
         <span class="chip chip-outline provider"><span class="dot" :class="{ on: active?.ready }" aria-hidden="true" />{{ label }}</span>
         <span class="chip chip-outline server"><span class="online" aria-hidden="true" />{{ session.host?.hostname ?? '…' }}</span>
       </header>
+
+      <div v-if="active && !active.ready" class="setup">
+        <span class="dot warn" aria-hidden="true" />
+        <span class="grow small">{{ banner }}</span>
+        <button v-if="active.needsKey" class="btn btn-text st" type="button" @click="keyOpen = true">Connect</button>
+        <button v-else class="btn btn-text st" type="button" @click="loadSettings">Check again</button>
+      </div>
 
       <div ref="scroller" class="thread" aria-live="polite">
         <div v-if="!conv" class="empty">
@@ -554,14 +574,14 @@ onBeforeUnmount(() => {
   flex: 0 0 340px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   padding: 20px 18px;
   border-right: 1px solid var(--sch);
-  overflow-y: auto;
+  overflow: hidden;
 }
 .side h1 {
-  font-size: 26px;
-  margin: 0 4px 4px;
+  font-size: 20px;
+  margin: 0 4px;
 }
 .panel {
   border-radius: 24px;
@@ -571,8 +591,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 12px;
 }
-.panel h2,
-.history h2 {
+.panel h2 {
   font-size: 16px;
 }
 .panel p {
@@ -656,6 +675,9 @@ onBeforeUnmount(() => {
 .dot.on {
   background: var(--ok);
 }
+.dot.warn {
+  background: var(--warn);
+}
 .perm {
   display: flex;
   align-items: center;
@@ -681,6 +703,50 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+/* The list owns the column's spare height and scrolls on its own, so a long history
+   never hides the settings below it, and the settings never hide the list. */
+.conv-list {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 -6px;
+  padding: 0 6px;
+}
+.settings {
+  flex: none;
+  padding: 8px 10px;
+}
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* Whatever the window height, the open card must leave the list and its own
+     summary on screen; past that it scrolls. */
+  max-height: clamp(160px, calc(100dvh - 420px), 40dvh);
+  overflow-y: auto;
+  padding: 6px 6px 4px;
+}
+.settings-body h2 {
+  font-size: 14px;
+  margin: 6px 0 0;
+}
+.sum {
+  min-width: 0;
+}
+.setup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--sch);
+  background: var(--sch);
+}
+.setup .btn {
+  flex: none;
 }
 .hist-head {
   display: flex;
@@ -1000,6 +1066,9 @@ onBeforeUnmount(() => {
     max-height: none;
     border-right: none;
     padding: 0;
+  }
+  .conv-list {
+    max-height: 40dvh;
   }
   .chat {
     max-height: none;
