@@ -6,6 +6,45 @@ on:
   pull_request:
 
 jobs:
+  history:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # A commit records the people who made the change. The helper that wrote a patch gets
+      # no trailer, so the log stays a record of who is accountable for the code.
+      - name: No AI co-author trailers
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            range="$BASE..$AFTER"
+          elif git rev-parse --quiet --verify "${BEFORE:-none}^{commit}" >/dev/null 2>&1; then
+            range="$BEFORE..$AFTER"
+          else
+            range="$AFTER"
+          fi
+          bad=""
+          for c in $(git rev-list "$range"); do
+            msg=$(git log -1 --format='%B' "$c")
+            if printf '%s\n' "$msg" | grep -qiE \
+              '^Co-Authored-By:.*(codebuff|copilot|cursor|windsurf|aider|devin|chatgpt|anthropic|openai|claude code|gemini-cli)|^Generated with (codebuff|claude|copilot|cursor|aider|windsurf|devin|chatgpt)'
+            then
+              bad="$bad$c $(git log -1 --format='%s' "$c")\n"
+            fi
+          done
+          if [ -n "$bad" ]; then
+            printf "%b" "$bad"
+            echo "::error::These commits credit an AI tool in their message. Drop the trailer and the 'Generated with' line: git rebase -i <base> with reword, or commit --amend for the last one."
+            exit 1
+          fi
+          echo "No AI co-author trailers in ${range}."
+
   panel:
     runs-on: ubuntu-latest
     defaults:
