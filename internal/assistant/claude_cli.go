@@ -151,6 +151,82 @@ func (e *Engine) claudeTurn(ctx context.Context, convID string, tgt target, prom
 	return t, nil
 }
 
+// checkClaudeCode runs the smallest possible turn: one word, the cheapest family, no
+// tools. A token from `claude setup-token` is an OAuth credential for the CLI, so the CLI
+// is the only thing that can say whether it still works; and only an authentication
+// answer condemns it, so a subscription that is rate limited or a network that is down
+// does not cost the administrator what they pasted.
+func (e *Engine) checkClaudeCode(ctx context.Context, token string) error {
+	path, _, err := e.claudeInfo(ctx)
+	if err != nil {
+		return err
+	}
+	env, err := e.claudeEnv(path, token)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path,
+		"-p", "ping",
+		"--model", "haiku",
+		"--tools", "",
+		"--output-format", "json",
+	)
+	cmd.Env = env
+	cmd.Dir = "/"
+	cmd.WaitDelay = 2 * time.Second
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &tailBuffer{buf: &stderr, max: 4096}
+	runErr := cmd.Run()
+	if ctx.Err() != nil {
+		return errors.New("Claude Code did not finish the token check in time")
+	}
+	// The CLI ends a print run with one result line; anything before it is a warning.
+	var res claudeResult
+	found := false
+	for _, line := range strings.Split(stdout.String(), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var probe claudeResult
+		if json.Unmarshal([]byte(line), &probe) == nil && probe.Type == "result" {
+			res, found = probe, true
+		}
+	}
+	if !found {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" && runErr != nil {
+			msg = runErr.Error()
+		}
+		if msg == "" {
+			return errors.New("the Claude Code CLI did not answer the token check")
+		}
+		return errors.New(cliReason(msg))
+	}
+	low := strings.ToLower(res.Result)
+	switch {
+	case res.APIErrorStatus == 401 || res.APIErrorStatus == 403:
+		return fmt.Errorf("%w: Claude Code", errBadKey)
+	case strings.Contains(low, "authenticate"), strings.Contains(low, "oauth token is invalid"),
+		strings.Contains(low, "invalid api key"), strings.Contains(low, "not logged in"):
+		return fmt.Errorf("%w: Claude Code", errBadKey)
+	case res.IsError:
+		return errors.New(cliReason(res.Result))
+	}
+	return nil
+}
+
+// claudeResult is the last line of a print run.
+type claudeResult struct {
+	Type           string `json:"type"`
+	IsError        bool   `json:"is_error"`
+	APIErrorStatus int    `json:"api_error_status"`
+	Result         string `json:"result"`
+}
+
 func isMissingSession(err error) bool {
 	m := strings.ToLower(err.Error())
 	return strings.Contains(m, "no conversation found") || strings.Contains(m, "session not found") ||

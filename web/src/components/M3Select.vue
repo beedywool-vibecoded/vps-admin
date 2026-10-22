@@ -16,24 +16,58 @@ const props = defineProps<{ options: Option<T>[]; label: string; disabled?: bool
 const open = ref(false)
 const active = ref(0)
 const root = ref<HTMLElement>()
+const btn = ref<HTMLButtonElement>()
 const list = ref<HTMLElement>()
+const target = ref<HTMLElement | string>(document.body)
+const pos = ref<Record<string, string>>({})
 const id = `sel-${Math.random().toString(36).slice(2, 8)}`
 const current = computed(() => props.options.find((o) => o.value === model.value))
 
+// The menu is placed against the window instead of inside the field: a scrolling card,
+// a clipped column or a short window would otherwise cut it off. Inside a dialog it has
+// to live in the dialog itself, which is its own layer above the page.
+function place() {
+  const el = btn.value
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  if (r.bottom < 0 || r.top > window.innerHeight) return hide()
+  const gap = 4
+  const edge = 8
+  const wanted = Math.min(320, props.options.length * 48 + 16)
+  const below = window.innerHeight - r.bottom - edge
+  const above = r.top - edge
+  const up = below < wanted && above > below
+  const room = Math.max(96, Math.min(320, up ? above : below))
+  pos.value = {
+    left: `${r.left}px`,
+    width: `${r.width}px`,
+    top: up ? 'auto' : `${r.bottom + gap}px`,
+    bottom: up ? `${window.innerHeight - r.top + gap}px` : 'auto',
+    maxHeight: `${room}px`,
+  }
+}
+
 async function show() {
   if (props.disabled) return
+  target.value = (root.value?.closest('dialog[open]') as HTMLElement | null) ?? document.body
   open.value = true
   active.value = Math.max(0, props.options.findIndex((o) => o.value === model.value))
   document.addEventListener('pointerdown', outside, true)
+  window.addEventListener('scroll', place, true)
+  window.addEventListener('resize', place)
   await nextTick()
+  place()
   list.value?.querySelector<HTMLElement>(`[data-i="${active.value}"]`)?.scrollIntoView({ block: 'nearest' })
 }
 function hide() {
   open.value = false
   document.removeEventListener('pointerdown', outside, true)
+  window.removeEventListener('scroll', place, true)
+  window.removeEventListener('resize', place)
 }
 function outside(e: Event) {
-  if (!root.value?.contains(e.target as Node)) hide()
+  const t = e.target as Node
+  if (!root.value?.contains(t) && !list.value?.contains(t)) hide()
 }
 function pick(i: number) {
   const o = props.options[i]
@@ -67,13 +101,14 @@ function onKey(e: KeyboardEvent) {
   } else return
   e.preventDefault()
 }
-onBeforeUnmount(() => document.removeEventListener('pointerdown', outside, true))
+onBeforeUnmount(hide)
 </script>
 
 <template>
   <div ref="root" class="select" :class="{ open, disabled }">
     <button
       type="button"
+      ref="btn"
       class="field-btn st"
       role="combobox"
       :aria-expanded="open"
@@ -88,8 +123,9 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside, true)
       <span class="val">{{ current?.label ?? '' }}</span>
       <Icon name="chevron" :size="20" class="chev" />
     </button>
-    <Transition name="menu">
-      <ul v-if="open" :id="id" ref="list" class="menu" role="listbox" :aria-label="label">
+    <Teleport :to="target">
+      <Transition name="menu">
+        <ul v-if="open" :id="id" ref="list" class="menu" role="listbox" :aria-label="label" :style="pos">
         <li
           v-for="(o, i) in options"
           :id="`${id}-${i}`"
@@ -107,9 +143,10 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside, true)
             <span v-if="o.hint" class="opt-hint">{{ o.hint }}</span>
           </span>
           <Icon v-if="o.value === model" name="check" :size="18" />
-        </li>
-      </ul>
-    </Transition>
+          </li>
+        </ul>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -163,12 +200,10 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside, true)
   rotate: 180deg;
 }
 .menu {
-  position: absolute;
-  z-index: 30;
-  left: 0;
-  right: 0;
-  top: calc(100% + 4px);
-  max-height: 320px;
+  /* Placed by script: fixed to the window, so nothing can clip it. */
+  position: fixed;
+  z-index: 90;
+  box-sizing: border-box;
   overflow-y: auto;
   margin: 0;
   padding: 8px 0;

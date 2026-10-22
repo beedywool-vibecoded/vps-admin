@@ -14,8 +14,8 @@ const color = computed(() => ({ ok: 'var(--ok)', warn: 'var(--warn)', bad: 'var(
 .dot {
   width: 12px;
   height: 12px;
-  border-radius: 6px;
-  flex-shrink: 0;
+  border-radius: 50%;
+  flex: none;
   background: var(--c);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 20%, transparent);
 }

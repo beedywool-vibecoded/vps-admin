@@ -107,7 +107,7 @@ class _AssistantPageState extends State<AssistantPage> {
         children: [
           Muted(
             cli
-                ? 'On your computer, run claude setup-token and paste the token it prints (sk-ant-oat…). It bills your Pro or Max subscription. The panel runs the claude command installed on this server with its own tools disabled: every change still waits for your approval here.'
+                ? 'On your computer, run claude setup-token and paste the token it prints (sk-ant-oat…). It bills your Pro or Max subscription. The claude command installed on this server checks it with one small message, then the token is stored encrypted here. That command runs with its own tools disabled: every change still waits for your approval.'
                 : 'Create a free key at aistudio.google.com/apikey, no card needed. It is encrypted on this server and never shown again. Leave empty to remove it.',
             size: 14,
           ),
@@ -133,12 +133,19 @@ class _AssistantPageState extends State<AssistantPage> {
     );
     if (res == null) return;
     await _set({'apiKey': res});
-    if (mounted) {
+    if (!mounted) return;
+    // A stored key is not a working provider: the server says why it is not ready (no
+    // claude command on this server, a check that did not answer), and that reason is the
+    // answer. "API key removed" is only true when the field was left empty.
+    final hint = (settings?['hint'] as String?) ?? '';
+    if (res.isEmpty) {
+      showInfo(context, 'API key removed');
+    } else if (settings?['configured'] == true) {
+      showInfo(context, '$label connected');
+    } else {
       showInfo(
         context,
-        settings?['configured'] == true
-            ? '$label connected'
-            : 'API key removed',
+        hint.isEmpty ? '$label saved, but it cannot answer yet' : hint,
       );
     }
   }
@@ -202,176 +209,6 @@ class _AssistantPageState extends State<AssistantPage> {
         WCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: 12,
-            children: [
-              const CardHead('AI provider'),
-              for (final p in providers)
-                InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () => _choose(p['id'] as String),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: p['active'] == true
-                            ? cs.primary
-                            : cs.outlineVariant,
-                      ),
-                      color: p['active'] == true
-                          ? cs.surfaceContainerHigh
-                          : null,
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: p['ready'] == true
-                                ? Tones.of(context).ok
-                                : cs.outline,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                p['label'] as String? ?? '',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              Muted(p['badge'] as String? ?? ''),
-                            ],
-                          ),
-                        ),
-                        if (p['active'] == true)
-                          const Icon(Icons.check, size: 18),
-                      ],
-                    ),
-                  ),
-                ),
-              if ((active?['hint'] as String? ?? '').isNotEmpty)
-                Muted(active!['hint'] as String, size: 13),
-              // The Claude Code CLI has to exist on the server before a token is any use.
-              if (active?['kind'] == 'cli' &&
-                  active?['ready'] != true &&
-                  (active?['install'] as String? ?? '').isNotEmpty)
-                Cmd(active!['install'] as String),
-              if (needsKey)
-                Row(
-                  children: [
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: configured ? Tones.of(context).ok : cs.outline,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            configured ? 'Connected' : 'Not connected',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          if ((s?['keyHint'] as String? ?? '').isNotEmpty)
-                            Muted(s!['keyHint'] as String, mono: true),
-                        ],
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: _key,
-                      child: Text(configured ? 'Change' : 'Connect'),
-                    ),
-                  ],
-                )
-              else
-                Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: WButton(
-                    'Check again',
-                    kind: BtnKind.outlined,
-                    onPressed: _load,
-                  ),
-                ),
-              if (models.isNotEmpty)
-                SelectField<String>(
-                  label: 'Model',
-                  value: s?['model'] as String? ?? '',
-                  options: [
-                    for (final m in models)
-                      (m['id'] as String, m['label'] as String),
-                  ],
-                  onChanged: (v) => _set({'model': v}),
-                ),
-              if (active?['kind'] == 'cli')
-                SelectField<String>(
-                  label: 'Effort',
-                  value: s?['effort'] as String? ?? 'high',
-                  options: _efforts,
-                  onChanged: (v) => _set({'effort': v}),
-                ),
-              Muted(active?['note'] as String? ?? ''),
-            ],
-          ),
-        ),
-        WCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const CardHead('What the assistant may do'),
-              perm(
-                'Read the server',
-                'Status, logs, metrics, config files',
-                const WChip('always'),
-              ),
-              perm(
-                'Run read-only commands without asking',
-                'Off: every command waits for you',
-                Switch(
-                  value: s?['autoRead'] as bool? ?? true,
-                  onChanged: s == null ? null : (v) => _set({'autoRead': v}),
-                ),
-              ),
-              perm(
-                'Changes',
-                'Restart, deploy, any command that modifies: you approve each one',
-                const WChip('ask'),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  const Muted('Never allowed'),
-                  for (final n in _never)
-                    WChip(
-                      n,
-                      color: cs.errorContainer,
-                      textColor: cs.onErrorContainer,
-                    ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        WCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               CardHead(
                 'Conversations',
@@ -408,11 +245,7 @@ class _AssistantPageState extends State<AssistantPage> {
                     if (needsKey)
                       WButton('Connect', large: true, onPressed: _key)
                     else
-                      WButton(
-                        'Check again',
-                        large: true,
-                        onPressed: _load,
-                      ),
+                      WButton('Check again', large: true, onPressed: _load),
                   ],
                 )
               else ...[
@@ -474,6 +307,196 @@ class _AssistantPageState extends State<AssistantPage> {
                   ),
               ],
             ],
+          ),
+        ),
+        WCard(
+          child: Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: EdgeInsets.zero,
+              shape: const Border(),
+              collapsedShape: const Border(),
+              leading: Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: configured ? Tones.of(context).ok : cs.outline,
+                ),
+              ),
+              title: const Text('Assistant settings'),
+              subtitle: Muted(label),
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: 12,
+                  children: [
+                    const CardHead('AI provider'),
+                    for (final p in providers)
+                      InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: () => _choose(p['id'] as String),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: p['active'] == true
+                                  ? cs.primary
+                                  : cs.outlineVariant,
+                            ),
+                            color: p['active'] == true
+                                ? cs.surfaceContainerHigh
+                                : null,
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 10,
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: p['ready'] == true
+                                      ? Tones.of(context).ok
+                                      : cs.outline,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      p['label'] as String? ?? '',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    Muted(p['badge'] as String? ?? ''),
+                                  ],
+                                ),
+                              ),
+                              if (p['active'] == true)
+                                const Icon(Icons.check, size: 18),
+                            ],
+                          ),
+                        ),
+                      ),
+                    if ((active?['hint'] as String? ?? '').isNotEmpty)
+                      Muted(active!['hint'] as String, size: 13),
+                    // The Claude Code CLI has to exist on the server before a token is any use.
+                    if (active?['kind'] == 'cli' &&
+                        active?['ready'] != true &&
+                        (active?['install'] as String? ?? '').isNotEmpty)
+                      Cmd(active!['install'] as String),
+                    if (needsKey)
+                      Row(
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: configured
+                                  ? Tones.of(context).ok
+                                  : cs.outline,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  configured ? 'Connected' : 'Not connected',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                if ((s?['keyHint'] as String? ?? '').isNotEmpty)
+                                  Muted(s!['keyHint'] as String, mono: true),
+                              ],
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _key,
+                            child: Text(configured ? 'Change' : 'Connect'),
+                          ),
+                        ],
+                      )
+                    else
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: WButton(
+                          'Check again',
+                          kind: BtnKind.outlined,
+                          onPressed: _load,
+                        ),
+                      ),
+                    // Only once the provider answers: before that the list is a stand-in.
+                    if (models.isNotEmpty && configured)
+                      SelectField<String>(
+                        label: 'Model',
+                        value: s?['model'] as String? ?? '',
+                        options: [
+                          for (final m in models)
+                            (m['id'] as String, m['label'] as String),
+                        ],
+                        onChanged: (v) => _set({'model': v}),
+                      ),
+                    if (active?['kind'] == 'cli')
+                      SelectField<String>(
+                        label: 'Effort',
+                        value: s?['effort'] as String? ?? 'high',
+                        options: _efforts,
+                        onChanged: (v) => _set({'effort': v}),
+                      ),
+                    Muted(active?['note'] as String? ?? ''),
+                    const Divider(height: 24),
+                    const CardHead('What the assistant may do'),
+                    perm(
+                      'Read the server',
+                      'Status, logs, metrics, config files',
+                      const WChip('always'),
+                    ),
+                    perm(
+                      'Run read-only commands without asking',
+                      'Off: every command waits for you',
+                      Switch(
+                        value: s?['autoRead'] as bool? ?? true,
+                        onChanged: s == null
+                            ? null
+                            : (v) => _set({'autoRead': v}),
+                      ),
+                    ),
+                    perm(
+                      'Changes',
+                      'Restart, deploy, any command that modifies: you approve each one',
+                      const WChip('ask'),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        const Muted('Never allowed'),
+                        for (final n in _never)
+                          WChip(
+                            n,
+                            color: cs.errorContainer,
+                            textColor: cs.onErrorContainer,
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ],

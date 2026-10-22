@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -262,5 +263,119 @@ func TestGeminiToolLoop(t *testing.T) {
 	all, _ := st.ToolCalls(ctx, conv.ID)
 	if len(all) != 1 || all[0].Status != "done" || all[0].Kind != "read" {
 		t.Fatalf("tool call not recorded: %+v", all)
+	}
+}
+
+// Google's catalogue still lists a family it has closed to keys made today, so the name
+// only fails when a message is sent with it. The next model it does serve takes over, the
+// switch is recorded, and the refused name is never asked for again.
+func TestGeminiRefusedModelAtSendIsReplaced(t *testing.T) {
+	const retired = "gemini-2.5-flash"
+	var mu sync.Mutex
+	asked := map[string]int{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/models":
+			io.WriteString(w, geminiListPayload)
+		case "/chat/completions":
+			var req chatRequest
+			json.NewDecoder(r.Body).Decode(&req)
+			mu.Lock()
+			asked[req.Model]++
+			mu.Unlock()
+			if req.Model == retired {
+				// Google's OpenAI-compatible door answers an array, which the panel must read
+				// rather than show.
+				w.WriteHeader(http.StatusNotFound)
+				io.WriteString(w, `[{"error":{"code":404,"message":"This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.8-flash for the latest features and improvements."}}]`)
+				return
+			}
+			sse(w,
+				`{"choices":[{"delta":{"content":"Nothing is deployed."}}]}`,
+				`{"choices":[{"delta":{},"finish_reason":"stop"}]}`,
+			)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	box, err := secret.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	e := &Engine{Deps: Deps{Store: st}, Box: box, GeminiURL: srv.URL, GeminiModelsURL: srv.URL}
+	e.Init(ctx)
+	st.SetSetting(ctx, providerName, ProviderGemini)
+	st.SetSetting(ctx, geminiKey, box.Seal("AIzaGood"))
+	st.SetSetting(ctx, "assistant.model."+ProviderGemini, retired)
+
+	conv, err := e.NewConversation(ctx, "Is anything deployed?", "test-device")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	var msgs []store.ConvMessage
+	for {
+		c, err := st.Conversation(ctx, conv.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		msgs, _ = st.Messages(ctx, conv.ID)
+		if c.State == "error" {
+			t.Fatalf("a retired model ended the conversation: %s", c.Error)
+		}
+		if c.State == "idle" && len(msgs) >= 2 && !e.Running(conv.ID) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("loop did not finish, state %s with %d messages", c.State, len(msgs))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !strings.Contains(msgs[len(msgs)-1].Content, "Nothing is deployed.") {
+		t.Fatalf("the answer was lost: %s", msgs[len(msgs)-1].Content)
+	}
+	mu.Lock()
+	gotRetired, gotNext := asked[retired], asked["gemini-3.8-flash"]
+	mu.Unlock()
+	if gotRetired != 1 || gotNext != 1 {
+		t.Fatalf("want one refused attempt and one accepted one, got %v", asked)
+	}
+	if got := st.Setting(ctx, "assistant.model."+ProviderGemini, ""); got != "gemini-3.8-flash" {
+		t.Fatalf("the switch should be recorded, the store says %q", got)
+	}
+	if !e.retiredGemini(ctx, "AIzaGood")[retired] {
+		t.Fatal("the refused name should be remembered for this key")
+	}
+	p := e.Settings(ctx)
+	if p.Model != "gemini-3.8-flash" || p.Hint != "" {
+		t.Fatalf("the panel should agree with the message path: %+v", p)
+	}
+	for _, x := range p.Providers {
+		if x.ID != ProviderGemini {
+			continue
+		}
+		for _, m := range x.Models {
+			if m.ID == retired {
+				t.Fatalf("a name Google refused is still offered: %+v", x.Models)
+			}
+		}
+	}
+}
+
+// Google's error bodies are not shown as JSON.
+func TestGeminiErrorBodyIsReadable(t *testing.T) {
+	body := []byte(`[{"error":{"code":404,"message":"This model models/gemini-2.5-flash is no longer available to new users."}}]`)
+	got := errorText(ProviderGemini, http.StatusNotFound, body)
+	if strings.Contains(got, "{") || !strings.Contains(got, "no longer available") {
+		t.Fatalf("want the message Google wrote, got %q", got)
 	}
 }

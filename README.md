@@ -270,7 +270,7 @@ cd app && flutter test                          # l'app Android
 - L'installeur et le retour arrière se testent dans un conteneur Debian avec systemd (`deploy/install.sh --binary`).
 - `VPS_ADMIN_GITHUB_API` et `VPS_ADMIN_ANTHROPIC_URL` pointent l'agent vers de faux serveurs pour les tests de bout en bout.
 - `VPS_ADMIN_OLLAMA_TEST=1 go test ./internal/assistant -run OllamaLive` interroge un vrai Ollama local, avec `qwen3:1.7b` par défaut (`VPS_ADMIN_OLLAMA_MODEL` pour en changer).
-- `VPS_ADMIN_CLAUDE_TEST=1 go test ./internal/assistant -run ClaudeCodeLive` lance le vrai binaire `claude` contre un faux serveur Anthropic : il vérifie le pont MCP, l'exécution d'un outil de lecture, l'approbation et le refus d'une modification, sans abonnement.
+- `VPS_ADMIN_CLAUDE_TEST=1 go test ./internal/assistant -run ClaudeCodeLive` lance le vrai binaire `claude` contre un faux serveur Anthropic : il vérifie la vérification du jeton à l'enregistrement (un jeton révoqué est refusé, un jeton valide est gardé), le pont MCP, l'exécution d'un outil de lecture, l'approbation et le refus d'une modification, sans abonnement.
 
 </details>
 
