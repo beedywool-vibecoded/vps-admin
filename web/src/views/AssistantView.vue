@@ -326,7 +326,7 @@ onBeforeUnmount(() => {
       <nav class="conv-list" aria-label="Conversations">
         <p v-if="!conversations.length" class="small muted">None yet. Ask something to start one.</p>
         <div v-for="c in conversations" :key="c.id" class="conv" :class="{ sel: c.id === conv?.id }">
-          <RouterLink :to="`/assistant/${c.id}`" class="conv-link st">
+          <RouterLink :to="`/assistant/${c.id}`" class="conv-link">
             <span class="ellipsis">{{ c.title }}</span>
             <span class="small muted">{{ c.state === 'awaiting' ? 'waiting for you' : ago(c.updatedAt) }}</span>
           </RouterLink>
@@ -769,9 +769,30 @@ onBeforeUnmount(() => {
   padding: 0 14px;
 }
 .conv {
+  position: relative;
   display: flex;
   align-items: center;
+  gap: 4px;
+  /* The delete button keeps the card's edge at arm's length. */
+  padding: 2px 8px 2px 2px;
   border-radius: 16px;
+}
+/* The state layer covers the whole card, trailing button included. */
+.conv::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity 0.2s var(--ease);
+  pointer-events: none;
+}
+.conv:hover::after {
+  opacity: 0.08;
+}
+.conv:active::after {
+  opacity: 0.12;
 }
 .conv.sel {
   background: var(--sch);
