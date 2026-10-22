@@ -435,8 +435,14 @@ func errorText(id string, status int, body []byte) string {
 	return msg
 }
 
+// errBadKey is the only answer that condemns a key: the provider itself said it does not
+// know it.
+var errBadKey = errors.New("the provider rejected this key")
+
 // checkGemini makes the smallest possible request. A valid key that is out of quota
-// is still a valid key, so only an authentication answer rejects it.
+// is still a valid key, so only an authentication answer rejects it. The call is kept
+// short: the panel saves the key through the same request, and a slow Google must not
+// hold that answer long enough for a reverse proxy to give up and return 502.
 func (e *Engine) checkGemini(ctx context.Context, key string) error {
 	body, _ := json.Marshal(chatRequest{
 		Model:     "gemini-2.5-flash-lite",
@@ -449,8 +455,10 @@ func (e *Engine) checkGemini(ctx context.Context, key string) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+key)
-	client := &http.Client{Timeout: 20 * time.Second}
-	resp, err := client.Do(req)
+	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel()
+	client := &http.Client{} // the context carries the deadline
+	resp, err := client.Do(req.WithContext(ctx))
 	if err != nil {
 		return fmt.Errorf("could not reach Gemini: %w", err)
 	}
@@ -460,7 +468,7 @@ func (e *Engine) checkGemini(ctx context.Context, key string) error {
 	}
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return errors.New("Gemini rejected this API key")
+		return fmt.Errorf("%w: Gemini", errBadKey)
 	}
 	return errors.New(errorText(ProviderGemini, resp.StatusCode, b))
 }

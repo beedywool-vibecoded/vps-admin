@@ -420,6 +420,11 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   }
   const res = await fetch(path, { method, headers, body: payload, credentials: 'same-origin' })
   if (res.status === 204) return undefined as T
+  if (res.status === 502 || res.status === 504) {
+    // The reverse proxy in front of the agent answered instead of the agent: usually a
+    // restart (an update) or a long request it gave up on.
+    throw new ApiError(res.status, 'agent_unreachable', 'The agent did not answer. Check that vps-admin is running, then try again.')
+  }
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
     const code = (data as { error?: string }).error ?? 'http_' + res.status

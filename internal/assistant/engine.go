@@ -122,19 +122,28 @@ func (e *Engine) SetKey(ctx context.Context, provider, key string) error {
 	if key == "" {
 		return e.Store.SetSetting(ctx, name, "")
 	}
+	// Only an authentication answer condemns a key. A provider that is slow, unreachable
+	// or having a bad day must not cost the administrator what they just pasted: the key
+	// is saved, and the first message reports the real problem.
 	switch provider {
 	case ProviderAnthropic:
+		check, cancel := context.WithTimeout(ctx, 6*time.Second)
 		c := e.client(key)
-		if _, err := c.Models.List(ctx, anthropic.ModelListParams{Limit: anthropic.Int(1)}); err != nil {
+		_, err := c.Models.List(check, anthropic.ModelListParams{Limit: anthropic.Int(1)})
+		cancel()
+		if err != nil {
 			var apiErr *anthropic.Error
 			if errors.As(err, &apiErr) && (apiErr.StatusCode == http.StatusUnauthorized || apiErr.StatusCode == http.StatusForbidden) {
 				return errors.New("Anthropic rejected this API key")
 			}
-			return fmt.Errorf("could not check the key: %w", err)
+			slog.Warn("anthropic key not verified, saved anyway", "err", err)
 		}
 	case ProviderGemini:
 		if err := e.checkGemini(ctx, key); err != nil {
-			return err
+			if errors.Is(err, errBadKey) {
+				return errors.New("Gemini rejected this API key")
+			}
+			slog.Warn("gemini key not verified, saved anyway", "err", err)
 		}
 	case ProviderClaudeCode:
 		// Nothing to check against: the token is an OAuth credential for the CLI, not an

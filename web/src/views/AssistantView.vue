@@ -501,7 +501,7 @@ onBeforeUnmount(() => {
       <p class="muted" style="margin: 0">
         <template v-if="active?.id === 'anthropic'">
           Create a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>
-          and paste it here. It is checked with Anthropic, then stored encrypted on this server only.
+          and paste it here. It is stored encrypted on this server, and checked with Anthropic when the server can reach it.
         </template>
         <template v-else-if="active?.id === 'claude-code'">
           On your own computer, run <code>claude setup-token</code> and paste the token it prints (it starts with
@@ -635,6 +635,22 @@ onBeforeUnmount(() => {
   padding: 10px 12px;
   border-radius: 16px;
   background: var(--sch);
+}
+/* The address is the one value that can be long: it truncates instead of running
+   under the button next to it. */
+.key > * {
+  min-width: 0;
+}
+.key .btn,
+.key > button {
+  flex-shrink: 0;
+}
+.key code {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .strong {
   font-weight: 500;
