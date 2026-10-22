@@ -215,11 +215,17 @@ async function choose(p: AssistantProvider) {
 async function saveKey() {
   savingKey.value = true
   try {
-    const res = await api.assistantUpdate({ apiKey: newKey.value.trim() })
+    const key = newKey.value.trim()
+    const res = await api.assistantUpdate({ apiKey: key })
     settings.value = res.settings
     newKey.value = ''
     keyOpen.value = false
-    toast(res.settings.configured ? `${label.value} connected` : 'API key removed')
+    // A stored key is not a working provider. The server says why it is not ready (no
+    // claude command on this server, a check that did not answer), and that reason is the
+    // answer; "API key removed" is only true when the field was left empty.
+    if (key === '') toast('API key removed')
+    else if (res.settings.configured) toast(`${label.value} connected`)
+    else toast(res.settings.hint || `${label.value} saved, but it cannot answer yet`, true)
   } catch (e) {
     toastError(e)
   } finally {

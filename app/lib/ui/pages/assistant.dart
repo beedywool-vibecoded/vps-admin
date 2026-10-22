@@ -133,12 +133,19 @@ class _AssistantPageState extends State<AssistantPage> {
     );
     if (res == null) return;
     await _set({'apiKey': res});
-    if (mounted) {
+    if (!mounted) return;
+    // A stored key is not a working provider: the server says why it is not ready (no
+    // claude command on this server, a check that did not answer), and that reason is the
+    // answer. "API key removed" is only true when the field was left empty.
+    final hint = (settings?['hint'] as String?) ?? '';
+    if (res.isEmpty) {
+      showInfo(context, 'API key removed');
+    } else if (settings?['configured'] == true) {
+      showInfo(context, '$label connected');
+    } else {
       showInfo(
         context,
-        settings?['configured'] == true
-            ? '$label connected'
-            : 'API key removed',
+        hint.isEmpty ? '$label saved, but it cannot answer yet' : hint,
       );
     }
   }
