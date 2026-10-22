@@ -13,33 +13,58 @@ import (
 )
 
 func (s *Server) assistantSettings(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"settings": s.Assistant.Settings(r.Context()), "models": assistant.Models})
+	st := s.Assistant.Settings(r.Context())
+	var models []assistant.Model
+	for _, p := range st.Providers {
+		if p.ID == st.Provider {
+			models = p.Models
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"settings": st, "models": models})
 }
 
 func (s *Server) assistantUpdate(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		APIKey   *string `json:"apiKey"`
-		Model    string  `json:"model"`
-		Effort   string  `json:"effort"`
-		AutoRead *bool   `json:"autoRead"`
+		Provider  *string `json:"provider"`
+		APIKey    *string `json:"apiKey"`
+		Model     string  `json:"model"`
+		Effort    string  `json:"effort"`
+		AutoRead  *bool   `json:"autoRead"`
+		OllamaURL *string `json:"ollamaUrl"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
+	ctx := r.Context()
+	if body.Provider != nil {
+		if err := s.Assistant.SetProvider(ctx, *body.Provider); err != nil {
+			writeErrorMsg(w, http.StatusBadRequest, "invalid", err.Error())
+			return
+		}
+	}
+	// The key always belongs to the provider that is active after the switch above, so
+	// the panel can send "switch to Gemini and use this key" in one request.
 	if body.APIKey != nil {
-		err := s.Assistant.SetKey(r.Context(), *body.APIKey)
+		provider := s.Assistant.ProviderID(ctx)
+		err := s.Assistant.SetKey(ctx, provider, *body.APIKey)
 		action := "assistant.key_set"
 		if *body.APIKey == "" {
 			action = "assistant.key_removed"
 		}
-		s.audit(r, action, "", err)
+		s.audit(r, action, provider, err)
 		if err != nil {
 			writeErrorMsg(w, http.StatusBadRequest, "invalid_key", err.Error())
 			return
 		}
 	}
-	if err := s.Assistant.SetOptions(r.Context(), body.Model, body.Effort, body.AutoRead); err != nil {
+	if body.OllamaURL != nil {
+		if err := s.Assistant.SetOllamaURL(ctx, *body.OllamaURL); err != nil {
+			writeErrorMsg(w, http.StatusBadRequest, "invalid_url", err.Error())
+			return
+		}
+	}
+	if err := s.Assistant.SetOptions(ctx, body.Model, body.Effort, body.AutoRead); err != nil {
 		writeErrorMsg(w, http.StatusBadRequest, "invalid", err.Error())
 		return
 	}

@@ -10,6 +10,7 @@ import M3Expand from '@/components/M3Expand.vue'
 import {
   api,
   streamConversation,
+  type AssistantProvider,
   type AssistantSettings,
   type Block,
   type ConvMessage,
@@ -25,7 +26,7 @@ const props = defineProps<{ id?: string }>()
 const router = useRouter()
 
 const settings = ref<AssistantSettings | null>(null)
-const models = ref<{ id: string; label: string }[]>([])
+const models = ref<{ id: string; label: string; hint?: string }[]>([])
 const conversations = ref<Conversation[]>([])
 const conv = ref<Conversation | null>(null)
 const messages = ref<ConvMessage[]>([])
@@ -36,11 +37,18 @@ const sending = ref(false)
 const keyOpen = ref(false)
 const newKey = ref('')
 const savingKey = ref(false)
+const urlOpen = ref(false)
+const newURL = ref('')
+const savingURL = ref(false)
 const scroller = ref<HTMLElement>()
 let close: (() => void) | undefined
 
 const NEVER = ['Delete Docker volumes', 'Change SSH or the firewall', 'Read keys and secrets', 'Power off the server']
 const busy = computed(() => conv.value?.state === 'running')
+const providers = computed<AssistantProvider[]>(() => settings.value?.providers ?? [])
+const active = computed(() => providers.value.find((p) => p.id === settings.value?.provider) ?? null)
+const label = computed(() => active.value?.label ?? 'The assistant')
+const keyTitle = computed(() => (active.value?.id === 'anthropic' ? 'Anthropic API key' : 'Gemini API key'))
 
 interface Item {
   key: string
@@ -183,6 +191,18 @@ async function decide(t: ToolCall, approve: boolean) {
   }
 }
 
+async function choose(p: AssistantProvider) {
+  if (!p.active) {
+    try {
+      settings.value = (await api.assistantUpdate({ provider: p.id })).settings
+    } catch (e) {
+      toastError(e)
+      return
+    }
+  }
+  if (p.needsKey && !p.ready) keyOpen.value = true
+}
+
 async function saveKey() {
   savingKey.value = true
   try {
@@ -190,11 +210,24 @@ async function saveKey() {
     settings.value = res.settings
     newKey.value = ''
     keyOpen.value = false
-    toast(res.settings.configured ? 'Anthropic account connected' : 'API key removed')
+    toast(res.settings.configured ? `${label.value} connected` : 'API key removed')
   } catch (e) {
     toastError(e)
   } finally {
     savingKey.value = false
+  }
+}
+
+async function saveURL() {
+  savingURL.value = true
+  try {
+    settings.value = (await api.assistantUpdate({ ollamaUrl: newURL.value.trim() })).settings
+    urlOpen.value = false
+    toast('Ollama address saved')
+  } catch (e) {
+    toastError(e)
+  } finally {
+    savingURL.value = false
   }
 }
 
@@ -213,7 +246,9 @@ const effort = computed({
   get: () => settings.value?.effort ?? 'high',
   set: (v) => setOption({ effort: v }),
 })
-const modelOptions = computed(() => models.value.map((m) => ({ value: m.id, label: m.label })))
+const modelOptions = computed(() =>
+  (active.value?.models ?? models.value).map((m) => ({ value: m.id, label: m.label, hint: m.hint })),
+)
 const EFFORTS = [
   { value: 'low', label: 'Low', hint: 'Quick answers, lowest cost' },
   { value: 'medium', label: 'Medium', hint: 'Everyday questions' },
@@ -269,22 +304,64 @@ onBeforeUnmount(() => {
       <h1>Assistant</h1>
 
       <section class="panel" aria-labelledby="acct">
-        <h2 id="acct">Anthropic account</h2>
-        <div class="key">
-          <span class="dot" :class="{ on: settings?.configured }" aria-hidden="true" />
-          <div class="grow">
-            <div class="strong">{{ settings?.configured ? 'API key connected' : 'Not connected' }}</div>
-            <code v-if="settings?.keyHint" class="small muted">{{ settings.keyHint }}</code>
-          </div>
-          <button class="btn btn-text st" type="button" @click="keyOpen = true">{{ settings?.configured ? 'Change' : 'Connect' }}</button>
+        <h2 id="acct">AI provider</h2>
+        <div class="providers" role="radiogroup" aria-label="AI provider">
+          <button
+            v-for="p in providers"
+            :key="p.id"
+            type="button"
+            class="prov st"
+            role="radio"
+            :aria-checked="p.active"
+            :class="{ sel: p.active }"
+            @click="choose(p)"
+          >
+            <span class="dot" :class="{ on: p.ready }" aria-hidden="true" />
+            <span class="grow ptext">
+              <span class="strong">{{ p.label }}</span>
+              <span class="small muted">{{ p.badge }}</span>
+            </span>
+            <Icon v-if="p.active" name="check" :size="18" />
+          </button>
         </div>
-        <M3Select v-model="model" label="Model" :options="modelOptions" :disabled="!settings" />
-        <M3Select v-model="effort" label="Effort" :options="EFFORTS" :disabled="!settings" />
-        <p class="small muted">The key is encrypted on this server. Usage is billed to your Anthropic account.</p>
+
+        <p v-if="active?.hint" class="small muted">{{ active.hint }}</p>
+
+        <M3Select v-if="modelOptions.length" v-model="model" label="Model" :options="modelOptions" :disabled="!settings" />
+
+        <div v-if="active?.needsKey" class="key">
+          <span class="dot" :class="{ on: active.ready }" aria-hidden="true" />
+          <div class="grow">
+            <div class="strong">{{ active.ready ? 'Connected' : 'Not connected' }}</div>
+            <code v-if="active.keyHint" class="small muted">{{ active.keyHint }}</code>
+          </div>
+          <button class="btn btn-text st" type="button" @click="keyOpen = true">{{ active.ready ? 'Change' : 'Connect' }}</button>
+        </div>
+
+        <template v-else-if="active">
+          <div class="key">
+            <span class="dot" :class="{ on: active.ready }" aria-hidden="true" />
+            <div class="grow">
+              <div class="strong">{{ active.ready ? 'Running on this server' : 'Not answering' }}</div>
+              <code class="small muted">{{ active.url }}</code>
+            </div>
+            <button class="btn btn-text st" type="button" @click="(newURL = active.url ?? ''), (urlOpen = true)">Address</button>
+          </div>
+          <M3Expand v-if="active.install && !active.ready">
+            <template #summary><span class="small">Install Ollama</span></template>
+            <pre class="install">{{ active.install }}</pre>
+          </M3Expand>
+          <button class="btn btn-outlined st" type="button" @click="loadSettings">Check again</button>
+        </template>
+
+        <M3Select v-if="active?.kind === 'anthropic'" v-model="effort" label="Effort" :options="EFFORTS" :disabled="!settings" />
+        <p class="small muted">
+          {{ active?.note }}<template v-if="active?.needsKey"> The key is encrypted on this server.</template>
+        </p>
       </section>
 
       <section class="panel" aria-labelledby="perm">
-        <h2 id="perm">What Claude may do</h2>
+        <h2 id="perm">What the assistant may do</h2>
         <div class="perm">
           <div class="grow"><div>Read the server</div><div class="small muted">Status, logs, metrics, config files</div></div>
           <span class="chip">always</span>
@@ -323,22 +400,23 @@ onBeforeUnmount(() => {
       <header class="chat-head">
         <M3Shape kind="sunny" :size="36" fill="var(--tc)" />
         <h2 class="grow ellipsis">{{ conv?.title ?? 'New conversation' }}</h2>
+        <span class="chip chip-outline provider"><span class="dot" :class="{ on: active?.ready }" aria-hidden="true" />{{ label }}</span>
         <span class="chip chip-outline server"><span class="online" aria-hidden="true" />{{ session.host?.hostname ?? '…' }}</span>
       </header>
 
       <div ref="scroller" class="thread" aria-live="polite">
         <div v-if="!conv" class="empty">
           <M3Shape kind="flower" :size="72" fill="var(--pc)" />
-          <h3>{{ settings?.configured ? 'Ask Claude about this server' : 'Connect your Anthropic account' }}</h3>
+          <h3>{{ settings?.configured ? `Ask ${label} about this server` : `Connect ${label}` }}</h3>
           <p class="muted">
             {{ settings?.configured
-              ? 'Claude reads the server with the tools of this panel. Every change waits for your approval.'
-              : 'Paste an API key from console.anthropic.com to let Claude look into this server with you.' }}
+              ? `${label} reads the server with the tools of this panel. Every change waits for your approval.`
+              : active?.hint || `${label} answers with the tools of this panel. Every change waits for your approval.` }}
           </p>
           <div v-if="settings?.configured" class="suggestions">
             <button v-for="s in SUGGESTIONS" :key="s" type="button" class="suggestion st" @click="(input = s), send()">{{ s }}</button>
           </div>
-          <button v-else class="btn btn-filled btn-lg st" type="button" @click="keyOpen = true">Connect</button>
+          <button v-else-if="active?.needsKey" class="btn btn-filled btn-lg st" type="button" @click="keyOpen = true">Connect</button>
         </div>
 
         <template v-for="it in items" :key="it.key">
@@ -347,13 +425,13 @@ onBeforeUnmount(() => {
             <template #summary><span class="small muted">Reasoning</span></template>
             <div class="small reasoning" v-html="markdown(it.text ?? '')" />
           </M3Expand>
-          <div v-else-if="it.kind === 'text'" class="bubble claude md" v-html="markdown(it.text ?? '')" />
+          <div v-else-if="it.kind === 'text'" class="bubble answer md" v-html="markdown(it.text ?? '')" />
           <div v-else class="tools">
             <template v-for="t in it.tools" :key="t.id">
               <section v-if="t.status === 'pending'" class="approve" :aria-label="`Approval needed: ${t.summary}`">
                 <div class="ap-head">
                   <Icon name="security" :size="22" />
-                  <h3 class="grow">Claude wants to run an action</h3>
+                  <h3 class="grow">{{ label }} wants to run an action</h3>
                   <span class="small muted">needs your approval</span>
                 </div>
                 <code class="cmd">{{ t.summary }}</code>
@@ -376,7 +454,7 @@ onBeforeUnmount(() => {
         </template>
 
         <div v-if="busy && !Object.keys(draft).length" class="working small muted">
-          <M3Shape kind="cookie" :size="20" fill="var(--primary)" class="spin" /> Claude is working…
+          <M3Shape kind="cookie" :size="20" fill="var(--primary)" class="spin" /> {{ label }} is working…
         </div>
         <div v-if="conv?.error" class="note small" :class="{ bad: conv.state === 'error' }">
           <Icon name="info" :size="16" /> {{ conv.error }}
@@ -388,8 +466,8 @@ onBeforeUnmount(() => {
           <textarea
             v-model="input"
             rows="1"
-            :placeholder="settings?.configured ? 'Ask Claude about this server' : 'Connect an API key first'"
-            aria-label="Message Claude"
+            :placeholder="settings?.configured ? `Ask ${label} about this server` : 'Connect an AI first'"
+            :aria-label="`Message ${label}`"
             :disabled="!settings?.configured"
             @keydown="onKey"
           />
@@ -399,20 +477,48 @@ onBeforeUnmount(() => {
       </form>
     </section>
 
-    <M3Dialog v-model="keyOpen" title="Anthropic API key">
+    <M3Dialog v-model="keyOpen" :title="keyTitle">
       <p class="muted" style="margin: 0">
-        Create a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>
-        and paste it here. It is checked with Anthropic, then stored encrypted on this server only.
+        <template v-if="active?.id === 'anthropic'">
+          Create a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>
+          and paste it here. It is checked with Anthropic, then stored encrypted on this server only.
+        </template>
+        <template v-else>
+          Create a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">AI Studio</a>, no card
+          needed. It is checked with Google, then stored encrypted on this server only.
+        </template>
       </p>
       <form @submit.prevent="saveKey">
         <label class="field">
           <Icon name="key" :size="20" />
-          <input v-model="newKey" type="password" placeholder="sk-ant-…" aria-label="API key" autocomplete="off" />
+          <input
+            v-model="newKey"
+            type="password"
+            :placeholder="active?.id === 'anthropic' ? 'sk-ant-…' : 'AIza…'"
+            aria-label="API key"
+            autocomplete="off"
+          />
         </label>
       </form>
       <template #actions>
-        <button v-if="settings?.configured" class="btn btn-text st" type="button" :disabled="savingKey" @click="(newKey = ''), saveKey()">Remove key</button>
+        <button v-if="active?.ready" class="btn btn-text st" type="button" :disabled="savingKey" @click="(newKey = ''), saveKey()">Remove key</button>
         <button class="btn btn-filled st" type="button" :disabled="savingKey || !newKey.trim()" @click="saveKey">{{ savingKey ? 'Checking…' : 'Save' }}</button>
+      </template>
+    </M3Dialog>
+
+    <M3Dialog v-model="urlOpen" title="Ollama address">
+      <p class="muted" style="margin: 0">
+        Where the panel finds Ollama. Keep it on loopback, or point it at another machine running Ollama.
+      </p>
+      <form @submit.prevent="saveURL">
+        <label class="field">
+          <Icon name="server" :size="20" />
+          <input v-model="newURL" placeholder="http://127.0.0.1:11434" aria-label="Ollama address" autocomplete="off" />
+        </label>
+      </form>
+      <template #actions>
+        <button class="btn btn-text st" type="button" @click="urlOpen = false">Cancel</button>
+        <button class="btn btn-filled st" type="button" :disabled="savingURL || !newURL.trim()" @click="saveURL">{{ savingURL ? 'Checking…' : 'Save' }}</button>
       </template>
     </M3Dialog>
   </div>
@@ -455,6 +561,46 @@ onBeforeUnmount(() => {
 }
 .panel p {
   margin: 0;
+}
+.providers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.prov {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--outline-v);
+  background: transparent;
+  color: var(--on-surface);
+  text-align: left;
+}
+.prov.sel {
+  background: var(--sch);
+  border-color: var(--primary);
+}
+.ptext {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.install {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  color: var(--code-fg);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.provider {
+  gap: 8px;
 }
 .key {
   display: flex;
@@ -617,7 +763,7 @@ onBeforeUnmount(() => {
   color: var(--on-pc);
   white-space: pre-wrap;
 }
-.bubble.claude {
+.bubble.answer {
   border-radius: 6px 24px 24px 24px;
   background: var(--sc);
 }

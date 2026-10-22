@@ -21,24 +21,10 @@ import (
 	"github.com/beedywool/vps-admin/internal/store"
 )
 
-const (
-	maxSteps = 30 // model calls per user message, so a confused loop cannot run up a bill
-	keyName  = "assistant.api_key"
-)
-
-// Models offered in the panel. Opus 5.5 is the default.
-var Models = []struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
-}{
-	{"claude-opus-5-5", "Claude Opus 5.5"},
-	{"claude-sonnet-5-5", "Claude Sonnet 5.5"},
-	{"claude-haiku-5-5", "Claude Haiku 5.5"},
-	{"claude-fable-5-1", "Claude Fable 5.1"},
-}
+const maxSteps = 30 // model calls per user message, so a confused loop cannot run up a bill
 
 var (
-	ErrNoKey   = errors.New("connect an Anthropic API key first")
+	ErrNoKey   = errors.New("connect an AI first, in the assistant settings")
 	ErrRunning = errors.New("the assistant is still working on this conversation")
 )
 
@@ -51,12 +37,22 @@ type Event struct {
 type Engine struct {
 	Deps
 	Box *secret.Box
-	// BaseURL overrides the API endpoint, for tests.
-	BaseURL string
+	// BaseURL overrides the Anthropic endpoint, GeminiURL the Gemini one; both are for
+	// tests and never set in production.
+	BaseURL   string
+	GeminiURL string
 
 	mu      sync.Mutex
 	running map[string]context.CancelFunc
 	subs    map[string]map[chan Event]struct{}
+
+	// Ollama discovery is cached for a few seconds; see ollamaModels.
+	pmu      sync.Mutex
+	tagsKey  string
+	tagsAt   time.Time
+	tagsList []Model
+	tagsOK   bool
+	tagsHint string
 }
 
 func (e *Engine) Init(ctx context.Context) {
@@ -66,29 +62,33 @@ func (e *Engine) Init(ctx context.Context) {
 }
 
 type Settings struct {
-	Configured bool   `json:"configured"`
-	KeyHint    string `json:"keyHint,omitempty"`
-	Model      string `json:"model"`
-	Effort     string `json:"effort"`
-	AutoRead   bool   `json:"autoRead"` // run read-only tools without asking
+	Provider   string     `json:"provider"`
+	Configured bool       `json:"configured"`
+	KeyHint    string     `json:"keyHint,omitempty"`
+	Model      string     `json:"model"`
+	Effort     string     `json:"effort"`
+	AutoRead   bool       `json:"autoRead"` // run read-only tools without asking
+	Hint       string     `json:"hint,omitempty"`
+	OllamaURL  string     `json:"ollamaUrl,omitempty"`
+	Providers  []Provider `json:"providers"`
 }
 
 func (e *Engine) Settings(ctx context.Context) Settings {
+	providers := e.Providers(ctx)
+	active := e.ProviderID(ctx)
 	s := Settings{
-		Model:    e.Store.Setting(ctx, "assistant.model", "claude-opus-5-5"),
-		Effort:   e.Store.Setting(ctx, "assistant.effort", "high"),
-		AutoRead: e.Store.Setting(ctx, "assistant.auto_read", "true") == "true",
+		Provider:  active,
+		Effort:    e.Store.Setting(ctx, "assistant.effort", "high"),
+		AutoRead:  e.Store.Setting(ctx, "assistant.auto_read", "true") == "true",
+		OllamaURL: e.Store.Setting(ctx, ollamaURLKey, ollamaBase),
+		Providers: providers,
 	}
-	if key := e.key(ctx); key != "" {
-		s.Configured = true
-		s.KeyHint = "sk-ant-…" + key[max(0, len(key)-4):]
+	for _, p := range providers {
+		if p.ID == active {
+			s.Model, s.Configured, s.KeyHint, s.Hint = p.Model, p.Ready, p.KeyHint, p.Hint
+		}
 	}
 	return s
-}
-
-func (e *Engine) key(ctx context.Context) string {
-	k, _ := e.Box.Open(e.Store.Setting(ctx, keyName, ""))
-	return k
 }
 
 func (e *Engine) client(key string) anthropic.Client {
@@ -99,33 +99,39 @@ func (e *Engine) client(key string) anthropic.Client {
 	return anthropic.NewClient(opts...)
 }
 
-// SetKey checks the key against the API before saving it.
-func (e *Engine) SetKey(ctx context.Context, key string) error {
+// SetKey checks the key against its provider before saving it, encrypted.
+func (e *Engine) SetKey(ctx context.Context, provider, key string) error {
 	key = strings.TrimSpace(key)
+	name := e.keyName(provider)
+	if name == "" {
+		return errors.New("this provider needs no key")
+	}
 	if key == "" {
-		return e.Store.SetSetting(ctx, keyName, "")
+		return e.Store.SetSetting(ctx, name, "")
 	}
-	c := e.client(key)
-	if _, err := c.Models.List(ctx, anthropic.ModelListParams{Limit: anthropic.Int(1)}); err != nil {
-		var apiErr *anthropic.Error
-		if errors.As(err, &apiErr) && (apiErr.StatusCode == http.StatusUnauthorized || apiErr.StatusCode == http.StatusForbidden) {
-			return errors.New("Anthropic rejected this API key")
+	switch provider {
+	case ProviderAnthropic:
+		c := e.client(key)
+		if _, err := c.Models.List(ctx, anthropic.ModelListParams{Limit: anthropic.Int(1)}); err != nil {
+			var apiErr *anthropic.Error
+			if errors.As(err, &apiErr) && (apiErr.StatusCode == http.StatusUnauthorized || apiErr.StatusCode == http.StatusForbidden) {
+				return errors.New("Anthropic rejected this API key")
+			}
+			return fmt.Errorf("could not check the key: %w", err)
 		}
-		return fmt.Errorf("could not check the key: %w", err)
+	case ProviderGemini:
+		if err := e.checkGemini(ctx, key); err != nil {
+			return err
+		}
 	}
-	return e.Store.SetSetting(ctx, keyName, e.Box.Seal(key))
+	return e.Store.SetSetting(ctx, name, e.Box.Seal(key))
 }
 
 func (e *Engine) SetOptions(ctx context.Context, model, effort string, autoRead *bool) error {
 	if model != "" {
-		ok := false
-		for _, m := range Models {
-			ok = ok || m.ID == model
+		if err := e.SetModel(ctx, "", model); err != nil {
+			return err
 		}
-		if !ok {
-			return errors.New("unknown model")
-		}
-		e.Store.SetSetting(ctx, "assistant.model", model)
 	}
 	if effort != "" {
 		switch effort {
@@ -198,8 +204,8 @@ func (e *Engine) Stop(convID string) {
 
 // NewConversation starts a conversation with its first message.
 func (e *Engine) NewConversation(ctx context.Context, text, deviceID string) (*store.Conversation, error) {
-	if e.key(ctx) == "" {
-		return nil, ErrNoKey
+	if _, err := e.resolve(ctx); err != nil {
+		return nil, err
 	}
 	title := strings.TrimSpace(strings.SplitN(text, "\n", 2)[0])
 	if r := []rune(title); len(r) > 70 {
@@ -221,9 +227,8 @@ func (e *Engine) Send(ctx context.Context, convID, text, deviceID string) error 
 	if strings.TrimSpace(text) == "" {
 		return errors.New("empty message")
 	}
-	key := e.key(ctx)
-	if key == "" {
-		return ErrNoKey
+	if _, err := e.resolve(ctx); err != nil {
+		return err
 	}
 	if !e.claim(convID) {
 		return ErrRunning
@@ -238,7 +243,7 @@ func (e *Engine) Send(ctx context.Context, convID, text, deviceID string) error 
 		e.release(convID)
 		return err
 	}
-	go e.loop(convID, key)
+	go e.loop(convID)
 	return nil
 }
 
@@ -263,9 +268,19 @@ func (e *Engine) appendParam(ctx context.Context, convID string, p anthropic.Bet
 	if err != nil {
 		return err
 	}
-	seq, err := e.Store.AppendMessage(ctx, convID, string(p.Role), string(raw))
+	return e.appendRaw(ctx, convID, raw)
+}
+
+// appendRaw stores one message in the Anthropic block format, whichever provider wrote
+// it, and pushes it to the open panel.
+func (e *Engine) appendRaw(ctx context.Context, convID string, raw json.RawMessage) error {
+	var head struct {
+		Role string `json:"role"`
+	}
+	json.Unmarshal(raw, &head)
+	seq, err := e.Store.AppendMessage(ctx, convID, head.Role, string(raw))
 	if err == nil {
-		e.emit(convID, "message", map[string]any{"seq": seq, "role": p.Role, "content": json.RawMessage(raw)})
+		e.emit(convID, "message", map[string]any{"seq": seq, "role": head.Role, "content": json.RawMessage(raw)})
 	}
 	return err
 }
@@ -346,15 +361,17 @@ func (e *Engine) continueIfAnswered(ctx context.Context, convID string, batch in
 		}
 		results = append(results, anthropic.NewBetaToolResultBlock(c.ID, c.Result, c.IsError))
 	}
-	key := e.key(ctx)
-	if key == "" || !e.claim(convID) {
+	if _, err := e.resolve(ctx); err != nil {
+		return
+	}
+	if !e.claim(convID) {
 		return
 	}
 	if err := e.appendParam(ctx, convID, anthropic.NewBetaUserMessage(results...)); err != nil {
 		e.release(convID)
 		return
 	}
-	go e.loop(convID, key)
+	go e.loop(convID)
 }
 
 func (e *Engine) systemPrompt() string {
@@ -374,8 +391,8 @@ How you work:
 // fallbackModels can use the server-side "default" fallback on a refusal.
 var fallbackModels = map[string]bool{"claude-opus-5-5": true, "claude-sonnet-5-5": true, "claude-fable-5-1": true}
 
-func (e *Engine) params(ctx context.Context, convID string) (anthropic.BetaMessageNewParams, error) {
-	st := e.Settings(ctx)
+func (e *Engine) params(ctx context.Context, convID string, tgt target) (anthropic.BetaMessageNewParams, error) {
+	effort := e.Store.Setting(ctx, "assistant.effort", "high")
 	msgs, err := e.Store.Messages(ctx, convID)
 	if err != nil {
 		return anthropic.BetaMessageNewParams{}, err
@@ -386,7 +403,7 @@ func (e *Engine) params(ctx context.Context, convID string) (anthropic.BetaMessa
 		history = append(history, param.Override[anthropic.BetaMessageParam](json.RawMessage(m.Content)))
 	}
 	p := anthropic.BetaMessageNewParams{
-		Model:     anthropic.Model(st.Model),
+		Model:     anthropic.Model(tgt.Model),
 		MaxTokens: 64000,
 		System:    []anthropic.BetaTextBlockParam{{Text: e.systemPrompt(), CacheControl: anthropic.NewBetaCacheControlEphemeralParam()}},
 		Messages:  history,
@@ -394,10 +411,10 @@ func (e *Engine) params(ctx context.Context, convID string) (anthropic.BetaMessa
 		Thinking: anthropic.BetaThinkingConfigParamUnion{OfAdaptive: &anthropic.BetaThinkingConfigAdaptiveParam{
 			Display: anthropic.BetaThinkingConfigAdaptiveDisplaySummarized,
 		}},
-		OutputConfig: anthropic.BetaOutputConfigParam{Effort: anthropic.BetaOutputConfigEffort(st.Effort)},
+		OutputConfig: anthropic.BetaOutputConfigParam{Effort: anthropic.BetaOutputConfigEffort(effort)},
 		CacheControl: anthropic.NewBetaCacheControlEphemeralParam(),
 	}
-	if fallbackModels[st.Model] {
+	if fallbackModels[tgt.Model] {
 		p.Betas = []anthropic.AnthropicBeta{anthropic.AnthropicBetaServerSideFallback2026_07_01}
 		p.Fallbacks = anthropic.BetaFallbacksParamOfDefault()
 	}
@@ -406,7 +423,7 @@ func (e *Engine) params(ctx context.Context, convID string) (anthropic.BetaMessa
 
 // loop calls the model until it answers without tools, or stops on calls that need
 // approval. The caller has claimed the conversation.
-func (e *Engine) loop(convID, key string) {
+func (e *Engine) loop(convID string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	e.mu.Lock()
 	e.running[convID] = cancel
@@ -416,16 +433,15 @@ func (e *Engine) loop(convID, key string) {
 		e.release(convID)
 	}()
 	e.setState(ctx, convID, "running", "")
-	client := e.client(key)
-	autoRead := e.Settings(ctx).AutoRead
+	autoRead := e.Store.Setting(ctx, "assistant.auto_read", "true") == "true"
 
 	for step := 0; step < maxSteps; step++ {
-		p, err := e.params(ctx, convID)
+		tgt, err := e.resolve(ctx)
 		if err != nil {
 			e.fail(ctx, convID, err)
 			return
 		}
-		msg, err := e.stream(ctx, client, convID, p)
+		t, err := e.answer(ctx, convID, tgt)
 		if err != nil {
 			if errors.Is(ctx.Err(), context.Canceled) {
 				e.setState(context.Background(), convID, "idle", "stopped")
@@ -434,18 +450,18 @@ func (e *Engine) loop(convID, key string) {
 			e.fail(ctx, convID, err)
 			return
 		}
-		if err := e.appendParam(ctx, convID, msg.ToParam()); err != nil {
+		if err := e.appendRaw(ctx, convID, t.raw); err != nil {
 			e.fail(ctx, convID, err)
 			return
 		}
-		switch msg.StopReason {
-		case anthropic.BetaStopReasonRefusal:
-			e.setState(ctx, convID, "idle", "Claude declined this request ("+string(msg.StopDetails.Category)+").")
+		switch t.stop {
+		case "refusal":
+			e.setState(ctx, convID, "idle", "The model declined this request"+refusal(t.detail)+".")
 			return
-		case anthropic.BetaStopReasonMaxTokens:
-			e.setState(ctx, convID, "idle", "The answer hit the length limit. Ask Claude to continue.")
+		case "max_tokens":
+			e.setState(ctx, convID, "idle", "The answer hit the length limit. Ask it to continue.")
 			return
-		case anthropic.BetaStopReasonToolUse:
+		case "tool_use":
 		default:
 			e.setState(ctx, convID, "idle", "")
 			return
@@ -456,15 +472,13 @@ func (e *Engine) loop(convID, key string) {
 		var results []anthropic.BetaContentBlockParamUnion
 		pending := false
 		ord := 0
-		for _, block := range msg.Content {
-			tu, ok := block.AsAny().(anthropic.BetaToolUseBlock)
-			if !ok {
+		for _, b := range t.blocks {
+			if b.Type != "tool_use" {
 				continue
 			}
 			ord++
-			raw := tu.JSON.Input.Raw()
-			tc := &store.ToolCall{ID: tu.ID, ConvID: convID, Batch: batch, Ord: ord, Name: tu.Name, Input: raw, CreatedAt: time.Now()}
-			d, c, perr := parse(tu.Name, raw)
+			tc := &store.ToolCall{ID: b.ID, ConvID: convID, Batch: batch, Ord: ord, Name: b.Name, Input: b.Input, CreatedAt: time.Now()}
+			d, c, perr := parse(b.Name, b.Input)
 			var kind Kind
 			if perr != nil {
 				tc.Kind, tc.Status, tc.Result, tc.IsError = string(Blocked), "blocked", "INVALID_INPUT: "+perr.Error()+". Call the tool again with complete, valid arguments.", true
@@ -504,13 +518,110 @@ func (e *Engine) loop(convID, key string) {
 			return
 		}
 	}
-	e.setState(ctx, convID, "idle", fmt.Sprintf("Stopped after %d steps. Send a message to let Claude continue.", maxSteps))
+	e.setState(ctx, convID, "idle", fmt.Sprintf("Stopped after %d steps. Send a message to let the assistant continue.", maxSteps))
+}
+
+func refusal(detail string) string {
+	if detail == "" {
+		return ""
+	}
+	return " (" + detail + ")"
+}
+
+// answer asks the active provider for one step, streaming text and reasoning as it
+// arrives. Both adapters return the same turn.
+func (e *Engine) answer(ctx context.Context, convID string, tgt target) (*turn, error) {
+	if tgt.Kind == "anthropic" {
+		p, err := e.params(ctx, convID, tgt)
+		if err != nil {
+			return nil, err
+		}
+		msg, err := e.stream(ctx, e.client(tgt.Key), convID, p)
+		if err != nil {
+			return nil, err
+		}
+		return anthropicTurn(msg)
+	}
+	history, err := e.Store.Messages(ctx, convID)
+	if err != nil {
+		return nil, err
+	}
+	return e.chat(ctx, tgt.ID, tgt.Model, tgt.Key, history,
+		func(s string) { e.emit(convID, "text", map[string]any{"index": 1, "text": s}) },
+		func(s string) { e.emit(convID, "thinking", map[string]any{"index": 0, "text": s}) })
+}
+
+// anthropicTurn normalizes an Anthropic answer, so the loop below does not care which
+// provider answered.
+func anthropicTurn(msg *anthropic.BetaMessage) (*turn, error) {
+	raw, err := json.Marshal(msg.ToParam())
+	if err != nil {
+		return nil, err
+	}
+	t := &turn{raw: raw}
+	for _, block := range msg.Content {
+		switch b := block.AsAny().(type) {
+		case anthropic.BetaTextBlock:
+			if b.Text != "" {
+				t.blocks = append(t.blocks, turnBlock{Type: "text", Text: b.Text})
+			}
+		case anthropic.BetaToolUseBlock:
+			t.blocks = append(t.blocks, turnBlock{Type: "tool_use", ID: b.ID, Name: b.Name, Input: string(b.JSON.Input.Raw())})
+		}
+	}
+	switch msg.StopReason {
+	case anthropic.BetaStopReasonRefusal:
+		t.stop, t.detail = "refusal", string(msg.StopDetails.Category)
+	case anthropic.BetaStopReasonMaxTokens:
+		t.stop = "max_tokens"
+	case anthropic.BetaStopReasonToolUse:
+		t.stop = "tool_use"
+	default:
+		t.stop = "end_turn"
+	}
+	return t, nil
+}
+
+// target is the provider a model call goes to, resolved before each step.
+type target struct {
+	ID    string
+	Kind  string
+	Model string
+	Key   string
+}
+
+func kindOfProvider(id string) string {
+	if id == ProviderAnthropic {
+		return "anthropic"
+	}
+	return "openai"
+}
+
+// resolve picks the active provider. It does not touch the network: an unreachable
+// Ollama is reported by the model call itself, with its address in the message.
+func (e *Engine) resolve(ctx context.Context) (target, error) {
+	id := e.ProviderID(ctx)
+	t := target{ID: id, Kind: kindOfProvider(id), Model: e.model(ctx, id), Key: e.keyFor(ctx, id)}
+	if t.ID == ProviderOllama {
+		if t.Model == "" {
+			return target{}, fmt.Errorf("%w. Pick an Ollama model first.", ErrNoKey)
+		}
+		return t, nil
+	}
+	if t.Key == "" {
+		return target{}, fmt.Errorf("%w (%s).", ErrNoKey, t.ID)
+	}
+	return t, nil
 }
 
 func (e *Engine) fail(ctx context.Context, convID string, err error) {
 	msg := err.Error()
+	var pe *providerError
 	var apiErr *anthropic.Error
-	if errors.As(err, &apiErr) {
+	switch {
+	case errors.As(err, &pe):
+		msg = pe.Msg
+	case errors.As(err, &apiErr):
 		switch apiErr.StatusCode {
 		case http.StatusUnauthorized, http.StatusForbidden:
 			msg = "Anthropic rejected the API key. Change it in the assistant settings."

@@ -299,12 +299,37 @@ export interface UpdateCheck {
   upToDate: boolean
 }
 
+export type ProviderID = 'ollama' | 'gemini' | 'anthropic'
+
+// One AI the panel can talk to: local (Ollama), free online (Gemini) or premium
+// (Claude). Ready means it can answer right now; hint says what is missing.
+export interface AssistantProvider {
+  id: ProviderID
+  label: string
+  kind: 'anthropic' | 'openai'
+  badge: string
+  note: string
+  needsKey: boolean
+  keyHint?: string
+  ready: boolean
+  active: boolean
+  hint?: string
+  model: string
+  models: { id: string; label: string; hint?: string }[]
+  url?: string
+  install?: string
+}
+
 export interface AssistantSettings {
+  provider: ProviderID
   configured: boolean
   keyHint?: string
   model: string
   effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   autoRead: boolean
+  hint?: string
+  ollamaUrl?: string
+  providers: AssistantProvider[]
 }
 
 export interface Conversation {
@@ -476,8 +501,14 @@ export const api = {
   rollback: (id: string, dep: number) => request<Deployment>('POST', `/api/apps/${id}/rollback/${dep}`),
   restartApp: (id: string) => request<void>('POST', `/api/apps/${id}/restart`),
   assistant: () => request<{ settings: AssistantSettings; models: { id: string; label: string }[] }>('GET', '/api/assistant'),
-  assistantUpdate: (s: { apiKey?: string; model?: string; effort?: string; autoRead?: boolean }) =>
-    request<{ settings: AssistantSettings; models: { id: string; label: string }[] }>('PUT', '/api/assistant', s),
+  assistantUpdate: (s: {
+    provider?: ProviderID
+    apiKey?: string
+    model?: string
+    effort?: string
+    autoRead?: boolean
+    ollamaUrl?: string
+  }) => request<{ settings: AssistantSettings; models: { id: string; label: string }[] }>('PUT', '/api/assistant', s),
   conversations: () => request<{ conversations: Conversation[] }>('GET', '/api/assistant/conversations'),
   conversation: (id: string) =>
     request<{ conversation: Conversation; messages: ConvMessage[]; toolCalls: ToolCall[]; running: boolean }>('GET', `/api/assistant/conversations/${id}`),

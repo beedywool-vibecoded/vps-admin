@@ -42,7 +42,7 @@
 > **VPS Admin** est un panel d'administration à installer sur n'importe quel VPS Linux.
 > Il tient en **un seul binaire Go** qui embarque le panel web Material 3, et une **app Android** en Material You
 > gère plusieurs serveurs. On y suit le serveur en direct, on déploie ses repos GitHub dans Docker en un clic,
-> et un assistant propulsé par Claude enquête sur les pannes. **Chaque modification attend ton approbation.**
+> et un assistant IA, local ou en ligne, enquête sur les pannes. **Chaque modification attend ton approbation.**
 
 <br>
 
@@ -117,10 +117,12 @@ et ses scripts s'affichent à côté de ses conteneurs.
 </td>
 <td width="33%" valign="top">
 
-### Assistant Claude
-Avec ta clé API Anthropic, Claude examine le serveur avec les outils du panel et propose
-des corrections. Les lectures passent seules, **chaque modification attend ton accord**,
-et certaines actions sont bloquées quoi qu'il arrive.
+### Assistant IA
+Trois fournisseurs au choix, réglables dans le panel : **Ollama** en local (gratuit, rien
+ne sort du serveur), **Gemini** avec la clé gratuite d'AI Studio, ou **Claude** avec ta clé
+Anthropic. L'assistant examine le serveur avec les outils du panel et propose des
+corrections. Les lectures passent seules, **chaque modification attend ton accord**, et
+certaines actions sont bloquées quoi qu'il arrive.
 
 </td>
 </tr>
@@ -205,7 +207,7 @@ Ouvre ensuite le domaine, tape le code, crée ta passkey. Pour l'app ou un autre
 **Serveur**
 - L'agent écoute sur `127.0.0.1`, le TLS est assuré par Caddy ou par nginx avec certbot.
 - Utilisateur dédié, root seulement pour les commandes de `/etc/sudoers.d/vps-admin`.
-- Variables d'environnement, clé GitHub App et clé Anthropic **chiffrées** (AES-GCM).
+- Variables d'environnement, clé GitHub App et clés des fournisseurs d'IA **chiffrées** (AES-GCM).
 - L'assistant ne peut jamais supprimer de volumes, toucher à SSH ou au pare-feu, lire des clés, ni éteindre le serveur.
 
 </td>
@@ -234,7 +236,7 @@ Ouvre ensuite le domaine, tape le code, crée ta passkey. Pour l'app ou un autre
 <tr><td><code>internal/docker</code></td><td>Client minimal de l'API Docker par le socket.</td></tr>
 <tr><td><code>internal/deploy</code></td><td>Build et lancement des apps, contrôle HTTP, bascule Caddy, retour arrière.</td></tr>
 <tr><td><code>internal/github</code></td><td>GitHub App (manifest), jetons d'installation, webhooks signés.</td></tr>
-<tr><td><code>internal/assistant</code></td><td>Boucle de conversation (SDK Anthropic Go), outils, politique d'approbation.</td></tr>
+<tr><td><code>internal/assistant</code></td><td>Boucle de conversation, fournisseurs (Anthropic, OpenAI-compatible pour Gemini et Ollama), outils, politique d'approbation.</td></tr>
 <tr><td><code>internal/update</code></td><td>Releases signées, installation, distribution de l'APK.</td></tr>
 <tr><td><code>internal/store</code></td><td>SQLite en pur Go (binaire statique), historique append-only.</td></tr>
 <tr><td><code>web/</code></td><td>Panel Vue 3 + Vite, Material 3 Expressive, palette Material You générée depuis une couleur de base.</td></tr>
@@ -266,6 +268,7 @@ cd app && flutter test                          # l'app Android
 - `VPSADMIN_DOCKER_TEST=1 go test ./internal/deploy -run Docker` : déploiement réel sur le Docker local, bascule, version cassée refusée, retour arrière, suppression.
 - L'installeur et le retour arrière se testent dans un conteneur Debian avec systemd (`deploy/install.sh --binary`).
 - `VPS_ADMIN_GITHUB_API` et `VPS_ADMIN_ANTHROPIC_URL` pointent l'agent vers de faux serveurs pour les tests de bout en bout.
+- `VPS_ADMIN_OLLAMA_TEST=1 go test ./internal/assistant -run OllamaLive` interroge un vrai Ollama local, avec `qwen3:1.7b` par défaut (`VPS_ADMIN_OLLAMA_MODEL` pour en changer).
 
 </details>
 

@@ -8,8 +8,9 @@ import '../live.dart';
 import '../widgets.dart';
 import 'app_forms.dart';
 
-/// AssistantView.vue's side panel: the Anthropic account, model and effort, what Claude
-/// may do, and the conversations. A conversation opens full screen.
+/// AssistantView.vue's side panel: the AI provider (local, free online or Claude), its
+/// model, what the assistant may do, and the conversations. A conversation opens full
+/// screen.
 class AssistantPage extends StatefulWidget {
   const AssistantPage({super.key});
 
@@ -67,25 +68,47 @@ class _AssistantPageState extends State<AssistantPage> {
   Future<void> _set(Map<String, dynamic> o) async {
     try {
       final r = await api.assistantUpdate(o);
-      if (mounted) {
-        setState(() => settings = r['settings'] as Map<String, dynamic>);
-      }
+      if (!mounted) return;
+      setState(() {
+        settings = r['settings'] as Map<String, dynamic>;
+        models = ((r['models'] as List?) ?? []).cast<Map<String, dynamic>>();
+      });
     } catch (e) {
       if (mounted) showError(context, e);
     }
   }
 
+  Map<String, dynamic>? _active() {
+    final list = ((settings?['providers'] as List?) ?? [])
+        .cast<Map<String, dynamic>>();
+    for (final p in list) {
+      if (p['active'] == true) return p;
+    }
+    return null;
+  }
+
+  /// Switching to a provider that still needs a key opens its dialog right away.
+  Future<void> _choose(String id) async {
+    await _set({'provider': id});
+    final p = _active();
+    if (p != null && p['needsKey'] == true && p['ready'] != true) await _key();
+  }
+
   Future<void> _key() async {
     final c = TextEditingController();
+    final anthropic = (_active()?['id'] ?? 'anthropic') == 'anthropic';
+    final label = _active()?['label'] as String? ?? 'The assistant';
     final res = await showWDialog<String>(
       context,
-      title: 'Anthropic API key',
+      title: anthropic ? 'Anthropic API key' : 'Gemini API key',
       body: (_) => Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Muted(
-            'Create a key at console.anthropic.com (API keys). It is encrypted on this server and never shown again. Leave empty to remove it.',
+          Muted(
+            anthropic
+                ? 'Create a key at console.anthropic.com (API keys). It is encrypted on this server and never shown again. Leave empty to remove it.'
+                : 'Create a free key at aistudio.google.com/apikey, no card needed. It is encrypted on this server and never shown again. Leave empty to remove it.',
             size: 14,
           ),
           const SizedBox(height: 16),
@@ -93,7 +116,9 @@ class _AssistantPageState extends State<AssistantPage> {
             controller: c,
             obscureText: true,
             autocorrect: false,
-            decoration: const InputDecoration(hintText: 'sk-ant-…'),
+            decoration: InputDecoration(
+              hintText: anthropic ? 'sk-ant-…' : 'AIza…',
+            ),
           ),
         ],
       ),
@@ -112,7 +137,7 @@ class _AssistantPageState extends State<AssistantPage> {
       showInfo(
         context,
         settings?['configured'] == true
-            ? 'Anthropic account connected'
+            ? '$label connected'
             : 'API key removed',
       );
     }
@@ -148,6 +173,11 @@ class _AssistantPageState extends State<AssistantPage> {
     final cs = Theme.of(context).colorScheme;
     final s = settings;
     final configured = s?['configured'] == true;
+    final providers = ((s?['providers'] as List?) ?? [])
+        .cast<Map<String, dynamic>>();
+    final active = _active();
+    final needsKey = active?['needsKey'] == true;
+    final label = active?['label'] as String? ?? 'The assistant';
     Widget perm(String title, String sub, Widget trailing) => Container(
       padding: const EdgeInsets.symmetric(vertical: 10),
       decoration: BoxDecoration(
@@ -174,37 +204,104 @@ class _AssistantPageState extends State<AssistantPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             spacing: 12,
             children: [
-              const CardHead('Anthropic account'),
-              Row(
-                children: [
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: configured ? Tones.of(context).ok : cs.outline,
+              const CardHead('AI provider'),
+              for (final p in providers)
+                InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => _choose(p['id'] as String),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: p['active'] == true
+                            ? cs.primary
+                            : cs.outlineVariant,
+                      ),
+                      color: p['active'] == true
+                          ? cs.surfaceContainerHigh
+                          : null,
+                    ),
+                    child: Row(
                       children: [
-                        Text(
-                          configured ? 'API key connected' : 'Not connected',
-                          style: const TextStyle(fontWeight: FontWeight.w500),
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: p['ready'] == true
+                                ? Tones.of(context).ok
+                                : cs.outline,
+                          ),
                         ),
-                        if ((s?['keyHint'] as String? ?? '').isNotEmpty)
-                          Muted(s!['keyHint'] as String, mono: true),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                p['label'] as String? ?? '',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              Muted(p['badge'] as String? ?? ''),
+                            ],
+                          ),
+                        ),
+                        if (p['active'] == true)
+                          const Icon(Icons.check, size: 18),
                       ],
                     ),
                   ),
-                  TextButton(
-                    onPressed: _key,
-                    child: Text(configured ? 'Change' : 'Connect'),
+                ),
+              if ((active?['hint'] as String? ?? '').isNotEmpty)
+                Muted(active!['hint'] as String, size: 13),
+              if (needsKey)
+                Row(
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: configured ? Tones.of(context).ok : cs.outline,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            configured ? 'Connected' : 'Not connected',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          if ((s?['keyHint'] as String? ?? '').isNotEmpty)
+                            Muted(s!['keyHint'] as String, mono: true),
+                        ],
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: _key,
+                      child: Text(configured ? 'Change' : 'Connect'),
+                    ),
+                  ],
+                )
+              else
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: WButton(
+                    'Check again',
+                    kind: BtnKind.outlined,
+                    onPressed: _load,
                   ),
-                ],
-              ),
+                ),
               if (models.isNotEmpty)
                 SelectField<String>(
                   label: 'Model',
@@ -215,15 +312,14 @@ class _AssistantPageState extends State<AssistantPage> {
                   ],
                   onChanged: (v) => _set({'model': v}),
                 ),
-              SelectField<String>(
-                label: 'Effort',
-                value: s?['effort'] as String? ?? 'high',
-                options: _efforts,
-                onChanged: (v) => _set({'effort': v}),
-              ),
-              const Muted(
-                'The key is encrypted on this server. Usage is billed to your Anthropic account.',
-              ),
+              if (active?['kind'] == 'anthropic')
+                SelectField<String>(
+                  label: 'Effort',
+                  value: s?['effort'] as String? ?? 'high',
+                  options: _efforts,
+                  onChanged: (v) => _set({'effort': v}),
+                ),
+              Muted(active?['note'] as String? ?? ''),
             ],
           ),
         ),
@@ -231,7 +327,7 @@ class _AssistantPageState extends State<AssistantPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const CardHead('What Claude may do'),
+              const CardHead('What the assistant may do'),
               perm(
                 'Read the server',
                 'Status, logs, metrics, config files',
@@ -294,22 +390,30 @@ class _AssistantPageState extends State<AssistantPage> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'Connect your Anthropic account',
+                      'Connect $label',
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
                     const SizedBox(height: 6),
-                    const Muted(
-                      'Paste an API key from console.anthropic.com to let Claude look into this server with you.',
+                    Muted(
+                      active?['hint'] as String? ??
+                          '$label answers with the tools of this panel; every change waits for your approval.',
                       size: 14,
                     ),
                     const SizedBox(height: 12),
-                    WButton('Connect', large: true, onPressed: _key),
+                    if (needsKey)
+                      WButton('Connect', large: true, onPressed: _key)
+                    else
+                      WButton(
+                        'Check again',
+                        large: true,
+                        onPressed: _load,
+                      ),
                   ],
                 )
               else ...[
                 if (conversations.isEmpty) ...[
                   const Muted(
-                    'None yet. Claude reads the server with the tools of this panel; every change waits for your approval.',
+                    'None yet. The assistant reads the server with the tools of this panel; every change waits for your approval.',
                     size: 14,
                   ),
                   const SizedBox(height: 12),

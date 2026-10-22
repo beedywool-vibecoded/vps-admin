@@ -41,7 +41,7 @@ class AssistantScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               const Text(
-                'Connect an Anthropic API key in the web panel (Assistant) to let Claude look into this server with you.',
+                'Connect an AI in the web panel (Assistant): Ollama for a local model, Gemini for a free one, or your Anthropic key.',
                 textAlign: TextAlign.center,
               ),
             ],
@@ -327,7 +327,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
               SizedBox(width: 10),
-              Text('Claude is working…'),
+              Text('The assistant is working…'),
             ],
           ),
         ),
@@ -366,7 +366,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                           const SizedBox(height: 12),
                           const Text(
-                            'Ask Claude about this server. Every change waits for your approval.',
+                            'Ask about this server. Every change waits for your approval.',
                             textAlign: TextAlign.center,
                           ),
                         ],
@@ -393,7 +393,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => _send(),
                       decoration: InputDecoration(
-                        hintText: 'Ask Claude about this server',
+                        hintText: 'Ask about this server',
                         filled: true,
                         fillColor: cs.surfaceContainerHigh,
                         border: OutlineInputBorder(
@@ -536,7 +536,7 @@ class _ToolCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   const Expanded(
                     child: Text(
-                      'Claude wants to run an action',
+                      'The assistant wants to run an action',
                       style: TextStyle(fontWeight: FontWeight.w500),
                     ),
                   ),
