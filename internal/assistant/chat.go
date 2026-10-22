@@ -23,11 +23,12 @@ import (
 
 // turnBlock is one content block of a model answer, normalized.
 type turnBlock struct {
-	Type  string // text | thinking | tool_use
-	Text  string
-	ID    string
-	Name  string
-	Input string // raw JSON arguments
+	Type             string // text | thinking | tool_use
+	Text             string
+	ID               string
+	Name             string
+	Input            string // raw JSON arguments
+	ThoughtSignature string // Google's thought signature of a function call
 }
 
 // turn is one model answer: the message to store, the blocks to walk for tool calls,
@@ -49,6 +50,9 @@ type storedBlock struct {
 	ToolUseID string          `json:"tool_use_id"`
 	Content   json.RawMessage `json:"content"`
 	IsError   bool            `json:"is_error"`
+	// ThoughtSignature is Google's signature for a function call: the compatible
+	// endpoint refuses a later request that does not carry it back on the same call.
+	ThoughtSignature string `json:"thought_signature,omitempty"`
 }
 
 type storedMsg struct {
@@ -91,6 +95,33 @@ type oaCall struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
 	} `json:"function"`
+	Extra *extraContent `json:"extra_content,omitempty"`
+}
+
+// extraContent is where Google's compatible endpoint carries a function call's thought
+// signature. The OpenAI protocol has no field for it, so Gemini adds one of its own and
+// answers a later request that omits it with a 400 about the missing signature.
+type extraContent struct {
+	Google *googleExtra `json:"google,omitempty"`
+}
+
+type googleExtra struct {
+	ThoughtSignature string `json:"thought_signature"`
+}
+
+// signatureExtra is what a call with no signature leaves out of the request entirely.
+func signatureExtra(sig string) *extraContent {
+	if sig == "" {
+		return nil
+	}
+	return &extraContent{Google: &googleExtra{ThoughtSignature: sig}}
+}
+
+func (c *oaCall) thoughtSignature() string {
+	if c.Extra == nil || c.Extra.Google == nil {
+		return ""
+	}
+	return c.Extra.Google.ThoughtSignature
 }
 
 type oaTool struct {
@@ -158,7 +189,7 @@ func toOpenAI(history []store.ConvMessage) []oaMsg {
 			case "text":
 				text += b.Text
 			case "tool_use":
-				c := oaCall{ID: b.ID, Type: "function"}
+				c := oaCall{ID: b.ID, Type: "function", Extra: signatureExtra(b.ThoughtSignature)}
 				c.Function.Name = b.Name
 				c.Function.Arguments = string(b.Input)
 				if c.Function.Arguments == "" || c.Function.Arguments == "null" {
@@ -231,6 +262,7 @@ type chatChunk struct {
 					Name      string `json:"name"`
 					Arguments string `json:"arguments"`
 				} `json:"function"`
+				Extra *extraContent `json:"extra_content"`
 			} `json:"tool_calls"`
 		} `json:"delta"`
 		FinishReason string `json:"finish_reason"`
@@ -344,6 +376,9 @@ func (e *Engine) chat(ctx context.Context, id, model, key string, history []stor
 				if tc.ID != "" {
 					call.ID = tc.ID
 				}
+				if tc.Extra != nil && tc.Extra.Google != nil && tc.Extra.Google.ThoughtSignature != "" {
+					call.Extra = tc.Extra
+				}
 				call.Function.Name += tc.Function.Name
 				call.Function.Arguments += tc.Function.Arguments
 			}
@@ -378,10 +413,18 @@ func (e *Engine) chat(ctx context.Context, id, model, key string, history []stor
 		if args == "" || !json.Valid([]byte(args)) {
 			args = "{}"
 		}
-		blocks = append(blocks, map[string]any{
+		block := map[string]any{
 			"type": "tool_use", "id": c.ID, "name": c.Function.Name, "input": json.RawMessage(args),
-		})
-		t.blocks = append(t.blocks, turnBlock{Type: "tool_use", ID: c.ID, Name: c.Function.Name, Input: args})
+		}
+		tb := turnBlock{Type: "tool_use", ID: c.ID, Name: c.Function.Name, Input: args}
+		// The signature is stored with the call, because the provider it came from is the
+		// one that will ask for it again.
+		if sig := c.thoughtSignature(); sig != "" {
+			block["thought_signature"] = sig
+			tb.ThoughtSignature = sig
+		}
+		blocks = append(blocks, block)
+		t.blocks = append(t.blocks, tb)
 		tools++
 	}
 	if blocks == nil {

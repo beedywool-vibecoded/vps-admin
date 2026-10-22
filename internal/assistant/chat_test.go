@@ -97,7 +97,7 @@ func TestChatReassemblesStream(t *testing.T) {
 		sse(w,
 			`{"choices":[{"delta":{"content":"Look"}}]}`,
 			`{"choices":[{"delta":{"content":"ing."}}]}`,
-			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"list_apps","arguments":"{}"}}]}}]}`,
+			`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"list_apps","arguments":"{}"},"extra_content":{"google":{"thought_signature":"sig-1"}}}]}}]}`,
 			`{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
 		)
 	}))
@@ -122,11 +122,12 @@ func TestChatReassemblesStream(t *testing.T) {
 	var param struct {
 		Role    string `json:"role"`
 		Content []struct {
-			Type  string          `json:"type"`
-			Text  string          `json:"text"`
-			ID    string          `json:"id"`
-			Name  string          `json:"name"`
-			Input json.RawMessage `json:"input"`
+			Type             string          `json:"type"`
+			Text             string          `json:"text"`
+			ID               string          `json:"id"`
+			Name             string          `json:"name"`
+			Input            json.RawMessage `json:"input"`
+			ThoughtSignature string          `json:"thought_signature"`
 		} `json:"content"`
 	}
 	if err := json.Unmarshal(turn.raw, &param); err != nil {
@@ -134,6 +135,43 @@ func TestChatReassemblesStream(t *testing.T) {
 	}
 	if param.Role != "assistant" || len(param.Content) != 2 || param.Content[1].Type != "tool_use" || string(param.Content[1].Input) != "{}" {
 		t.Fatalf("stored answer has the wrong shape: %s", turn.raw)
+	}
+	// Google checks the signature on the way back in, so the call keeps it.
+	if param.Content[1].ThoughtSignature != "sig-1" || turn.blocks[1].ThoughtSignature != "sig-1" {
+		t.Fatalf("the thought signature of the call was lost: %s", turn.raw)
+	}
+}
+
+// Gemini answers a later request that drops the signature of a function call with a 400
+// about the missing thought signature, so the stored call has to carry it back.
+func TestThoughtSignatureIsSentBackWithTheCall(t *testing.T) {
+	history := []store.ConvMessage{
+		msg(t, "user", `{"role":"user","content":[{"type":"text","text":"How much space is left?"}]}`),
+		msg(t, "assistant", `{"role":"assistant","content":[{"type":"tool_use","id":"call_1","name":"server_overview","input":{},"thought_signature":"sig-1"}]}`),
+		msg(t, "user", `{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":"{}","is_error":false}]}`),
+	}
+	got := toOpenAI(history)
+	if len(got) != 3 || len(got[1].ToolCalls) != 1 {
+		t.Fatalf("bad translation: %+v", got)
+	}
+	body, err := json.Marshal(got[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"extra_content":{"google":{"thought_signature":"sig-1"}}`) {
+		t.Fatalf("the call goes back without its signature: %s", body)
+	}
+
+	// A provider that never sent a signature must not see the field at all.
+	plain := toOpenAI([]store.ConvMessage{
+		msg(t, "assistant", `{"role":"assistant","content":[{"type":"tool_use","id":"call_2","name":"list_apps","input":{}}]}`),
+	})
+	out, err := json.Marshal(plain[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "extra_content") {
+		t.Fatalf("an Ollama call should carry no Google field: %s", out)
 	}
 }
 
