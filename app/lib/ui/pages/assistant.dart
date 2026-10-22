@@ -96,17 +96,25 @@ class _AssistantPageState extends State<AssistantPage> {
 
   Future<void> _key() async {
     final c = TextEditingController();
-    final anthropic = (_active()?['id'] ?? 'anthropic') == 'anthropic';
+    final id = _active()?['id'] ?? 'anthropic';
+    final anthropic = id == 'anthropic' || id == 'claude-code';
+    final cli = id == 'claude-code';
     final label = _active()?['label'] as String? ?? 'The assistant';
     final res = await showWDialog<String>(
       context,
-      title: anthropic ? 'Anthropic API key' : 'Gemini API key',
+      title: cli
+          ? 'Claude subscription token'
+          : anthropic
+          ? 'Anthropic API key'
+          : 'Gemini API key',
       body: (_) => Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Muted(
-            anthropic
+            cli
+                ? 'On your computer, run claude setup-token and paste the token it prints (sk-ant-oat…). It bills your Pro or Max subscription. The panel runs the claude command installed on this server with its own tools disabled: every change still waits for your approval here.'
+                : anthropic
                 ? 'Create a key at console.anthropic.com (API keys). It is encrypted on this server and never shown again. Leave empty to remove it.'
                 : 'Create a free key at aistudio.google.com/apikey, no card needed. It is encrypted on this server and never shown again. Leave empty to remove it.',
             size: 14,
@@ -260,6 +268,11 @@ class _AssistantPageState extends State<AssistantPage> {
                 ),
               if ((active?['hint'] as String? ?? '').isNotEmpty)
                 Muted(active!['hint'] as String, size: 13),
+              // The Claude Code CLI has to exist on the server before a token is any use.
+              if (active?['kind'] == 'cli' &&
+                  active?['ready'] != true &&
+                  (active?['install'] as String? ?? '').isNotEmpty)
+                Cmd(active!['install'] as String),
               if (needsKey)
                 Row(
                   children: [
@@ -312,7 +325,7 @@ class _AssistantPageState extends State<AssistantPage> {
                   ],
                   onChanged: (v) => _set({'model': v}),
                 ),
-              if (active?['kind'] == 'anthropic')
+              if (active?['kind'] == 'anthropic' || active?['kind'] == 'cli')
                 SelectField<String>(
                   label: 'Effort',
                   value: s?['effort'] as String? ?? 'high',

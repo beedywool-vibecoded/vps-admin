@@ -18,6 +18,9 @@ const (
 	ProviderAnthropic = "anthropic"
 	ProviderGemini    = "gemini"
 	ProviderOllama    = "ollama"
+	// ProviderClaudeCode runs the official CLI installed on the server, on the
+	// administrator's Claude subscription instead of a billed API key.
+	ProviderClaudeCode = "claude-code"
 )
 
 const (
@@ -31,6 +34,7 @@ const (
 	keyName      = "assistant.api_key"
 	anthropicKey = "assistant.key.anthropic"
 	geminiKey    = "assistant.key.gemini"
+	claudeKey    = "assistant.key.claude-code"
 )
 
 const ollamaInstall = `docker run -d --name ollama --restart unless-stopped \
@@ -102,6 +106,12 @@ func (e *Engine) Providers(ctx context.Context) []Provider {
 			NeedsKey: true, KeyHint: hint(e.keyFor(ctx, ProviderAnthropic), "sk-ant"),
 			Models: anthropicModels, Model: e.model(ctx, ProviderAnthropic),
 		},
+		{
+			ID: ProviderClaudeCode, Label: "Claude Code", Kind: "cli", Badge: "subscription",
+			Note:     "The Claude Code CLI on this server, on your Pro or Max subscription: no key, no per-use bill.",
+			NeedsKey: true, KeyHint: hint(e.keyFor(ctx, ProviderClaudeCode), "sk-ant"),
+			Models: anthropicModels, Model: e.model(ctx, ProviderClaudeCode),
+		},
 	}
 	list[0].Models, list[0].Ready, list[0].Hint = e.ollamaModels(ctx, list[0].URL, e.model(ctx, ProviderOllama))
 	if list[0].Ready {
@@ -112,6 +122,19 @@ func (e *Engine) Providers(ctx context.Context) []Provider {
 	}
 	list[1].Ready = list[1].KeyHint != ""
 	list[2].Ready = list[2].KeyHint != ""
+
+	// Claude Code needs the binary as well as a token, and says which one is missing.
+	_, cliVersion, cliErr := e.claudeInfo(ctx)
+	list[3].Ready = list[3].KeyHint != "" && cliErr == nil
+	switch {
+	case cliErr != nil:
+		list[3].Hint = "The claude command is not installed on this server. Install it with the two commands below."
+		list[3].Install = claudeInstall
+	case list[3].KeyHint == "":
+		list[3].Hint = "Paste a token from `claude setup-token`, run on your own computer."
+	default:
+		list[3].Note = "Claude Code " + cliVersion + " on this server, on your Pro or Max subscription."
+	}
 	for i := range list {
 		list[i].Active = list[i].ID == active
 	}
@@ -144,7 +167,7 @@ func hint(key, prefix string) string {
 // Ollama, the only one that needs no account.
 func (e *Engine) ProviderID(ctx context.Context) string {
 	switch id := e.Store.Setting(ctx, providerName, ""); id {
-	case ProviderAnthropic, ProviderGemini, ProviderOllama:
+	case ProviderAnthropic, ProviderGemini, ProviderOllama, ProviderClaudeCode:
 		return id
 	case "":
 		// An installation that already had an Anthropic key keeps using it.
@@ -162,6 +185,8 @@ func (e *Engine) model(ctx context.Context, id string) string {
 		def = "claude-opus-5-5"
 	case ProviderGemini:
 		def = "gemini-2.5-flash"
+	case ProviderClaudeCode:
+		def = "claude-sonnet-5-5"
 	}
 	return e.Store.Setting(ctx, "assistant.model."+id, def)
 }
@@ -172,6 +197,8 @@ func (e *Engine) keyName(id string) string {
 		return anthropicKey
 	case ProviderGemini:
 		return geminiKey
+	case ProviderClaudeCode:
+		return claudeKey
 	}
 	return ""
 }
@@ -195,7 +222,7 @@ func (e *Engine) keyFor(ctx context.Context, id string) string {
 // SetProvider switches the AI every new message goes to.
 func (e *Engine) SetProvider(ctx context.Context, id string) error {
 	switch id {
-	case ProviderAnthropic, ProviderGemini, ProviderOllama:
+	case ProviderAnthropic, ProviderGemini, ProviderOllama, ProviderClaudeCode:
 		return e.Store.SetSetting(ctx, providerName, id)
 	}
 	return errors.New("unknown provider")
@@ -313,7 +340,7 @@ func (e *Engine) SetModel(ctx context.Context, provider, model string) error {
 		provider = e.ProviderID(ctx)
 	}
 	switch provider {
-	case ProviderAnthropic:
+	case ProviderAnthropic, ProviderClaudeCode:
 		for _, m := range anthropicModels {
 			if m.ID == model {
 				return e.Store.SetSetting(ctx, "assistant.model."+provider, model)

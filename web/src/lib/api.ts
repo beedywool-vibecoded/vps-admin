@@ -299,14 +299,15 @@ export interface UpdateCheck {
   upToDate: boolean
 }
 
-export type ProviderID = 'ollama' | 'gemini' | 'anthropic'
+export type ProviderID = 'ollama' | 'gemini' | 'anthropic' | 'claude-code'
 
-// One AI the panel can talk to: local (Ollama), free online (Gemini) or premium
-// (Claude). Ready means it can answer right now; hint says what is missing.
+// One AI the panel can talk to: local (Ollama), free online (Gemini), premium (Claude,
+// or the Claude Code CLI on a subscription). Ready means it can answer right now; hint
+// says what is missing.
 export interface AssistantProvider {
   id: ProviderID
   label: string
-  kind: 'anthropic' | 'openai'
+  kind: 'anthropic' | 'openai' | 'cli'
   badge: string
   note: string
   needsKey: boolean

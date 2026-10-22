@@ -48,7 +48,15 @@ const busy = computed(() => conv.value?.state === 'running')
 const providers = computed<AssistantProvider[]>(() => settings.value?.providers ?? [])
 const active = computed(() => providers.value.find((p) => p.id === settings.value?.provider) ?? null)
 const label = computed(() => active.value?.label ?? 'The assistant')
-const keyTitle = computed(() => (active.value?.id === 'anthropic' ? 'Anthropic API key' : 'Gemini API key'))
+const keyTitle = computed(() => {
+  switch (active.value?.id) {
+    case 'anthropic':
+      return 'Anthropic API key'
+    case 'claude-code':
+      return 'Claude subscription token'
+  }
+  return 'Gemini API key'
+})
 
 interface Item {
   key: string
@@ -354,7 +362,19 @@ onBeforeUnmount(() => {
           <button class="btn btn-outlined st" type="button" @click="loadSettings">Check again</button>
         </template>
 
-        <M3Select v-if="active?.kind === 'anthropic'" v-model="effort" label="Effort" :options="EFFORTS" :disabled="!settings" />
+        <!-- The CLI has to exist on the server before a token is any use. -->
+        <template v-if="active?.kind === 'cli'">
+          <M3Expand v-if="active.install && !active.ready">
+            <template #summary><span class="small">Install Claude Code</span></template>
+            <pre class="install">{{ active.install }}</pre>
+          </M3Expand>
+          <p v-if="active.ready" class="small muted">
+            The panel runs this command with its own tools disabled: every change still waits for your approval here.
+          </p>
+          <button class="btn btn-outlined st" type="button" @click="loadSettings">Check again</button>
+        </template>
+
+        <M3Select v-if="active?.kind === 'anthropic' || active?.kind === 'cli'" v-model="effort" label="Effort" :options="EFFORTS" :disabled="!settings" />
         <p class="small muted">
           {{ active?.note }}<template v-if="active?.needsKey"> The key is encrypted on this server.</template>
         </p>
@@ -483,6 +503,12 @@ onBeforeUnmount(() => {
           Create a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>
           and paste it here. It is checked with Anthropic, then stored encrypted on this server only.
         </template>
+        <template v-else-if="active?.id === 'claude-code'">
+          On your own computer, run <code>claude setup-token</code> and paste the token it prints (it starts with
+          <code>sk-ant-oat</code>). It bills your Pro or Max subscription instead of an API key. The panel runs the
+          <code>claude</code> command already installed on this server, with its own tools disabled: every change still
+          waits for your approval here.
+        </template>
         <template v-else>
           Create a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">AI Studio</a>, no card
           needed. It is checked with Google, then stored encrypted on this server only.
@@ -494,7 +520,7 @@ onBeforeUnmount(() => {
           <input
             v-model="newKey"
             type="password"
-            :placeholder="active?.id === 'anthropic' ? 'sk-ant-…' : 'AIza…'"
+            :placeholder="active?.id === 'anthropic' || active?.id === 'claude-code' ? 'sk-ant-…' : 'AIza…'"
             aria-label="API key"
             autocomplete="off"
           />

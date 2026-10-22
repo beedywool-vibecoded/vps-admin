@@ -37,14 +37,26 @@ type Event struct {
 type Engine struct {
 	Deps
 	Box *secret.Box
-	// BaseURL overrides the Anthropic endpoint, GeminiURL the Gemini one; both are for
-	// tests and never set in production.
+	// BaseURL overrides the Anthropic endpoint, GeminiURL the Gemini one, and ClaudeURL
+	// the endpoint the Claude Code CLI talks to; all three are for tests and never set in
+	// production.
 	BaseURL   string
 	GeminiURL string
+	ClaudeURL string
 
 	mu      sync.Mutex
 	running map[string]context.CancelFunc
 	subs    map[string]map[chan Event]struct{}
+	// waiters are the tool calls a Claude Code turn is blocked on, waiting for the
+	// administrator's answer in the panel. Guarded by mu, like running.
+	waiters map[string]chan bool
+
+	// The claude binary is looked up, and asked its version, now and then.
+	cmu   sync.Mutex
+	cpath string
+	cver  string
+	cerr  error
+	cat   time.Time
 
 	// Ollama discovery is cached for a few seconds; see ollamaModels.
 	pmu      sync.Mutex
@@ -58,6 +70,7 @@ type Engine struct {
 func (e *Engine) Init(ctx context.Context) {
 	e.running = map[string]context.CancelFunc{}
 	e.subs = map[string]map[chan Event]struct{}{}
+	e.waiters = map[string]chan bool{}
 	e.Store.InterruptedConversations(ctx)
 }
 
@@ -122,6 +135,13 @@ func (e *Engine) SetKey(ctx context.Context, provider, key string) error {
 	case ProviderGemini:
 		if err := e.checkGemini(ctx, key); err != nil {
 			return err
+		}
+	case ProviderClaudeCode:
+		// Nothing to check against: the token is an OAuth credential for the CLI, not an
+		// API key the panel can present. Its shape is checked, and the first message
+		// reports what the CLI says about it.
+		if !strings.HasPrefix(key, "sk-ant-") {
+			return errors.New("paste the token printed by claude setup-token (it starts with sk-ant-oat), or an Anthropic API key (sk-ant-api)")
 		}
 	}
 	return e.Store.SetSetting(ctx, name, e.Box.Seal(key))
@@ -319,6 +339,25 @@ func (e *Engine) Decide(ctx context.Context, callID string, approve bool, device
 	if err != nil {
 		return nil, err
 	}
+	// A Claude Code turn is blocked inside the tool call itself: hand it the answer and
+	// let it execute and record the result, instead of running the call here.
+	if e.waiting(callID) {
+		ok, err := e.Store.ClaimToolCall(ctx, callID, deviceID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, errors.New("this action was already answered")
+		}
+		e.signalDecision(callID, approve)
+		if !approve {
+			tc.Status, tc.Result, tc.IsError = "denied", "The administrator denied this action.", true
+		}
+		return tc, nil
+	}
+	if tc.Batch == 0 {
+		return nil, errors.New("this action belongs to a Claude Code turn that already ended")
+	}
 	ok, err := e.Store.ClaimToolCall(ctx, callID, deviceID)
 	if err != nil {
 		return nil, err
@@ -435,6 +474,16 @@ func (e *Engine) loop(convID string) {
 	e.setState(ctx, convID, "running", "")
 	autoRead := e.Store.Setting(ctx, "assistant.auto_read", "true") == "true"
 
+	// The subscription provider answers through the Claude Code CLI, which runs the tools
+	// itself through the panel's MCP endpoint; the steps below are the API path.
+	if first, err := e.resolve(ctx); err != nil {
+		e.fail(ctx, convID, err)
+		return
+	} else if first.Kind == "cli" {
+		e.claudeLoop(ctx, convID, first)
+		return
+	}
+
 	for step := 0; step < maxSteps; step++ {
 		tgt, err := e.resolve(ctx)
 		if err != nil {
@@ -528,6 +577,33 @@ func refusal(detail string) string {
 	return " (" + detail + ")"
 }
 
+// claudeLoop runs one message through the Claude Code CLI. The tools are called by the
+// CLI while the turn is open, so there is no tool loop here: the answer is stored when
+// the CLI is done.
+func (e *Engine) claudeLoop(ctx context.Context, convID string, tgt target) {
+	prompt, err := e.lastUserText(ctx, convID)
+	if err != nil {
+		e.fail(ctx, convID, err)
+		return
+	}
+	t, err := e.claudeTurn(ctx, convID, tgt, prompt,
+		func(s string) { e.emit(convID, "text", map[string]any{"index": 1, "text": s}) },
+		func(s string) { e.emit(convID, "thinking", map[string]any{"index": 0, "text": s}) })
+	if err != nil {
+		if errors.Is(err, errStopped) || errors.Is(ctx.Err(), context.Canceled) {
+			e.setState(context.Background(), convID, "idle", "stopped")
+			return
+		}
+		e.fail(ctx, convID, err)
+		return
+	}
+	if err := e.appendRaw(ctx, convID, t.raw); err != nil {
+		e.fail(ctx, convID, err)
+		return
+	}
+	e.setState(ctx, convID, "idle", "")
+}
+
 // answer asks the active provider for one step, streaming text and reasoning as it
 // arrives. Both adapters return the same turn.
 func (e *Engine) answer(ctx context.Context, convID string, tgt target) (*turn, error) {
@@ -591,8 +667,11 @@ type target struct {
 }
 
 func kindOfProvider(id string) string {
-	if id == ProviderAnthropic {
+	switch id {
+	case ProviderAnthropic:
 		return "anthropic"
+	case ProviderClaudeCode:
+		return "cli"
 	}
 	return "openai"
 }
@@ -605,6 +684,15 @@ func (e *Engine) resolve(ctx context.Context) (target, error) {
 	if t.ID == ProviderOllama {
 		if t.Model == "" {
 			return target{}, fmt.Errorf("%w. Pick an Ollama model first.", ErrNoKey)
+		}
+		return t, nil
+	}
+	if t.ID == ProviderClaudeCode {
+		if t.Key == "" {
+			return target{}, fmt.Errorf("%w (Claude Code). Paste a token from claude setup-token.", ErrNoKey)
+		}
+		if _, _, err := e.claudeInfo(ctx); err != nil {
+			return target{}, fmt.Errorf("Claude Code is not ready: %w", err)
 		}
 		return t, nil
 	}
