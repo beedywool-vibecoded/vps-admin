@@ -25,8 +25,10 @@ func TestKeyIsSavedWhenTheProviderFails(t *testing.T) {
 		t.Fatalf("the key was not saved: %q", got)
 	}
 
+	// Google answers a wrong key with 400 and this body, not 401.
 	rejecting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`[{"error":{"code":400,"message":"Please pass a valid API key","status":"INVALID_ARGUMENT"}}]`))
 	}))
 	t.Cleanup(rejecting.Close)
 	e2 := testEngine(t)

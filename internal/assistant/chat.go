@@ -467,7 +467,12 @@ func (e *Engine) checkGemini(ctx context.Context, key string) error {
 		return nil
 	}
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	// Google answers a wrong key with 400 "Please pass a valid API key", not 401, so the
+	// body decides.
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("%w: Gemini", errBadKey)
+	}
+	if resp.StatusCode == http.StatusBadRequest && strings.Contains(strings.ToLower(string(b)), "api key") {
 		return fmt.Errorf("%w: Gemini", errBadKey)
 	}
 	return errors.New(errorText(ProviderGemini, resp.StatusCode, b))
