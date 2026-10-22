@@ -187,7 +187,7 @@ onBeforeUnmount(() => clearInterval(timer))
         <StatusDot :tone="tone(c)" :label="c.health ?? c.state" />
         <div class="grow">
           <div class="name">{{ c.name }}</div>
-          <div class="muted small ellipsis">{{ image(c.image) }}<template v-if="ports(c)"> · {{ ports(c) }}</template></div>
+          <div class="meta muted small ellipsis">{{ image(c.image) }}<template v-if="ports(c)"> · {{ ports(c) }}</template></div>
         </div>
         <span v-if="c.exposed" class="chip chip-outline" v-tip="'Docker bypasses ufw for ports published on every interface'">public</span>
         <span class="muted small stat">
@@ -359,10 +359,57 @@ onBeforeUnmount(() => clearInterval(timer))
   display: flex;
   gap: 6px;
 }
+/* On a phone the row had five things on one line, so a long name pushed the state and
+   the buttons under it and left them ragged. The name now gets a line of its own with the
+   state on the right, the image and its ports sit under it, and the buttons end the block
+   on their own line. The desktop row is unchanged. */
 @media (max-width: 760px) {
-  .stat {
+  .row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'dot name state'
+      'dot meta pub'
+      'act act act';
+    column-gap: 10px;
+    row-gap: 3px;
+    align-items: center;
+    padding: 12px 6px;
+  }
+  .row > .dot {
+    grid-area: dot;
+    align-self: start;
+    margin-top: 5px;
+  }
+  /* Lets the name and the image be placed on separate lines of the same grid. */
+  .row > .grow {
+    display: contents;
+  }
+  .row > .grow > .name {
+    grid-area: name;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+  .row > .grow > .meta {
+    grid-area: meta;
+  }
+  .row > .chip {
+    grid-area: pub;
+    justify-self: end;
+  }
+  .row > .stat {
+    grid-area: state;
+    align-self: start;
     width: auto;
-    text-align: left;
+    text-align: right;
+  }
+  .row > .actions {
+    grid-area: act;
+    justify-self: end;
   }
 }
 </style>

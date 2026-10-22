@@ -349,9 +349,71 @@ class _ContainersPageState extends State<ContainersPage> {
         ),
       ],
     );
-    final row = WRow(
+    final meta =
+        '${imageName(c.image)}${ports.isNotEmpty ? ' · $ports' : ''}';
+    final state = st != null
+        ? '${(st['cpu'] as num).toStringAsFixed(1)}% · ${bytes((st['memUsed'] as num).toDouble())}'
+        : c.status;
+    // A phone gives the name the width of the card: the state sits on its right, the image
+    // and its ports go under it, and the actions take a line of their own. Five things on
+    // one line left a long name squeezing everything else out of shape.
+    if (narrow) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          WRow(
+            first: first,
+            padding: const EdgeInsets.fromLTRB(6, 12, 0, 6),
+            align: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 5),
+                child: StatusDot(containerTone(c), label: c.health ?? c.state),
+              ),
+              // The name gets the room; a long status gives way instead of pushing it out.
+              Expanded(
+                flex: 2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      c.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Flexible(child: Muted(meta, maxLines: 1)),
+                        if (c.exposed) ...[
+                          const SizedBox(width: 8),
+                          const Tooltip(
+                            message:
+                                'Docker bypasses ufw for ports published on every interface',
+                            child: WChip('public', outline: true),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(child: Muted(state, maxLines: 1)),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 6, bottom: 6),
+            child: Align(alignment: Alignment.centerRight, child: actions),
+          ),
+        ],
+      );
+    }
+    return WRow(
       first: first,
-      padding: EdgeInsets.fromLTRB(6, 12, 0, narrow ? 0 : 12),
+      padding: const EdgeInsets.fromLTRB(6, 12, 0, 12),
       children: [
         StatusDot(containerTone(c), label: c.health ?? c.state),
         Expanded(
@@ -365,10 +427,7 @@ class _ContainersPageState extends State<ContainersPage> {
                   fontWeight: FontWeight.w500,
                 ),
               ),
-              Muted(
-                '${imageName(c.image)}${ports.isNotEmpty ? ' · $ports' : ''}',
-                maxLines: 2,
-              ),
+              Muted(meta, maxLines: 2),
               const SizedBox(height: 4),
               Row(
                 children: [
@@ -380,31 +439,13 @@ class _ContainersPageState extends State<ContainersPage> {
                     ),
                     const SizedBox(width: 8),
                   ],
-                  Flexible(
-                    child: Muted(
-                      st != null
-                          ? '${(st['cpu'] as num).toStringAsFixed(1)}% · ${bytes((st['memUsed'] as num).toDouble())}'
-                          : c.status,
-                      maxLines: 1,
-                    ),
-                  ),
+                  Flexible(child: Muted(state, maxLines: 1)),
                 ],
               ),
             ],
           ),
         ),
-        if (!narrow) actions,
-      ],
-    );
-    if (!narrow) return row;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        row,
-        Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Align(alignment: Alignment.centerRight, child: actions),
-        ),
+        actions,
       ],
     );
   }

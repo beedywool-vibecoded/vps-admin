@@ -375,11 +375,13 @@ class WRow extends StatelessWidget {
     this.first = false,
     this.onTap,
     this.padding = const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+    this.align = CrossAxisAlignment.center,
   });
   final List<Widget> children;
   final bool first;
   final VoidCallback? onTap;
   final EdgeInsets padding;
+  final CrossAxisAlignment align;
 
   @override
   Widget build(BuildContext context) {
@@ -394,7 +396,7 @@ class WRow extends StatelessWidget {
                 ),
               ),
       ),
-      child: Row(children: _gap(children, 14)),
+      child: Row(crossAxisAlignment: align, children: _gap(children, 14)),
     );
     return onTap == null ? row : InkWell(onTap: onTap, child: row);
   }
