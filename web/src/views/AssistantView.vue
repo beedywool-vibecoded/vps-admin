@@ -647,9 +647,10 @@ onBeforeUnmount(() => {
   font-size: 14px;
 }
 .dot {
+  flex: none;
   width: 10px;
   height: 10px;
-  border-radius: 5px;
+  border-radius: 50%;
   background: var(--outline);
 }
 .dot.on {
@@ -731,9 +732,10 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 .online {
+  flex: none;
   width: 8px;
   height: 8px;
-  border-radius: 4px;
+  border-radius: 50%;
   background: var(--ok);
 }
 .thread {

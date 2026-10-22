@@ -335,9 +335,10 @@ onBeforeUnmount(() => clearInterval(timer))
   font-size: 13px;
 }
 .dotr {
+  flex: none;
   width: 8px;
   height: 8px;
-  border-radius: 4px;
+  border-radius: 50%;
   background: var(--warn);
 }
 .path {
