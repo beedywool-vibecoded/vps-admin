@@ -48,15 +48,9 @@ const busy = computed(() => conv.value?.state === 'running')
 const providers = computed<AssistantProvider[]>(() => settings.value?.providers ?? [])
 const active = computed(() => providers.value.find((p) => p.id === settings.value?.provider) ?? null)
 const label = computed(() => active.value?.label ?? 'The assistant')
-const keyTitle = computed(() => {
-  switch (active.value?.id) {
-    case 'anthropic':
-      return 'Anthropic API key'
-    case 'claude-code':
-      return 'Claude subscription token'
-  }
-  return 'Gemini API key'
-})
+const keyTitle = computed(() =>
+  active.value?.id === 'claude-code' ? 'Claude subscription token' : 'Gemini API key',
+)
 
 interface Item {
   key: string
@@ -374,9 +368,9 @@ onBeforeUnmount(() => {
           <button class="btn btn-outlined st" type="button" @click="loadSettings">Check again</button>
         </template>
 
-        <M3Select v-if="active?.kind === 'anthropic' || active?.kind === 'cli'" v-model="effort" label="Effort" :options="EFFORTS" :disabled="!settings" />
+        <M3Select v-if="active?.kind === 'cli'" v-model="effort" label="Effort" :options="EFFORTS" :disabled="!settings" />
         <p class="small muted">
-          {{ active?.note }}<template v-if="active?.needsKey"> The key is encrypted on this server.</template>
+          {{ active?.note }}<template v-if="active?.needsKey">{{ ' ' }}{{ active.kind === 'cli' ? 'The token is encrypted on this server.' : 'The key is encrypted on this server.' }}</template>
         </p>
       </section>
 
@@ -499,11 +493,7 @@ onBeforeUnmount(() => {
 
     <M3Dialog v-model="keyOpen" :title="keyTitle">
       <p class="muted" style="margin: 0">
-        <template v-if="active?.id === 'anthropic'">
-          Create a key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>
-          and paste it here. It is stored encrypted on this server, and checked with Anthropic when the server can reach it.
-        </template>
-        <template v-else-if="active?.id === 'claude-code'">
+        <template v-if="active?.id === 'claude-code'">
           On your own computer, run <code>claude setup-token</code> and paste the token it prints (it starts with
           <code>sk-ant-oat</code>). It bills your Pro or Max subscription instead of an API key. The panel runs the
           <code>claude</code> command already installed on this server, with its own tools disabled: every change still
@@ -520,7 +510,7 @@ onBeforeUnmount(() => {
           <input
             v-model="newKey"
             type="password"
-            :placeholder="active?.id === 'anthropic' || active?.id === 'claude-code' ? 'sk-ant-…' : 'AIza…'"
+            :placeholder="active?.id === 'claude-code' ? 'sk-ant-oat…' : 'AIza…'"
             aria-label="API key"
             autocomplete="off"
           />

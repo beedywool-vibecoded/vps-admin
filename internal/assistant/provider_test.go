@@ -129,8 +129,8 @@ func TestKeysArePerProvider(t *testing.T) {
 	if got := e.keyFor(ctx, ProviderGemini); got != "AIzaTest1234" {
 		t.Fatalf("gemini key lost: %q", got)
 	}
-	if got := e.keyFor(ctx, ProviderAnthropic); got != "" {
-		t.Fatalf("the gemini key must not leak to Anthropic: %q", got)
+	if got := e.keyFor(ctx, ProviderClaudeCode); got != "" {
+		t.Fatalf("the gemini key must not leak to Claude Code: %q", got)
 	}
 	p := e.Settings(ctx)
 	if p.Provider != ProviderOllama {
@@ -146,42 +146,45 @@ func TestKeysArePerProvider(t *testing.T) {
 	}
 }
 
-// An installation that already had an Anthropic key keeps using Claude after the
-// upgrade, and the key moves to its new name on first read.
-func TestLegacyAnthropicKeyKeepsWorking(t *testing.T) {
+// The paid API provider is gone: an installation that still points at it falls back to
+// the subscription when a token is saved, and to Ollama otherwise.
+func TestLegacyAnthropicChoiceMovesToTheSubscription(t *testing.T) {
 	e := testEngine(t)
 	ctx := context.Background()
-	if err := e.Store.SetSetting(ctx, keyName, e.Box.Seal("sk-ant-legacy")); err != nil {
+	if err := e.Store.SetSetting(ctx, providerName, legacyAnthropic); err != nil {
 		t.Fatal(err)
 	}
-	if got := e.ProviderID(ctx); got != ProviderAnthropic {
-		t.Fatalf("legacy install should stay on Claude, got %s", got)
+	if got := e.ProviderID(ctx); got != ProviderOllama {
+		t.Fatalf("without a token it should fall back to Ollama, got %s", got)
 	}
-	if got := e.keyFor(ctx, ProviderAnthropic); got != "sk-ant-legacy" {
-		t.Fatalf("legacy key not read: %q", got)
+	if err := e.SetKey(ctx, ProviderClaudeCode, "sk-ant-oat01-example"); err != nil {
+		t.Fatal(err)
 	}
-	if e.Store.Setting(ctx, anthropicKey, "") == "" {
-		t.Fatal("legacy key should be copied to its new name")
+	if got := e.ProviderID(ctx); got != ProviderClaudeCode {
+		t.Fatalf("with a token it should move to the subscription, got %s", got)
+	}
+	if err := e.SetProvider(ctx, legacyAnthropic); err == nil {
+		t.Fatal("the removed provider must not be selectable again")
 	}
 }
 
 func TestModelChoiceIsPerProvider(t *testing.T) {
 	e := testEngine(t)
 	ctx := context.Background()
-	if err := e.SetModel(ctx, ProviderAnthropic, "claude-sonnet-5-5"); err != nil {
+	if err := e.SetModel(ctx, ProviderClaudeCode, "claude-sonnet-5-5"); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.SetModel(ctx, ProviderGemini, "gemini-2.5-pro"); err != nil {
 		t.Fatal(err)
 	}
-	if got := e.model(ctx, ProviderAnthropic); got != "claude-sonnet-5-5" {
-		t.Fatalf("anthropic model lost: %s", got)
+	if got := e.model(ctx, ProviderClaudeCode); got != "claude-sonnet-5-5" {
+		t.Fatalf("Claude Code model lost: %s", got)
 	}
 	if got := e.model(ctx, ProviderGemini); got != "gemini-2.5-pro" {
 		t.Fatalf("gemini model lost: %s", got)
 	}
-	if err := e.SetModel(ctx, ProviderAnthropic, "gemini-2.5-pro"); err == nil {
-		t.Fatal("a model of another provider must be refused for Anthropic")
+	if err := e.SetModel(ctx, ProviderClaudeCode, "gemini-2.5-pro"); err == nil {
+		t.Fatal("a model of another provider must be refused for Claude Code")
 	}
 	if err := e.SetProvider(ctx, "openai"); err == nil {
 		t.Fatal("unknown provider accepted")

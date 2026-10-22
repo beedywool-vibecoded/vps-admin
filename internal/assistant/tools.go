@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anthropics/anthropic-sdk-go"
-
 	"github.com/beedywool/vps-admin/internal/deploy"
 	"github.com/beedywool/vps-admin/internal/docker"
 	"github.com/beedywool/vps-admin/internal/scripts"
@@ -65,32 +63,6 @@ var defs = []toolDef{
 		map[string]any{"container": str("Container name or id"), "action": enum("Action", "start", "stop", "restart"), "purpose": str("One sentence: why, and the expected impact")}, Change},
 	{"deploy_app", "Redeploy an app from its GitHub branch (zero downtime for single-container apps). Always needs the administrator's approval.",
 		map[string]any{"app": str("App name"), "purpose": str("One sentence: why")}, Change},
-}
-
-// toolParams builds the tool list. Strict schemas keep arguments valid; eager input
-// streaming means a cut-off input can still arrive, so every input is validated again
-// before use.
-func toolParams() []anthropic.BetaToolUnionParam {
-	out := make([]anthropic.BetaToolUnionParam, 0, len(defs))
-	for _, d := range defs {
-		required := make([]string, 0, len(d.props))
-		for k := range d.props {
-			required = append(required, k)
-		}
-		t := anthropic.BetaToolParam{
-			Name:        d.name,
-			Description: anthropic.String(d.description),
-			InputSchema: anthropic.BetaToolInputSchemaParam{
-				Properties:  d.props,
-				Required:    required,
-				ExtraFields: map[string]any{"additionalProperties": false},
-			},
-			Strict:              anthropic.Bool(true),
-			EagerInputStreaming: anthropic.Bool(true),
-		}
-		out = append(out, anthropic.BetaToolUnionParam{OfTool: &t})
-	}
-	return out
 }
 
 func defFor(name string) *toolDef {

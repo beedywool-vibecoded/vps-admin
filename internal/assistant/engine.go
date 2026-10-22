@@ -14,8 +14,6 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/anthropics/anthropic-sdk-go/packages/param"
 
 	"github.com/beedywool/vps-admin/internal/secret"
 	"github.com/beedywool/vps-admin/internal/store"
@@ -104,14 +102,6 @@ func (e *Engine) Settings(ctx context.Context) Settings {
 	return s
 }
 
-func (e *Engine) client(key string) anthropic.Client {
-	opts := []option.RequestOption{option.WithAPIKey(key)}
-	if e.BaseURL != "" {
-		opts = append(opts, option.WithBaseURL(e.BaseURL))
-	}
-	return anthropic.NewClient(opts...)
-}
-
 // SetKey checks the key against its provider before saving it, encrypted.
 func (e *Engine) SetKey(ctx context.Context, provider, key string) error {
 	key = strings.TrimSpace(key)
@@ -126,18 +116,6 @@ func (e *Engine) SetKey(ctx context.Context, provider, key string) error {
 	// or having a bad day must not cost the administrator what they just pasted: the key
 	// is saved, and the first message reports the real problem.
 	switch provider {
-	case ProviderAnthropic:
-		check, cancel := context.WithTimeout(ctx, 6*time.Second)
-		c := e.client(key)
-		_, err := c.Models.List(check, anthropic.ModelListParams{Limit: anthropic.Int(1)})
-		cancel()
-		if err != nil {
-			var apiErr *anthropic.Error
-			if errors.As(err, &apiErr) && (apiErr.StatusCode == http.StatusUnauthorized || apiErr.StatusCode == http.StatusForbidden) {
-				return errors.New("Anthropic rejected this API key")
-			}
-			slog.Warn("anthropic key not verified, saved anyway", "err", err)
-		}
 	case ProviderGemini:
 		if err := e.checkGemini(ctx, key); err != nil {
 			if errors.Is(err, errBadKey) {
@@ -436,39 +414,6 @@ How you work:
 		h.Hostname, h.OS, h.Kernel, h.Arch, h.Cores)
 }
 
-// fallbackModels can use the server-side "default" fallback on a refusal.
-var fallbackModels = map[string]bool{"claude-opus-5-5": true, "claude-sonnet-5-5": true, "claude-fable-5-1": true}
-
-func (e *Engine) params(ctx context.Context, convID string, tgt target) (anthropic.BetaMessageNewParams, error) {
-	effort := e.Store.Setting(ctx, "assistant.effort", "high")
-	msgs, err := e.Store.Messages(ctx, convID)
-	if err != nil {
-		return anthropic.BetaMessageNewParams{}, err
-	}
-	history := make([]anthropic.BetaMessageParam, 0, len(msgs))
-	for _, m := range msgs {
-		// Sent back byte for byte: thinking blocks are only valid in an unchanged history.
-		history = append(history, param.Override[anthropic.BetaMessageParam](json.RawMessage(m.Content)))
-	}
-	p := anthropic.BetaMessageNewParams{
-		Model:     anthropic.Model(tgt.Model),
-		MaxTokens: 64000,
-		System:    []anthropic.BetaTextBlockParam{{Text: e.systemPrompt(), CacheControl: anthropic.NewBetaCacheControlEphemeralParam()}},
-		Messages:  history,
-		Tools:     toolParams(),
-		Thinking: anthropic.BetaThinkingConfigParamUnion{OfAdaptive: &anthropic.BetaThinkingConfigAdaptiveParam{
-			Display: anthropic.BetaThinkingConfigAdaptiveDisplaySummarized,
-		}},
-		OutputConfig: anthropic.BetaOutputConfigParam{Effort: anthropic.BetaOutputConfigEffort(effort)},
-		CacheControl: anthropic.NewBetaCacheControlEphemeralParam(),
-	}
-	if fallbackModels[tgt.Model] {
-		p.Betas = []anthropic.AnthropicBeta{anthropic.AnthropicBetaServerSideFallback2026_07_01}
-		p.Fallbacks = anthropic.BetaFallbacksParamOfDefault()
-	}
-	return p, nil
-}
-
 // loop calls the model until it answers without tools, or stops on calls that need
 // approval. The caller has claimed the conversation.
 func (e *Engine) loop(convID string) {
@@ -611,22 +556,9 @@ func (e *Engine) claudeLoop(ctx context.Context, convID string, tgt target) {
 		return
 	}
 	e.setState(ctx, convID, "idle", "")
-}
-
-// answer asks the active provider for one step, streaming text and reasoning as it
-// arrives. Both adapters return the same turn.
+} // answer asks the active provider for one step, streaming text and reasoning as it
+// arrives.
 func (e *Engine) answer(ctx context.Context, convID string, tgt target) (*turn, error) {
-	if tgt.Kind == "anthropic" {
-		p, err := e.params(ctx, convID, tgt)
-		if err != nil {
-			return nil, err
-		}
-		msg, err := e.stream(ctx, e.client(tgt.Key), convID, p)
-		if err != nil {
-			return nil, err
-		}
-		return anthropicTurn(msg)
-	}
 	history, err := e.Store.Messages(ctx, convID)
 	if err != nil {
 		return nil, err
@@ -638,35 +570,6 @@ func (e *Engine) answer(ctx context.Context, convID string, tgt target) (*turn, 
 
 // anthropicTurn normalizes an Anthropic answer, so the loop below does not care which
 // provider answered.
-func anthropicTurn(msg *anthropic.BetaMessage) (*turn, error) {
-	raw, err := json.Marshal(msg.ToParam())
-	if err != nil {
-		return nil, err
-	}
-	t := &turn{raw: raw}
-	for _, block := range msg.Content {
-		switch b := block.AsAny().(type) {
-		case anthropic.BetaTextBlock:
-			if b.Text != "" {
-				t.blocks = append(t.blocks, turnBlock{Type: "text", Text: b.Text})
-			}
-		case anthropic.BetaToolUseBlock:
-			t.blocks = append(t.blocks, turnBlock{Type: "tool_use", ID: b.ID, Name: b.Name, Input: string(b.JSON.Input.Raw())})
-		}
-	}
-	switch msg.StopReason {
-	case anthropic.BetaStopReasonRefusal:
-		t.stop, t.detail = "refusal", string(msg.StopDetails.Category)
-	case anthropic.BetaStopReasonMaxTokens:
-		t.stop = "max_tokens"
-	case anthropic.BetaStopReasonToolUse:
-		t.stop = "tool_use"
-	default:
-		t.stop = "end_turn"
-	}
-	return t, nil
-}
-
 // target is the provider a model call goes to, resolved before each step.
 type target struct {
 	ID    string
@@ -676,10 +579,7 @@ type target struct {
 }
 
 func kindOfProvider(id string) string {
-	switch id {
-	case ProviderAnthropic:
-		return "anthropic"
-	case ProviderClaudeCode:
+	if id == ProviderClaudeCode {
 		return "cli"
 	}
 	return "openai"
@@ -732,30 +632,6 @@ func (e *Engine) fail(ctx context.Context, convID string, err error) {
 	}
 	slog.Warn("assistant error", "conversation", convID, "err", err)
 	e.setState(context.WithoutCancel(ctx), convID, "error", msg)
-}
-
-// stream calls the model and forwards text and thinking as they arrive.
-func (e *Engine) stream(ctx context.Context, client anthropic.Client, convID string, p anthropic.BetaMessageNewParams) (*anthropic.BetaMessage, error) {
-	s := client.Beta.Messages.NewStreaming(ctx, p)
-	msg := anthropic.BetaMessage{}
-	for s.Next() {
-		ev := s.Current()
-		if err := msg.Accumulate(ev); err != nil {
-			return nil, err
-		}
-		if d, ok := ev.AsAny().(anthropic.BetaRawContentBlockDeltaEvent); ok {
-			switch delta := d.Delta.AsAny().(type) {
-			case anthropic.BetaTextDelta:
-				e.emit(convID, "text", map[string]any{"index": d.Index, "text": delta.Text})
-			case anthropic.BetaThinkingDelta:
-				e.emit(convID, "thinking", map[string]any{"index": d.Index, "text": delta.Thinking})
-			}
-		}
-	}
-	if err := s.Err(); err != nil {
-		return nil, err
-	}
-	return &msg, nil
 }
 
 // Delete removes a conversation that is not running.

@@ -118,12 +118,12 @@ et ses scripts s'affichent à côté de ses conteneurs.
 <td width="33%" valign="top">
 
 ### Assistant IA
-Quatre fournisseurs au choix, réglables dans le panel : **Ollama** en local (gratuit, rien
-ne sort du serveur), **Gemini** avec la clé gratuite d'AI Studio, **Claude** avec ta clé
-Anthropic, ou **Claude Code** avec ton abonnement Pro/Max (le CLI installé sur le serveur,
-ses outils natifs coupés). L'assistant examine la machine avec les outils du panel et
-propose des corrections. Les lectures passent seules, **chaque modification attend ton
-accord**, et certaines actions sont bloquées quoi qu'il arrive.
+Trois fournisseurs au choix, réglables dans le panel : **Ollama** en local (gratuit, rien
+ne sort du serveur), **Gemini** avec la clé gratuite d'AI Studio, ou **Claude Code** avec
+ton abonnement Pro/Max (le CLI installé sur le serveur, ses outils natifs coupés ; aucune
+clé API payante). L'assistant examine la machine avec les outils du panel et propose des
+corrections. Les lectures passent seules, **chaque modification attend ton accord**, et
+certaines actions sont bloquées quoi qu'il arrive.
 
 </td>
 </tr>
@@ -237,7 +237,7 @@ Ouvre ensuite le domaine, tape le code, crée ta passkey. Pour l'app ou un autre
 <tr><td><code>internal/docker</code></td><td>Client minimal de l'API Docker par le socket.</td></tr>
 <tr><td><code>internal/deploy</code></td><td>Build et lancement des apps, contrôle HTTP, bascule Caddy, retour arrière.</td></tr>
 <tr><td><code>internal/github</code></td><td>GitHub App (manifest), jetons d'installation, webhooks signés.</td></tr>
-<tr><td><code>internal/assistant</code></td><td>Boucle de conversation, fournisseurs (Anthropic, OpenAI-compatible pour Gemini et Ollama), pont MCP pour le CLI Claude Code, outils, politique d'approbation.</td></tr>
+<tr><td><code>internal/assistant</code></td><td>Boucle de conversation, adaptateur OpenAI-compatible (Gemini, Ollama), pont MCP pour le CLI Claude Code, outils, politique d'approbation.</td></tr>
 <tr><td><code>internal/update</code></td><td>Releases signées, installation, distribution de l'APK.</td></tr>
 <tr><td><code>internal/store</code></td><td>SQLite en pur Go (binaire statique), historique append-only.</td></tr>
 <tr><td><code>web/</code></td><td>Panel Vue 3 + Vite, Material 3 Expressive, palette Material You générée depuis une couleur de base.</td></tr>

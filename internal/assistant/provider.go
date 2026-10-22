@@ -12,15 +12,19 @@ import (
 	"time"
 )
 
-// Providers the panel can talk to. Claude speaks the Anthropic protocol, the two
-// others speak the OpenAI chat protocol, so one adapter covers free and local models.
+// Providers the panel can talk to. Claude Code runs the official CLI on a subscription;
+// Gemini and Ollama speak the OpenAI chat protocol, so one adapter covers free and local
+// models. The paid Anthropic API provider was removed: premium means the subscription.
 const (
-	ProviderAnthropic = "anthropic"
-	ProviderGemini    = "gemini"
-	ProviderOllama    = "ollama"
+	ProviderGemini = "gemini"
+	ProviderOllama = "ollama"
 	// ProviderClaudeCode runs the official CLI installed on the server, on the
 	// administrator's Claude subscription instead of a billed API key.
 	ProviderClaudeCode = "claude-code"
+
+	// legacyAnthropic is the provider that used an Anthropic API key. It is only read, to
+	// move an installation that still points at it to the subscription or to Ollama.
+	legacyAnthropic = "anthropic"
 )
 
 const (
@@ -30,9 +34,6 @@ const (
 
 	providerName = "assistant.provider"
 	ollamaURLKey = "assistant.ollama_url"
-	// keyName is the Anthropic key saved before the panel offered several providers.
-	keyName      = "assistant.api_key"
-	anthropicKey = "assistant.key.anthropic"
 	geminiKey    = "assistant.key.gemini"
 	claudeKey    = "assistant.key.claude-code"
 )
@@ -101,12 +102,6 @@ func (e *Engine) Providers(ctx context.Context) []Provider {
 			Models: geminiModels, Model: e.model(ctx, ProviderGemini),
 		},
 		{
-			ID: ProviderAnthropic, Label: "Claude", Kind: "anthropic", Badge: "premium",
-			Note:     "Your Anthropic account. The key is billed per use.",
-			NeedsKey: true, KeyHint: hint(e.keyFor(ctx, ProviderAnthropic), "sk-ant"),
-			Models: anthropicModels, Model: e.model(ctx, ProviderAnthropic),
-		},
-		{
 			ID: ProviderClaudeCode, Label: "Claude Code", Kind: "cli", Badge: "subscription",
 			Note:     "The Claude Code CLI on this server, on your Pro or Max subscription: no key, no per-use bill.",
 			NeedsKey: true, KeyHint: hint(e.keyFor(ctx, ProviderClaudeCode), "sk-ant"),
@@ -121,19 +116,18 @@ func (e *Engine) Providers(ctx context.Context) []Provider {
 		list[0].Install = ollamaInstall
 	}
 	list[1].Ready = list[1].KeyHint != ""
-	list[2].Ready = list[2].KeyHint != ""
 
 	// Claude Code needs the binary as well as a token, and says which one is missing.
 	_, cliVersion, cliErr := e.claudeInfo(ctx)
-	list[3].Ready = list[3].KeyHint != "" && cliErr == nil
+	list[2].Ready = list[2].KeyHint != "" && cliErr == nil
 	switch {
 	case cliErr != nil:
-		list[3].Hint = "The claude command is not installed on this server. Install it with the two commands below."
-		list[3].Install = claudeInstall
-	case list[3].KeyHint == "":
-		list[3].Hint = "Paste a token from `claude setup-token`, run on your own computer."
+		list[2].Hint = "The claude command is not installed on this server. Install it with the two commands below."
+		list[2].Install = claudeInstall
+	case list[2].KeyHint == "":
+		list[2].Hint = "Paste a token from `claude setup-token`, run on your own computer."
 	default:
-		list[3].Note = "Claude Code " + cliVersion + " on this server, on your Pro or Max subscription."
+		list[2].Note = "Claude Code " + cliVersion + " on this server, on your Pro or Max subscription."
 	}
 	for i := range list {
 		list[i].Active = list[i].ID == active
@@ -167,12 +161,13 @@ func hint(key, prefix string) string {
 // Ollama, the only one that needs no account.
 func (e *Engine) ProviderID(ctx context.Context) string {
 	switch id := e.Store.Setting(ctx, providerName, ""); id {
-	case ProviderAnthropic, ProviderGemini, ProviderOllama, ProviderClaudeCode:
+	case ProviderGemini, ProviderOllama, ProviderClaudeCode:
 		return id
-	case "":
-		// An installation that already had an Anthropic key keeps using it.
-		if e.keyFor(ctx, ProviderAnthropic) != "" {
-			return ProviderAnthropic
+	case legacyAnthropic:
+		// The API key provider is gone. An installation that still pointed at it moves to
+		// the subscription when a token is already saved, and to Ollama otherwise.
+		if e.keyFor(ctx, ProviderClaudeCode) != "" {
+			return ProviderClaudeCode
 		}
 	}
 	return ProviderOllama
@@ -181,8 +176,6 @@ func (e *Engine) ProviderID(ctx context.Context) string {
 func (e *Engine) model(ctx context.Context, id string) string {
 	def := ""
 	switch id {
-	case ProviderAnthropic:
-		def = "claude-opus-5-5"
 	case ProviderGemini:
 		def = "gemini-2.5-flash"
 	case ProviderClaudeCode:
@@ -193,8 +186,6 @@ func (e *Engine) model(ctx context.Context, id string) string {
 
 func (e *Engine) keyName(id string) string {
 	switch id {
-	case ProviderAnthropic:
-		return anthropicKey
 	case ProviderGemini:
 		return geminiKey
 	case ProviderClaudeCode:
@@ -209,20 +200,13 @@ func (e *Engine) keyFor(ctx context.Context, id string) string {
 		return ""
 	}
 	k, _ := e.Box.Open(e.Store.Setting(ctx, name, ""))
-	if k == "" && id == ProviderAnthropic {
-		// Read the pre-provider setting once, then keep it under the new name.
-		if legacy, _ := e.Box.Open(e.Store.Setting(ctx, keyName, "")); legacy != "" {
-			e.Store.SetSetting(ctx, anthropicKey, e.Box.Seal(legacy))
-			return legacy
-		}
-	}
 	return k
 }
 
 // SetProvider switches the AI every new message goes to.
 func (e *Engine) SetProvider(ctx context.Context, id string) error {
 	switch id {
-	case ProviderAnthropic, ProviderGemini, ProviderOllama, ProviderClaudeCode:
+	case ProviderGemini, ProviderOllama, ProviderClaudeCode:
 		return e.Store.SetSetting(ctx, providerName, id)
 	}
 	return errors.New("unknown provider")
@@ -340,7 +324,7 @@ func (e *Engine) SetModel(ctx context.Context, provider, model string) error {
 		provider = e.ProviderID(ctx)
 	}
 	switch provider {
-	case ProviderAnthropic, ProviderClaudeCode:
+	case ProviderClaudeCode:
 		for _, m := range anthropicModels {
 			if m.ID == model {
 				return e.Store.SetSetting(ctx, "assistant.model."+provider, model)
