@@ -1,9 +1,7 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/banner-dark.svg">
-  <img src=".github/assets/banner-light.svg" alt="VPS Admin | Panel, déploiements et assistant pour tes serveurs Linux" width="100%">
-</picture>
+<img src=".github/assets/banner-light.svg#gh-light-mode-only" alt="VPS Admin | Panel, déploiements et assistant pour tes serveurs Linux" width="100%">
+<img src=".github/assets/banner-dark.svg#gh-dark-mode-only" alt="VPS Admin | Panel, déploiements et assistant pour tes serveurs Linux" width="100%">
 
 <br>
 <br>
@@ -47,10 +45,8 @@
 <br>
 
 <a name="preview"></a>
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/section-preview-dark.svg">
-  <img src=".github/assets/section-preview-light.svg" alt="01 | Aperçu" width="100%">
-</picture>
+<img src=".github/assets/section-preview-light.svg#gh-light-mode-only" alt="01 | Aperçu" width="100%">
+<img src=".github/assets/section-preview-dark.svg#gh-dark-mode-only" alt="01 | Aperçu" width="100%">
 
 <table>
 <tr>
@@ -89,10 +85,8 @@
 <br>
 
 <a name="features"></a>
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/section-features-dark.svg">
-  <img src=".github/assets/section-features-light.svg" alt="02 | Fonctionnalités" width="100%">
-</picture>
+<img src=".github/assets/section-features-light.svg#gh-light-mode-only" alt="02 | Fonctionnalités" width="100%">
+<img src=".github/assets/section-features-dark.svg#gh-dark-mode-only" alt="02 | Fonctionnalités" width="100%">
 
 <table>
 <tr>
@@ -157,10 +151,8 @@ si elle ne démarre pas. L'app se met à jour via le serveur.
 <br>
 
 <a name="install"></a>
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/section-install-dark.svg">
-  <img src=".github/assets/section-install-light.svg" alt="03 | Installation" width="100%">
-</picture>
+<img src=".github/assets/section-install-light.svg#gh-light-mode-only" alt="03 | Installation" width="100%">
+<img src=".github/assets/section-install-dark.svg#gh-dark-mode-only" alt="03 | Installation" width="100%">
 
 Sur le serveur, en root, avec un nom de domaine qui pointe dessus :
 
@@ -187,10 +179,8 @@ Ouvre ensuite le domaine, tape le code, crée ta passkey. Pour l'app ou un autre
 <br>
 
 <a name="security"></a>
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/section-security-dark.svg">
-  <img src=".github/assets/section-security-light.svg" alt="04 | Sécurité" width="100%">
-</picture>
+<img src=".github/assets/section-security-light.svg#gh-light-mode-only" alt="04 | Sécurité" width="100%">
+<img src=".github/assets/section-security-dark.svg#gh-dark-mode-only" alt="04 | Sécurité" width="100%">
 
 <table>
 <tr>
@@ -220,10 +210,8 @@ Ouvre ensuite le domaine, tape le code, crée ta passkey. Pour l'app ou un autre
 <br>
 
 <a name="stack"></a>
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/section-stack-dark.svg">
-  <img src=".github/assets/section-stack-light.svg" alt="05 | Stack" width="100%">
-</picture>
+<img src=".github/assets/section-stack-light.svg#gh-light-mode-only" alt="05 | Stack" width="100%">
+<img src=".github/assets/section-stack-dark.svg#gh-dark-mode-only" alt="05 | Stack" width="100%">
 
 <table>
 <tr>
@@ -248,10 +236,8 @@ Ouvre ensuite le domaine, tape le code, crée ta passkey. Pour l'app ou un autre
 <br>
 
 <a name="dev"></a>
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/section-dev-dark.svg">
-  <img src=".github/assets/section-dev-light.svg" alt="06 | Développement" width="100%">
-</picture>
+<img src=".github/assets/section-dev-light.svg#gh-light-mode-only" alt="06 | Développement" width="100%">
+<img src=".github/assets/section-dev-dark.svg#gh-dark-mode-only" alt="06 | Développement" width="100%">
 
 ```sh
 cd web && npm ci && npm run build && cd ..      # le panel est compilé dans internal/web/dist
@@ -296,7 +282,5 @@ Les visuels de ce README se régénèrent avec `python3 tools/readme-assets.py <
 
 <br>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/footer-dark.svg">
-  <img src=".github/assets/footer-light.svg" alt="beedywool.com" width="100%">
-</picture>
+<img src=".github/assets/footer-light.svg#gh-light-mode-only" alt="beedywool.com" width="100%">
+<img src=".github/assets/footer-dark.svg#gh-dark-mode-only" alt="beedywool.com" width="100%">
