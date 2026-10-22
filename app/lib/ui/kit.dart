@@ -542,6 +542,8 @@ class WIconButton extends StatelessWidget {
     return IconButton(
       tooltip: tooltip,
       onPressed: onPressed,
+      // Icon-only buttons read as buttons: the outline keeps them visible on a card.
+      style: IconButton.styleFrom(side: BorderSide(color: cs.outlineVariant)),
       icon: WIcon(
         icon,
         size: size,

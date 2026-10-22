@@ -166,6 +166,6 @@ onMounted(load)
 }
 .actions {
   display: flex;
-  gap: 4px;
+  gap: 6px;
 }
 </style>

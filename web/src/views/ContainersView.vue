@@ -356,7 +356,7 @@ onBeforeUnmount(() => clearInterval(timer))
 }
 .actions {
   display: flex;
-  gap: 4px;
+  gap: 6px;
 }
 @media (max-width: 760px) {
   .stat {
