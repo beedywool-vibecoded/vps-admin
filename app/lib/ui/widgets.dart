@@ -65,60 +65,115 @@ class _ShapePainter extends CustomPainter {
       old.color != color || old.shape != shape;
 }
 
-/// M3 Expressive wavy progress: a wave up to [value], then a flat track.
-class WaveProgress extends StatelessWidget {
+/// M3 Expressive wavy progress, as in Pelote: a wave in primary up to [value], a 6dp gap, a flat
+/// track in secondary container and a stop dot. The phase slides one wavelength every 1.6 s; the
+/// ticker follows TickerMode (a screen that is not showing stops it), and reduced motion freezes
+/// the wave at its resting shape.
+class WaveProgress extends StatefulWidget {
   const WaveProgress(this.value, {super.key});
   final double value; // 0..1
+
+  @override
+  State<WaveProgress> createState() => _WaveProgressState();
+}
+
+class _WaveProgressState extends State<WaveProgress>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _phase = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1600),
+  );
+  bool _reduce = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reduce = MediaQuery.disableAnimationsOf(context);
+    if (_reduce) {
+      _phase.stop();
+    } else if (!_phase.isAnimating) {
+      _phase.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _phase.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return SizedBox(
       height: 14,
-      child: CustomPaint(
-        painter: _WavePainter(value.clamp(0, 1), cs.primary, cs.outlineVariant),
-        size: Size.infinite,
+      child: AnimatedBuilder(
+        animation: _phase,
+        builder: (context, _) => CustomPaint(
+          painter: _WavePainter(
+            widget.value.clamp(0, 1),
+            _reduce ? 0 : -2 * math.pi * _phase.value,
+            cs.primary,
+            cs.secondaryContainer,
+          ),
+          size: Size.infinite,
+        ),
       ),
     );
   }
 }
 
 class _WavePainter extends CustomPainter {
-  _WavePainter(this.value, this.active, this.track);
-  final double value;
+  _WavePainter(this.value, this.phase, this.active, this.track);
+  final double value, phase;
   final Color active, track;
+
+  static const _mid = 7.0;
+  static const _amp = 3.0;
+  static const _lambda = 24.0;
+  static const _gap = 6.0;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final mid = size.height / 2;
-    final end = size.width * value;
-    final wave = Path()..moveTo(0, mid);
-    for (double x = 0; x <= end; x += 1) {
-      wave.lineTo(x, mid + 3.5 * math.sin(x / 24 * 2 * math.pi));
+    const left = 2.0;
+    final right = size.width - 2;
+    if (right - left < 4) return;
+    const stroke = 4.0;
+    final end = left + (right - 4 - left) * value;
+    final wave = Path();
+    for (double x = left; x <= end; x += 2) {
+      final y = _mid + _amp * math.sin((x / _lambda) * 2 * math.pi + phase);
+      x == left ? wave.moveTo(x, y) : wave.lineTo(x, y);
     }
-    canvas.drawPath(
-      wave,
-      Paint()
-        ..color = active
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 4
-        ..strokeCap = StrokeCap.round,
-    );
-    if (end + 8 < size.width) {
-      canvas.drawLine(
-        Offset(end + 8, mid),
-        Offset(size.width, mid),
+    if (end - left >= 1) {
+      canvas.drawPath(
+        wave,
         Paint()
-          ..color = track
-          ..strokeWidth = 4
+          ..color = active
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke
           ..strokeCap = StrokeCap.round,
       );
     }
+    if (right - 6 - (end + _gap) >= 6) {
+      canvas.drawLine(
+        Offset(end + _gap, _mid),
+        Offset(right - 6, _mid),
+        Paint()
+          ..color = track
+          ..strokeWidth = stroke
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+    canvas.drawCircle(Offset(right, _mid), 2, Paint()..color = active);
   }
 
   @override
   bool shouldRepaint(_WavePainter old) =>
-      old.value != value || old.active != active;
+      old.value != value ||
+      old.phase != phase ||
+      old.active != active ||
+      old.track != track;
 }
 
 enum Tone { ok, warn, bad, idle }

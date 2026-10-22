@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import M3Shape from './M3Shape.vue'
+import WaveProgress from './WaveProgress.vue'
 import type { ShapeKind } from '@/lib/shapes'
 
 // compact: the smaller size of the widget bar. Without percent there is no progress line.
@@ -12,9 +13,7 @@ defineProps<{ label: string; value: string; percent?: number; sub: string; shape
     <span class="label">{{ label }}</span>
     <span class="value">{{ value }}</span>
     <div v-if="percent !== undefined" class="track" role="meter" :aria-label="label" aria-valuemin="0" aria-valuemax="100" :aria-valuenow="Math.round(percent)">
-      <div class="wave" :style="{ width: `${Math.min(Math.max(percent, 0), 100)}%` }" />
-      <div class="stop" />
-      <div class="rest" />
+      <WaveProgress :percent="percent" />
     </div>
     <span class="sub">{{ sub }}</span>
   </div>
@@ -59,31 +58,7 @@ defineProps<{ label: string; value: string; percent?: number; sub: string; shape
   line-height: 1;
 }
 .track {
-  display: flex;
-  align-items: center;
   height: 14px;
-  gap: 4px;
-}
-/* M3 Expressive wavy progress indicator */
-.wave {
-  height: 12px;
-  min-width: 4px;
-  background: var(--primary);
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='12'%3E%3Cpath d='M0 6Q6 -1 12 6T24 6' fill='none' stroke='black' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E") 0 0/24px 12px repeat-x;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='12'%3E%3Cpath d='M0 6Q6 -1 12 6T24 6' fill='none' stroke='black' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E") 0 0/24px 12px repeat-x;
-  transition: width 0.6s var(--ease-decel);
-}
-.stop {
-  width: 4px;
-  height: 14px;
-  border-radius: 2px;
-  background: var(--primary);
-}
-.rest {
-  flex: 1;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--outline-v);
 }
 .sub {
   font-size: 13px;
