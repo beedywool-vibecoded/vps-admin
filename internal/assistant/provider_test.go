@@ -55,6 +55,7 @@ func claudeAnswers(t *testing.T) string {
 }
 
 const geminiListPayload = `{"models":[
+  {"name":"models/gemini-flash-lite-latest","displayName":"Gemini Flash Lite Latest","supportedGenerationMethods":["generateContent","countTokens"]},
   {"name":"models/gemini-3.8-flash","displayName":"Gemini 3.8 Flash","supportedGenerationMethods":["generateContent","countTokens"]},
   {"name":"models/gemini-2.5-flash","displayName":"Gemini 2.5 Flash","supportedGenerationMethods":["generateContent","countTokens"]},
   {"name":"models/gemini-2.5-pro","displayName":"Gemini 2.5 Pro","supportedActions":["generateContent"]},
@@ -134,18 +135,22 @@ func TestGeminiModelsComeFromGoogle(t *testing.T) {
 		ids = append(ids, m.ID)
 	}
 	// Image models cannot chat, and Gemma cannot call the panel's tools.
-	want := []string{"gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.5-flash-preview-09-2025", "gemini-2.5-pro"}
+	want := []string{
+		"gemini-flash-lite-latest", "gemini-3.8-flash", "gemini-2.5-flash",
+		"gemini-2.5-flash-preview-09-2025", "gemini-2.5-pro",
+	}
 	if strings.Join(ids, ",") != strings.Join(want, ",") {
 		t.Fatalf("the list should be Google's chat models, familiar ones first: %v", ids)
 	}
-	if gemini.Models[0].Hint != "Fast, Google's current default" {
+	if gemini.Models[0].Hint != "Cheapest, largest quota, the default here" {
 		t.Fatalf("the hint written for a known model should survive: %+v", gemini.Models[0])
 	}
-	if gemini.Models[2].Hint != "Preview" {
-		t.Fatalf("a preview should say so: %+v", gemini.Models[2])
+	if gemini.Models[3].Hint != "Preview" {
+		t.Fatalf("a preview should say so: %+v", gemini.Models[3])
 	}
-	if gemini.Model != "gemini-3.8-flash" {
-		t.Fatalf("the default model should stay selected: %q", gemini.Model)
+	// A key that never chose a model starts on the cheap one, not on the biggest.
+	if gemini.Model != geminiFlashLiteLatest {
+		t.Fatalf("a fresh key should start on the cheap model: %q", gemini.Model)
 	}
 	// One round trip per key change, not one per panel refresh.
 	e.Settings(ctx)
@@ -165,7 +170,7 @@ func TestGeminiWithoutKeyShowsTheCuratedList(t *testing.T) {
 		if x.ID != ProviderGemini {
 			continue
 		}
-		if len(x.Models) != len(geminiFallback) || x.Models[0].ID != "gemini-3.8-flash" {
+		if len(x.Models) != len(geminiFallback) || x.Models[0].ID != geminiFlashLiteLatest {
 			t.Fatalf("the preview list should stand in: %+v", x.Models)
 		}
 		if x.Hint != "" {
@@ -199,6 +204,45 @@ func TestGeminiRefusedKeyWhenListing(t *testing.T) {
 	}
 }
 
+// The cheap model is only a starting point: once a model is chosen, every read agrees.
+func TestGeminiKeepsTheChosenModel(t *testing.T) {
+	srv := geminiListServer(t, geminiListPayload, http.StatusOK, nil)
+	e, ctx := geminiEngine(t, "AIzaGood", srv.URL)
+	if err := e.SetModel(ctx, ProviderGemini, "gemini-2.5-pro"); err != nil {
+		t.Fatal(err)
+	}
+	p := e.Settings(ctx)
+	if p.Model != "gemini-2.5-pro" || p.Hint != "" {
+		t.Fatalf("the chosen model should stand, without a warning: %+v", p)
+	}
+	for _, x := range p.Providers {
+		if x.ID == ProviderGemini && x.Model != "gemini-2.5-pro" {
+			t.Fatalf("the provider list should agree with the choice: %q", x.Model)
+		}
+	}
+}
+
+// A key Google does not serve the lite model to still starts on something that works, and
+// is not told that a model it never picked has been retired.
+func TestGeminiStartsOnTheFirstModelWithoutTheLiteOne(t *testing.T) {
+	const without = `{"models":[
+  {"name":"models/gemini-3.8-flash","displayName":"Gemini 3.8 Flash","supportedGenerationMethods":["generateContent"]},
+  {"name":"models/gemini-2.5-pro","displayName":"Gemini 2.5 Pro","supportedGenerationMethods":["generateContent"]}
+]}`
+	srv := geminiListServer(t, without, http.StatusOK, nil)
+	e, ctx := geminiEngine(t, "AIzaGood", srv.URL)
+	p := e.Settings(ctx)
+	if p.Model != "gemini-3.8-flash" {
+		t.Fatalf("the first model this key can use should be selected: %q", p.Model)
+	}
+	if p.Hint != "" {
+		t.Fatalf("nothing was retired, the panel should stay quiet: %q", p.Hint)
+	}
+	if got := e.Store.Setting(ctx, "assistant.model."+ProviderGemini, ""); got != "" {
+		t.Fatalf("a default the person did not pick should not be recorded: %q", got)
+	}
+}
+
 // A model Google no longer offers must not brick every message: the first available one
 // takes over, in the panel and on the send path.
 func TestGeminiRetiredModelIsReplaced(t *testing.T) {
@@ -208,20 +252,20 @@ func TestGeminiRetiredModelIsReplaced(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := e.Settings(ctx)
-	if p.Model != "gemini-3.8-flash" {
+	if p.Model != geminiFlashLiteLatest {
 		t.Fatalf("a retired model should give way to one the key can use: %q", p.Model)
 	}
 	if !strings.Contains(p.Hint, "no longer offered") {
 		t.Fatalf("the panel should ask for a new choice, got %q", p.Hint)
 	}
-	if got := e.Store.Setting(ctx, "assistant.model."+ProviderGemini, ""); got != "gemini-3.8-flash" {
+	if got := e.Store.Setting(ctx, "assistant.model."+ProviderGemini, ""); got != geminiFlashLiteLatest {
 		t.Fatalf("the replacement should be recorded, the store still says %q", got)
 	}
 	target, err := e.resolve(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if target.Model != "gemini-3.8-flash" {
+	if target.Model != geminiFlashLiteLatest {
 		t.Fatalf("the conversation would still ask for the retired model: %q", target.Model)
 	}
 }

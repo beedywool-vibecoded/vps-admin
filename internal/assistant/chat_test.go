@@ -382,19 +382,19 @@ func TestGeminiRefusedModelAtSendIsReplaced(t *testing.T) {
 		t.Fatalf("the answer was lost: %s", msgs[len(msgs)-1].Content)
 	}
 	mu.Lock()
-	gotRetired, gotNext := asked[retired], asked["gemini-3.8-flash"]
+	gotRetired, gotNext := asked[retired], asked[geminiFlashLiteLatest]
 	mu.Unlock()
 	if gotRetired != 1 || gotNext != 1 {
 		t.Fatalf("want one refused attempt and one accepted one, got %v", asked)
 	}
-	if got := st.Setting(ctx, "assistant.model."+ProviderGemini, ""); got != "gemini-3.8-flash" {
+	if got := st.Setting(ctx, "assistant.model."+ProviderGemini, ""); got != geminiFlashLiteLatest {
 		t.Fatalf("the switch should be recorded, the store says %q", got)
 	}
 	if !e.retiredGemini(ctx, "AIzaGood")[retired] {
 		t.Fatal("the refused name should be remembered for this key")
 	}
 	p := e.Settings(ctx)
-	if p.Model != "gemini-3.8-flash" || p.Hint != "" {
+	if p.Model != geminiFlashLiteLatest || p.Hint != "" {
 		t.Fatalf("the panel should agree with the message path: %+v", p)
 	}
 	for _, x := range p.Providers {

@@ -94,10 +94,16 @@ var claudeModels = []Model{
 // from models.list (see geminiModelsFor). Google limits a retired family to keys that
 // already used it, so these are the names it serves to a key made today.
 var geminiFallback = []Model{
-	{ID: "gemini-3.8-flash", Label: "Gemini 3.8 Flash", Hint: "Fast, Google's current default"},
-	{ID: "gemini-3.5-flash-lite", Label: "Gemini 3.5 Flash Lite", Hint: "Cheapest, largest quota"},
+	{ID: geminiFlashLiteLatest, Label: "Gemini Flash Lite Latest", Hint: "Cheapest, largest quota, the default here"},
+	{ID: "gemini-3.8-flash", Label: "Gemini 3.8 Flash", Hint: "Fast, more headroom on hard questions"},
+	{ID: "gemini-3.5-flash-lite", Label: "Gemini 3.5 Flash Lite", Hint: "Older Flash Lite, for keys that still serve it"},
 	{ID: "gemini-4-argon", Label: "Gemini 4 Argon", Hint: "Deepest reasoning, paid tier only"},
 }
+
+// geminiFlashLiteLatest is the model a key starts on: this panel watches a server and
+// answers questions about it, which the cheapest model of the free tier does well, and the
+// alias follows Google's own updates. A name the person picks is stored and wins from then on.
+const geminiFlashLiteLatest = "gemini-flash-lite-latest"
 
 var modelRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}$`)
 
@@ -135,19 +141,30 @@ func (e *Engine) Providers(ctx context.Context) []Provider {
 	list[1].Ready = list[1].KeyHint != ""
 	// Which models the key can use is Google's answer, not ours; the curated names only
 	// stand in before a key exists or when Google cannot be reached.
+	saved := e.Store.Setting(ctx, "assistant.model."+ProviderGemini, "")
 	models, live, modelHint := e.geminiModelsFor(ctx)
 	list[1].Models, list[1].Hint = models, modelHint
 	switch {
 	case !list[1].Ready:
 		// Nothing connected yet: the preview names are what the free key will offer.
 		list[1].Hint = ""
-	case live && firstModel(models, list[1].Model) != list[1].Model:
+	case saved == "":
+		// Nothing was ever chosen: start on the cheap model, or on the first one this key
+		// may use when Google does not serve that name to it. Nothing is recorded, so a
+		// later pick, or a key that gains the model, takes over at once.
+		list[1].Model = firstModel(models, geminiFlashLiteLatest)
+	case !live:
+		// Google did not answer the list: the saved name stays, the preview only fills the menu.
+		list[1].Model = saved
+	case findModel(models, saved) == nil:
 		// Google stopped offering the saved model to this key: the first one takes over,
 		// and the panel asks for a choice instead of failing every message. The choice is
 		// recorded, so a message sent before the panel is opened uses it too.
 		list[1].Model = firstModel(models, "")
 		list[1].Hint = "The model that was saved is no longer offered to this key. Pick one below."
 		e.Store.SetSetting(ctx, "assistant.model."+ProviderGemini, list[1].Model)
+	default:
+		list[1].Model = saved
 	}
 
 	// Claude Code needs the binary as well as a token, and says which one is missing.
@@ -520,7 +537,7 @@ func (e *Engine) model(ctx context.Context, id string) string {
 	def := ""
 	switch id {
 	case ProviderGemini:
-		def = geminiFallback[0].ID
+		def = geminiFlashLiteLatest
 	case ProviderClaudeCode:
 		def = "sonnet"
 	}
