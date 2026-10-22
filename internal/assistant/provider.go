@@ -164,6 +164,11 @@ func (e *Engine) Providers(ctx context.Context) []Provider {
 	}
 	for i := range list {
 		list[i].Active = list[i].ID == active
+		// A provider with nothing to offer still sends a list, never null: the panel draws
+		// the models as an array, and a stopped Ollama used to hand it null.
+		if list[i].Models == nil {
+			list[i].Models = []Model{}
+		}
 	}
 	return list
 }

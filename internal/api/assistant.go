@@ -14,7 +14,7 @@ import (
 
 func (s *Server) assistantSettings(w http.ResponseWriter, r *http.Request) {
 	st := s.Assistant.Settings(r.Context())
-	var models []assistant.Model
+	models := []assistant.Model{}
 	for _, p := range st.Providers {
 		if p.ID == st.Provider {
 			models = p.Models

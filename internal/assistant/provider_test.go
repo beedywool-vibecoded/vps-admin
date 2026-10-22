@@ -299,6 +299,21 @@ func TestOllamaDownKeepsTheInstallHint(t *testing.T) {
 	}
 }
 
+// The panel draws a provider's models as a list. A stopped Ollama used to hand it null,
+// which threw while the settings were drawn and took the whole card with it.
+func TestAProviderWithNoModelsSendsAnArray(t *testing.T) {
+	e := testEngine(t)
+	ctx := context.Background()
+	e.Store.SetSetting(ctx, ollamaURLKey, "http://127.0.0.1:1")
+	body, err := json.Marshal(e.Settings(ctx))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), `"models":null`) {
+		t.Fatalf("a provider with no models must send [], not null: %s", body)
+	}
+}
+
 func TestSetOllamaURLChecksTheServer(t *testing.T) {
 	srv := tagsServer(t, `{"models":[]}`)
 	e := testEngine(t)

@@ -261,8 +261,10 @@ const effort = computed({
   get: () => settings.value?.effort ?? 'high',
   set: (v) => setOption({ effort: v }),
 })
+// A provider with nothing to list, or an agent that answers without the field, must leave
+// the menu empty rather than throw: a render error took the whole settings card with it.
 const modelOptions = computed(() =>
-  (active.value?.models ?? models.value).map((m) => ({ value: m.id, label: m.label, hint: m.hint })),
+  (active.value?.models ?? models.value ?? []).map((m) => ({ value: m.id, label: m.label, hint: m.hint })),
 )
 const EFFORTS = [
   { value: 'low', label: 'Low', hint: 'Quick answers, lowest cost' },
