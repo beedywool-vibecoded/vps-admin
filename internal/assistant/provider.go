@@ -96,7 +96,7 @@ var claudeModels = []Model{
 var geminiFallback = []Model{
 	{ID: "gemini-3.8-flash", Label: "Gemini 3.8 Flash", Hint: "Fast, Google's current default"},
 	{ID: "gemini-3.5-flash-lite", Label: "Gemini 3.5 Flash Lite", Hint: "Cheapest, largest quota"},
-	{ID: "gemini-4-argon", Label: "Gemini 4 Argon", Hint: "Best reasoning, smaller quota"},
+	{ID: "gemini-4-argon", Label: "Gemini 4 Argon", Hint: "Deepest reasoning, paid tier only"},
 }
 
 var modelRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}$`)
