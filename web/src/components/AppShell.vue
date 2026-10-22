@@ -20,6 +20,7 @@ const NAV: { to: string; label: string; icon: IconName; mobile: boolean }[] = [
   { to: '/', label: 'Overview', icon: 'overview', mobile: true },
   { to: '/containers', label: 'Containers', icon: 'containers', mobile: true },
   { to: '/services', label: 'Services', icon: 'services', mobile: false },
+  { to: '/proxy', label: 'Proxy', icon: 'globe', mobile: false },
   { to: '/security', label: 'Security', icon: 'security', mobile: false },
   { to: '/apps', label: 'Apps', icon: 'apps', mobile: true },
   { to: '/assistant', label: 'Assistant', icon: 'assistant', mobile: true },
@@ -135,6 +136,9 @@ onBeforeUnmount(() => {
   gap: 6px;
   padding: 20px 0;
   border-right: 1px solid var(--sch);
+  /* Ten sections are taller than a short window: the rail scrolls, the page does not. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .logo {
   margin-bottom: 18px;

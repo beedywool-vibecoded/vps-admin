@@ -83,6 +83,29 @@ export interface Security {
   checked: string
 }
 
+/** One domain the reverse proxy publishes, and where it sends traffic. */
+export interface ProxySite {
+  domains: string[]
+  /** Upstream it forwards to, like 127.0.0.1:8080. Empty for files or a redirect. */
+  target: string
+  file: string
+  /** Written by the panel, rewritten on every deploy. */
+  managed: boolean
+  /** App id of a managed site; empty when the app is gone. */
+  id: string
+  vpnOnly: boolean
+  scheme: 'http' | 'https'
+}
+
+export interface ProxyReport {
+  /** caddy, nginx, or empty when neither answers. */
+  engine: string
+  root: string
+  sites: ProxySite[]
+  /** Config files that exist but could not be read. */
+  unreadable: string[]
+}
+
 export interface PortBinding {
   ip?: string
   privatePort: number
@@ -454,6 +477,7 @@ export const api = {
     request<{ logs: string }>('GET', `/api/services/${encodeURIComponent(name)}/logs?lines=${lines}`),
 
   security: (refresh = false) => request<Security>('GET', `/api/security${refresh ? '?refresh=1' : ''}`),
+  proxy: () => request<ProxyReport>('GET', '/api/proxy'),
 
   containers: () => request<{ containers: Container[] }>('GET', '/api/docker/containers'),
   containerStats: () => request<{ stats: ContainerStats[] }>('GET', '/api/docker/stats'),

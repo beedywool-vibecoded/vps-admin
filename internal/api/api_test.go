@@ -1,8 +1,11 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -42,5 +45,54 @@ func TestCSPAllowsGitHubForm(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
 	if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "form-action 'self' https://github.com") {
 		t.Fatalf("CSP blocks the GitHub App form: %s", csp)
+	}
+}
+
+// The Proxy page is the panel's own view of the reverse proxy: it must come from the
+// configuration, with each domain's upstream.
+func TestProxySitesReadsTheConfig(t *testing.T) {
+	cfg, err := config.Load("/nonexistent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	cfg.CaddySitesDir = filepath.Join(root, "etc/caddy/vps-admin-apps")
+	cfg.NginxSitesDir = filepath.Join(root, "etc/nginx/vps-admin-apps")
+	if err := os.MkdirAll(cfg.CaddySitesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "etc/caddy/Caddyfile"), []byte("import vps-admin-apps/*.caddy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snippet := "blog.example.com {\n\treverse_proxy 127.0.0.1:8080\n}\n"
+	if err := os.WriteFile(filepath.Join(cfg.CaddySitesDir, "blog.caddy"), []byte(snippet), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{Cfg: cfg}
+	rec := httptest.NewRecorder()
+	s.proxySites(rec, httptest.NewRequest("GET", "/api/proxy", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var rep struct {
+		Engine string
+		Root   string
+		Sites  []struct {
+			Domains []string
+			Target  string
+			Managed bool
+			ID      string
+		}
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.Engine != "caddy" || len(rep.Sites) != 1 {
+		t.Fatalf("report = %+v", rep)
+	}
+	site := rep.Sites[0]
+	if len(site.Domains) != 1 || site.Domains[0] != "blog.example.com" || site.Target != "127.0.0.1:8080" || !site.Managed || site.ID != "blog" {
+		t.Fatalf("site = %+v", site)
 	}
 }
