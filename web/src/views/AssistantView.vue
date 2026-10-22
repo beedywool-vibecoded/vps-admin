@@ -1059,6 +1059,14 @@ onBeforeUnmount(() => {
   place-items: center;
   flex-shrink: 0;
 }
+/* An empty composer leaves the button disabled, and the half opacity every disabled button
+   gets in the panel washed the arrow into its own circle (3.1:1). The muted pair keeps the
+   shape and still reads as not ready yet. */
+.send:disabled {
+  opacity: 1;
+  background: var(--sch);
+  color: var(--on-sv);
+}
 @media (min-width: 1001px) {
   :global(html.assistant-page) {
     overflow: hidden;

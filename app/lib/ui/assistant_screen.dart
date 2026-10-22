@@ -410,11 +410,13 @@ class _ChatScreenState extends State<ChatScreen> {
                   const SizedBox(width: 8),
                   state == 'running'
                       ? IconButton.filled(
+                          style: composerButton(cs),
                           tooltip: 'Stop',
                           onPressed: () => api.stopConversation(id!),
                           icon: const Icon(Icons.stop),
                         )
                       : IconButton.filled(
+                          style: composerButton(cs),
                           tooltip: 'Send',
                           onPressed: _sending ? null : _send,
                           icon: const Icon(Icons.arrow_upward),
@@ -428,6 +430,17 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 }
+
+/// The composer's action: filled with the primary colour, and muted rather than faded to
+/// almost nothing while it cannot be pressed, so the arrow keeps its contrast against the
+/// circle. Material dims a disabled filled button to 12% of the surface and 38% of the
+/// text colour, which reads as a smudge on a phone.
+ButtonStyle composerButton(ColorScheme cs) => IconButton.styleFrom(
+  backgroundColor: cs.primary,
+  foregroundColor: cs.onPrimary,
+  disabledBackgroundColor: cs.surfaceContainerHighest,
+  disabledForegroundColor: cs.onSurfaceVariant,
+);
 
 /// Assistant text: paragraphs, with ``` blocks shown as code.
 class _Reply extends StatelessWidget {
