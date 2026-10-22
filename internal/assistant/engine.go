@@ -460,7 +460,7 @@ func (e *Engine) loop(convID string) {
 			e.fail(ctx, convID, err)
 			return
 		}
-		t, err := e.answer(ctx, convID, tgt)
+		t, err := e.answerStep(ctx, convID, &tgt)
 		if err != nil {
 			if errors.Is(ctx.Err(), context.Canceled) {
 				e.setState(context.Background(), convID, "idle", "stopped")
@@ -572,7 +572,27 @@ func (e *Engine) claudeLoop(ctx context.Context, convID string, tgt target) {
 		return
 	}
 	e.setState(ctx, convID, "idle", "")
-} // answer asks the active provider for one step, streaming text and reasoning as it
+} // answerStep asks the active provider for one step. When Google refuses the model itself
+// (a family it has retired, or closed to a key made today) the next model it does serve
+// takes over and the step is sent again: a retired name must not end the conversation
+// the administrator asked a question in. Two swaps are enough for a catalogue that has
+// moved on twice, and they keep a refused key from being retried forever.
+func (e *Engine) answerStep(ctx context.Context, convID string, tgt *target) (*turn, error) {
+	for attempt := 0; ; attempt++ {
+		t, err := e.answer(ctx, convID, *tgt)
+		if err == nil || tgt.ID != ProviderGemini || !geminiModelGone(err) || attempt >= 2 {
+			return t, err
+		}
+		next, ok := e.geminiNextModel(ctx, tgt.Model)
+		if !ok {
+			return t, err
+		}
+		slog.Warn("gemini model switched", "from", tgt.Model, "to", next)
+		tgt.Model = next
+	}
+}
+
+// answer asks the active provider for one step, streaming text and reasoning as it
 // arrives.
 func (e *Engine) answer(ctx context.Context, convID string, tgt target) (*turn, error) {
 	history, err := e.Store.Messages(ctx, convID)
@@ -628,7 +648,7 @@ func (e *Engine) resolve(ctx context.Context) (target, error) {
 		// The panel already replaced a model Google no longer offers; a message sent
 		// before that refresh must not fail on the retired name either. Only the cached
 		// list is used: the first token must not wait on a round trip.
-		if models, live := e.lastGeminiModels(t.Key); live {
+		if models, live := e.lastGeminiModels(ctx, t.Key); live {
 			t.Model = firstModel(models, t.Model)
 		}
 	}

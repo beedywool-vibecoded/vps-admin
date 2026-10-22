@@ -403,15 +403,52 @@ func (e *Engine) chat(ctx context.Context, id, model, key string, history []stor
 	return t, nil
 }
 
-// errorText turns a provider's error body into one readable sentence.
-func errorText(id string, status int, body []byte) string {
-	var payload struct {
-		Error struct {
+// errorBodyMessage reads the message out of a provider's error body. The native APIs
+// wrap it in an object, Google's OpenAI-compatible door in an array, so both are read
+// instead of showing the JSON to the administrator.
+func errorBodyMessage(body []byte) string {
+	var one struct {
+		Error *struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	json.Unmarshal(body, &payload)
-	msg := strings.TrimSpace(payload.Error.Message)
+	if json.Unmarshal(body, &one) == nil && one.Error != nil && one.Error.Message != "" {
+		return strings.TrimSpace(one.Error.Message)
+	}
+	var many []struct {
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &many) == nil {
+		for _, m := range many {
+			if m.Error != nil && m.Error.Message != "" {
+				return strings.TrimSpace(m.Error.Message)
+			}
+		}
+	}
+	return ""
+}
+
+// geminiModelGone reports whether Google refused the model itself rather than the key,
+// the quota or the request: a family it has retired, or closed to keys like this one.
+func geminiModelGone(err error) bool {
+	var pe *providerError
+	if !errors.As(err, &pe) {
+		return false
+	}
+	if pe.Status == http.StatusNotFound {
+		return true
+	}
+	low := strings.ToLower(pe.Msg)
+	return pe.Status == http.StatusBadRequest &&
+		(strings.Contains(low, "no longer available") || strings.Contains(low, "not found") ||
+			strings.Contains(low, "unsupported model") || strings.Contains(low, "is not supported"))
+}
+
+// errorText turns a provider's error body into one readable sentence.
+func errorText(id string, status int, body []byte) string {
+	msg := errorBodyMessage(body)
 	if msg == "" {
 		msg = strings.TrimSpace(string(body))
 		if len(msg) > 300 {
@@ -427,6 +464,9 @@ func errorText(id string, status int, body []byte) string {
 		}
 		return "The model is busy (rate limited). Try again in a moment."
 	case http.StatusNotFound:
+		if id == ProviderGemini {
+			return "Google does not serve this model to this key: " + msg
+		}
 		return id + " does not know this model: " + msg
 	}
 	if msg == "" {

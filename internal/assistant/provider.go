@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -42,6 +43,9 @@ const (
 	ollamaURLKey = "assistant.ollama_url"
 	geminiKey    = "assistant.key.gemini"
 	claudeKey    = "assistant.key.claude-code"
+	// geminiRetiredKey holds the model names Google refused for a key, so the panel stops
+	// offering them and no message asks for one again.
+	geminiRetiredKey = "assistant.gemini.retired"
 )
 
 const ollamaInstall = `docker run -d --name ollama --restart unless-stopped \
@@ -86,12 +90,13 @@ var claudeModels = []Model{
 }
 
 // geminiFallback is shown before a key is saved, and whenever Google cannot answer the
-// list of what that key may use. It is a preview of the free tier, not the truth: the
-// real list comes from models.list (see geminiModelsFor).
+// list of what that key may use. It is a preview, not the truth: the real list comes
+// from models.list (see geminiModelsFor). Google limits a retired family to keys that
+// already used it, so these are the names it serves to a key made today.
 var geminiFallback = []Model{
-	{ID: "gemini-2.5-flash", Label: "Gemini 2.5 Flash", Hint: "Fast, balanced free quota"},
-	{ID: "gemini-2.5-flash-lite", Label: "Gemini 2.5 Flash Lite", Hint: "Largest free quota"},
-	{ID: "gemini-2.5-pro", Label: "Gemini 2.5 Pro", Hint: "Best reasoning, smaller quota"},
+	{ID: "gemini-3.8-flash", Label: "Gemini 3.8 Flash", Hint: "Fast, Google's current default"},
+	{ID: "gemini-3.5-flash-lite", Label: "Gemini 3.5 Flash Lite", Hint: "Cheapest, largest quota"},
+	{ID: "gemini-4-argon", Label: "Gemini 4 Argon", Hint: "Best reasoning, smaller quota"},
 }
 
 var modelRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}$`)
@@ -204,7 +209,7 @@ func (e *Engine) geminiModelsFor(ctx context.Context) (models []Model, live bool
 		if time.Since(e.gemAt) < ttl {
 			models, live, hint := e.gemList, e.gemLive, e.gemHint
 			e.gmu.Unlock()
-			return models, live, hint
+			return withoutRetired(models, e.retiredGemini(ctx, key)), live, hint
 		}
 	}
 	e.gmu.Unlock()
@@ -212,10 +217,98 @@ func (e *Engine) geminiModelsFor(ctx context.Context) (models []Model, live bool
 	if !live {
 		models = geminiFallback
 	}
+	models = withoutRetired(models, e.retiredGemini(ctx, key))
 	e.gmu.Lock()
 	e.gemKey, e.gemAt, e.gemList, e.gemLive, e.gemHint = tag, time.Now(), models, live, hint
 	e.gmu.Unlock()
 	return models, live, hint
+}
+
+// retiredGemini is what Google refused for this key, recorded as "<key tag>/<model>" so
+// that a refusal is remembered for the key that got it: Google serves some families to
+// the keys that already used them and to no others.
+func (e *Engine) retiredGemini(ctx context.Context, key string) map[string]bool {
+	out := map[string]bool{}
+	tag := keyTag(key)
+	if tag == "" {
+		return out
+	}
+	for _, entry := range strings.Split(e.Store.Setting(ctx, geminiRetiredKey, ""), ",") {
+		if t, id, ok := strings.Cut(strings.TrimSpace(entry), "/"); ok && t == tag && id != "" {
+			out[id] = true
+		}
+	}
+	return out
+}
+
+// retireGemini records that Google does not serve this model to this key.
+func (e *Engine) retireGemini(ctx context.Context, key, model string) {
+	tag := keyTag(key)
+	if tag == "" || model == "" {
+		return
+	}
+	retired := e.retiredGemini(ctx, key)
+	if retired[model] {
+		return
+	}
+	retired[model] = true
+	entries := make([]string, 0, len(retired))
+	for id := range retired {
+		entries = append(entries, tag+"/"+id)
+	}
+	sort.Strings(entries)
+	if err := e.Store.SetSetting(ctx, geminiRetiredKey, strings.Join(entries, ",")); err != nil {
+		slog.Warn("gemini retired model not recorded", "model", model, "err", err)
+	}
+}
+
+// withoutRetired drops what Google refused for this key.
+func withoutRetired(models []Model, retired map[string]bool) []Model {
+	if len(retired) == 0 {
+		return models
+	}
+	out := make([]Model, 0, len(models))
+	for _, m := range models {
+		if !retired[m.ID] {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// geminiNextModel retires the model Google just refused and returns the next one it
+// serves this key, recorded as the choice. Google's catalogue still lists a family it
+// has closed to new keys, so the cached list is not trusted here: the refusal itself is
+// the only proof that the name cannot be used.
+func (e *Engine) geminiNextModel(ctx context.Context, failed string) (string, bool) {
+	key := e.keyFor(ctx, ProviderGemini)
+	if key == "" {
+		return "", false
+	}
+	e.retireGemini(ctx, key, failed)
+	retired := e.retiredGemini(ctx, key)
+	models, live, hint := e.fetchGeminiModels(ctx, key)
+	if !live {
+		if cached, ok := e.lastGeminiModels(ctx, key); ok {
+			models = cached
+		} else {
+			models = geminiFallback
+		}
+	}
+	models = withoutRetired(models, retired)
+	if live {
+		e.gmu.Lock()
+		e.gemKey, e.gemAt, e.gemList, e.gemLive, e.gemHint = keyTag(key), time.Now(), models, true, hint
+		e.gmu.Unlock()
+	}
+	next := firstModel(models, "")
+	if next == "" {
+		return "", false
+	}
+	if err := e.Store.SetSetting(ctx, "assistant.model."+ProviderGemini, next); err != nil {
+		slog.Warn("gemini model switch not recorded", "model", next, "err", err)
+	}
+	return next, true
 }
 
 func keyTag(key string) string {
@@ -225,16 +318,18 @@ func keyTag(key string) string {
 
 // lastGeminiModels is the list from the previous fetch, without asking Google again:
 // sending a message must not wait on a round trip that may take seconds.
-func (e *Engine) lastGeminiModels(key string) ([]Model, bool) {
+func (e *Engine) lastGeminiModels(ctx context.Context, key string) ([]Model, bool) {
 	if key == "" {
 		return nil, false
 	}
 	e.gmu.Lock()
-	defer e.gmu.Unlock()
 	if keyTag(key) != e.gemKey || !e.gemLive || time.Since(e.gemAt) > 10*time.Minute {
+		e.gmu.Unlock()
 		return nil, false
 	}
-	return e.gemList, true
+	models := e.gemList
+	e.gmu.Unlock()
+	return withoutRetired(models, e.retiredGemini(ctx, key)), true
 }
 
 // fetchGeminiModels asks Google which models this key may use. Listing needs the key:
@@ -363,13 +458,7 @@ func chatCapable(name string) bool {
 
 // geminiListError turns a refused models.list into one sentence the panel can show.
 func geminiListError(status int, body []byte) string {
-	var payload struct {
-		Error struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	json.Unmarshal(body, &payload)
-	msg := strings.TrimSpace(payload.Error.Message)
+	msg := errorBodyMessage(body)
 	switch status {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return "Gemini refused this API key when listing models. Save the key again."
@@ -426,7 +515,7 @@ func (e *Engine) model(ctx context.Context, id string) string {
 	def := ""
 	switch id {
 	case ProviderGemini:
-		def = "gemini-2.5-flash"
+		def = geminiFallback[0].ID
 	case ProviderClaudeCode:
 		def = "sonnet"
 	}

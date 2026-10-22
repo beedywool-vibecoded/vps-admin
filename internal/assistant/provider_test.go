@@ -55,6 +55,7 @@ func claudeAnswers(t *testing.T) string {
 }
 
 const geminiListPayload = `{"models":[
+  {"name":"models/gemini-3.8-flash","displayName":"Gemini 3.8 Flash","supportedGenerationMethods":["generateContent","countTokens"]},
   {"name":"models/gemini-2.5-flash","displayName":"Gemini 2.5 Flash","supportedGenerationMethods":["generateContent","countTokens"]},
   {"name":"models/gemini-2.5-pro","displayName":"Gemini 2.5 Pro","supportedActions":["generateContent"]},
   {"name":"models/gemini-2.5-flash-preview-09-2025","displayName":"Gemini 2.5 Flash Preview","supportedGenerationMethods":["generateContent"]},
@@ -133,17 +134,17 @@ func TestGeminiModelsComeFromGoogle(t *testing.T) {
 		ids = append(ids, m.ID)
 	}
 	// Image models cannot chat, and Gemma cannot call the panel's tools.
-	want := []string{"gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-preview-09-2025"}
+	want := []string{"gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.5-flash-preview-09-2025", "gemini-2.5-pro"}
 	if strings.Join(ids, ",") != strings.Join(want, ",") {
 		t.Fatalf("the list should be Google's chat models, familiar ones first: %v", ids)
 	}
-	if gemini.Models[0].Hint != "Fast, balanced free quota" {
+	if gemini.Models[0].Hint != "Fast, Google's current default" {
 		t.Fatalf("the hint written for a known model should survive: %+v", gemini.Models[0])
 	}
 	if gemini.Models[2].Hint != "Preview" {
 		t.Fatalf("a preview should say so: %+v", gemini.Models[2])
 	}
-	if gemini.Model != "gemini-2.5-flash" {
+	if gemini.Model != "gemini-3.8-flash" {
 		t.Fatalf("the default model should stay selected: %q", gemini.Model)
 	}
 	// One round trip per key change, not one per panel refresh.
@@ -164,7 +165,7 @@ func TestGeminiWithoutKeyShowsTheCuratedList(t *testing.T) {
 		if x.ID != ProviderGemini {
 			continue
 		}
-		if len(x.Models) != len(geminiFallback) || x.Models[0].ID != "gemini-2.5-flash" {
+		if len(x.Models) != len(geminiFallback) || x.Models[0].ID != "gemini-3.8-flash" {
 			t.Fatalf("the preview list should stand in: %+v", x.Models)
 		}
 		if x.Hint != "" {
@@ -207,20 +208,20 @@ func TestGeminiRetiredModelIsReplaced(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := e.Settings(ctx)
-	if p.Model != "gemini-2.5-flash" {
+	if p.Model != "gemini-3.8-flash" {
 		t.Fatalf("a retired model should give way to one the key can use: %q", p.Model)
 	}
 	if !strings.Contains(p.Hint, "no longer offered") {
 		t.Fatalf("the panel should ask for a new choice, got %q", p.Hint)
 	}
-	if got := e.Store.Setting(ctx, "assistant.model."+ProviderGemini, ""); got != "gemini-2.5-flash" {
+	if got := e.Store.Setting(ctx, "assistant.model."+ProviderGemini, ""); got != "gemini-3.8-flash" {
 		t.Fatalf("the replacement should be recorded, the store still says %q", got)
 	}
 	target, err := e.resolve(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if target.Model != "gemini-2.5-flash" {
+	if target.Model != "gemini-3.8-flash" {
 		t.Fatalf("the conversation would still ask for the retired model: %q", target.Model)
 	}
 }
