@@ -117,21 +117,34 @@ async function submit() {
   }
 }
 
-// The repository list scrolls on its own, so the card stops where the window does instead of
-// running past the fold and pushing the page: it gets the height left below its top edge.
+// Both cards scroll on their own, so each stops where the window does instead of running past
+// the fold and pushing the page: it gets the height left below its own top edge.
 const sourceCard = ref<HTMLElement | null>(null)
-const cardMax = ref(0)
-function fitCard() {
-  const el = sourceCard.value
-  if (!el) return
+const configCard = ref<HTMLElement | null>(null)
+const sourceMax = ref(0)
+const configMax = ref(0)
+function capFor(el: HTMLElement | null, floor: number) {
+  if (!el) return 0
   // The page keeps its own bottom padding, which is what the window shows below the card.
   const shell = el.closest('.main-col')
   const below = shell ? parseFloat(getComputedStyle(shell).paddingBottom) || 0 : 24
-  cardMax.value = Math.max(240, Math.round(window.innerHeight - el.getBoundingClientRect().top - below))
+  const avail = Math.round(window.innerHeight - el.getBoundingClientRect().top - below)
+  // A scroll box too short to show a field is worse than the page scrolling: stacked under
+  // the other card, or on a window with only a sliver left, the card keeps its own height.
+  return avail < floor ? 0 : avail
 }
+function fitCards() {
+  sourceMax.value = capFor(sourceCard.value, 240)
+  configMax.value = capFor(configCard.value, 300)
+}
+// Picking a repository adds the settings card, which is another card to fit.
+watch(repo, async () => {
+  await nextTick()
+  fitCards()
+})
 
 onMounted(async () => {
-  window.addEventListener('resize', fitCard)
+  window.addEventListener('resize', fitCards)
   try {
     gh.value = await api.github()
     if (!gh.value.connected) return router.replace('/apps')
@@ -141,10 +154,10 @@ onMounted(async () => {
   } finally {
     loadingRepos.value = false
     await nextTick()
-    fitCard()
+    fitCards()
   }
 })
-onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
+onBeforeUnmount(() => window.removeEventListener('resize', fitCards))
 </script>
 
 <template>
@@ -161,7 +174,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
     </ol>
 
     <div class="cols">
-      <section ref="sourceCard" class="card source" :style="{ maxHeight: cardMax ? `${cardMax}px` : undefined }">
+      <section ref="sourceCard" class="card source" :style="{ maxHeight: sourceMax ? `${sourceMax}px` : undefined }">
         <h2>Pick a repository</h2>
         <label class="field search">
           <Icon name="search" :size="20" />
@@ -194,7 +207,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
         </div>
       </section>
 
-      <section v-if="repo" class="card config">
+      <section v-if="repo" ref="configCard" class="card config" :style="{ maxHeight: configMax ? `${configMax}px` : undefined }">
         <div class="cfg-head">
           <M3Shape kind="cookie" :size="44" fill="var(--pc)" />
           <div class="grow">
@@ -374,6 +387,13 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
   display: flex;
   flex-direction: column;
   gap: 18px;
+  /* The settings are taller than the window long before the page is: they scroll here.
+     The dropdowns of the fields are drawn on the body, so nothing gets clipped. */
+  overflow: auto;
+}
+/* Fields keep their own height while the card scrolls, instead of being squashed to fit. */
+.config > * {
+  flex-shrink: 0;
 }
 .cfg-head {
   display: flex;
