@@ -24,9 +24,182 @@ func testEngine(t *testing.T) *Engine {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := &Engine{Deps: Deps{Store: st}, Box: box}
+	// Nothing in these tests should reach Google: the model list points at a closed port
+	// unless a test gives it a server.
+	e := &Engine{Deps: Deps{Store: st}, Box: box, GeminiModelsURL: "http://127.0.0.1:1"}
 	e.Init(context.Background())
 	return e
+}
+
+const geminiListPayload = `{"models":[
+  {"name":"models/gemini-2.5-flash","displayName":"Gemini 2.5 Flash","supportedGenerationMethods":["generateContent","countTokens"]},
+  {"name":"models/gemini-2.5-pro","displayName":"Gemini 2.5 Pro","supportedActions":["generateContent"]},
+  {"name":"models/gemini-2.5-flash-preview-09-2025","displayName":"Gemini 2.5 Flash Preview","supportedGenerationMethods":["generateContent"]},
+  {"name":"models/gemini-embedding-001","displayName":"Gemini Embedding","supportedGenerationMethods":["embedContent"]},
+  {"name":"models/gemini-2.5-flash-image","displayName":"Gemini 2.5 Flash Image","supportedGenerationMethods":["generateContent"]},
+  {"name":"models/imagen-4.0-generate-001","displayName":"Imagen 4","supportedGenerationMethods":["predict"]},
+  {"name":"models/gemma-3-27b-it","displayName":"Gemma 3 27B","supportedGenerationMethods":["generateContent"]}
+]}`
+
+// geminiListServer stands in for generativelanguage.googleapis.com. It refuses anything
+// but the expected key, counts the calls, and fails the test if the key is sent in the
+// URL instead of the header.
+func geminiListServer(t *testing.T, payload string, status int, calls *int) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Query().Get("key") != "" {
+			t.Errorf("the API key travelled in the URL: %s", r.URL.String())
+		}
+		if r.Header.Get("x-goog-api-key") != "AIzaGood" {
+			w.WriteHeader(http.StatusBadRequest)
+			io.WriteString(w, `{"error":{"code":400,"message":"API key not valid. Please pass a valid API key."}}`)
+			return
+		}
+		if calls != nil {
+			*calls++
+		}
+		if status != http.StatusOK {
+			w.WriteHeader(status)
+			io.WriteString(w, `{"error":{"code":500,"message":"backend error"}}`)
+			return
+		}
+		io.WriteString(w, payload)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func geminiEngine(t *testing.T, key, url string) (*Engine, context.Context) {
+	t.Helper()
+	e := testEngine(t)
+	e.GeminiModelsURL = url
+	ctx := context.Background()
+	if err := e.Store.SetSetting(ctx, providerName, ProviderGemini); err != nil {
+		t.Fatal(err)
+	}
+	if key != "" {
+		if err := e.Store.SetSetting(ctx, geminiKey, e.Box.Seal(key)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return e, ctx
+}
+
+// What the panel offers is what Google says this key can use, not a list compiled into
+// the binary months ago.
+func TestGeminiModelsComeFromGoogle(t *testing.T) {
+	calls := 0
+	srv := geminiListServer(t, geminiListPayload, http.StatusOK, &calls)
+	e, ctx := geminiEngine(t, "AIzaGood", srv.URL)
+	p := e.Settings(ctx)
+	if !p.Configured || p.Provider != ProviderGemini {
+		t.Fatalf("a saved key should read as connected: %+v", p)
+	}
+	var gemini Provider
+	for _, x := range p.Providers {
+		if x.ID == ProviderGemini {
+			gemini = x
+		}
+	}
+	var ids []string
+	for _, m := range gemini.Models {
+		ids = append(ids, m.ID)
+	}
+	// Image models cannot chat, and Gemma cannot call the panel's tools.
+	want := []string{"gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-preview-09-2025"}
+	if strings.Join(ids, ",") != strings.Join(want, ",") {
+		t.Fatalf("the list should be Google's chat models, familiar ones first: %v", ids)
+	}
+	if gemini.Models[0].Hint != "Fast, balanced free quota" {
+		t.Fatalf("the hint written for a known model should survive: %+v", gemini.Models[0])
+	}
+	if gemini.Models[2].Hint != "Preview" {
+		t.Fatalf("a preview should say so: %+v", gemini.Models[2])
+	}
+	if gemini.Model != "gemini-2.5-flash" {
+		t.Fatalf("the default model should stay selected: %q", gemini.Model)
+	}
+	// One round trip per key change, not one per panel refresh.
+	e.Settings(ctx)
+	if calls != 1 {
+		t.Fatalf("the list should be cached, Google was asked %d times", calls)
+	}
+}
+
+// Before a key exists the panel still shows what the free tier offers, and asks nobody.
+func TestGeminiWithoutKeyShowsTheCuratedList(t *testing.T) {
+	e, ctx := geminiEngine(t, "", "http://127.0.0.1:1")
+	p := e.Settings(ctx)
+	if p.Configured {
+		t.Fatalf("without a key the provider is not connected: %+v", p)
+	}
+	for _, x := range p.Providers {
+		if x.ID != ProviderGemini {
+			continue
+		}
+		if len(x.Models) != len(geminiFallback) || x.Models[0].ID != "gemini-2.5-flash" {
+			t.Fatalf("the preview list should stand in: %+v", x.Models)
+		}
+		if x.Hint != "" {
+			t.Fatalf("nothing should be wrong yet, got %q", x.Hint)
+		}
+	}
+}
+
+// Google down or unreachable leaves the panel usable: the curated names stand in and the
+// reason is shown, rather than an empty menu.
+func TestGeminiListFailureKeepsTheCuratedList(t *testing.T) {
+	srv := geminiListServer(t, "", http.StatusInternalServerError, nil)
+	e, ctx := geminiEngine(t, "AIzaGood", srv.URL)
+	p := e.Settings(ctx)
+	if !strings.Contains(p.Hint, "backend error") {
+		t.Fatalf("the panel should explain the failure, got %q", p.Hint)
+	}
+	for _, x := range p.Providers {
+		if x.ID == ProviderGemini && len(x.Models) != len(geminiFallback) {
+			t.Fatalf("the curated list should stand in: %+v", x.Models)
+		}
+	}
+}
+
+func TestGeminiRefusedKeyWhenListing(t *testing.T) {
+	srv := geminiListServer(t, geminiListPayload, http.StatusOK, nil)
+	e, ctx := geminiEngine(t, "AIzaWrong", srv.URL)
+	p := e.Settings(ctx)
+	if !strings.Contains(p.Hint, "API key") {
+		t.Fatalf("a refused key should be named as such, got %q", p.Hint)
+	}
+}
+
+// A model Google no longer offers must not brick every message: the first available one
+// takes over, in the panel and on the send path.
+func TestGeminiRetiredModelIsReplaced(t *testing.T) {
+	srv := geminiListServer(t, geminiListPayload, http.StatusOK, nil)
+	e, ctx := geminiEngine(t, "AIzaGood", srv.URL)
+	if err := e.SetModel(ctx, ProviderGemini, "gemini-1.0-pro"); err != nil {
+		t.Fatal(err)
+	}
+	p := e.Settings(ctx)
+	if p.Model != "gemini-2.5-flash" {
+		t.Fatalf("a retired model should give way to one the key can use: %q", p.Model)
+	}
+	if !strings.Contains(p.Hint, "no longer offered") {
+		t.Fatalf("the panel should ask for a new choice, got %q", p.Hint)
+	}
+	if got := e.Store.Setting(ctx, "assistant.model."+ProviderGemini, ""); got != "gemini-2.5-flash" {
+		t.Fatalf("the replacement should be recorded, the store still says %q", got)
+	}
+	target, err := e.resolve(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target.Model != "gemini-2.5-flash" {
+		t.Fatalf("the conversation would still ask for the retired model: %q", target.Model)
+	}
 }
 
 func tagsServer(t *testing.T, payload string) *httptest.Server {

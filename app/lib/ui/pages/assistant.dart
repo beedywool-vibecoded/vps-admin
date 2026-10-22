@@ -430,7 +430,8 @@ class _AssistantPageState extends State<AssistantPage> {
                           onPressed: _load,
                         ),
                       ),
-                    if (models.isNotEmpty)
+                    // Only once the provider answers: before that the list is a stand-in.
+                    if (models.isNotEmpty && configured)
                       SelectField<String>(
                         label: 'Model',
                         value: s?['model'] as String? ?? '',

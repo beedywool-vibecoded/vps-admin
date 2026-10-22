@@ -444,8 +444,10 @@ var errBadKey = errors.New("the provider rejected this key")
 // short: the panel saves the key through the same request, and a slow Google must not
 // hold that answer long enough for a reverse proxy to give up and return 502.
 func (e *Engine) checkGemini(ctx context.Context, key string) error {
+	// The model the panel will actually use, not a name hardcoded here that Google may
+	// have retired since.
 	body, _ := json.Marshal(chatRequest{
-		Model:     "gemini-2.5-flash-lite",
+		Model:     e.model(ctx, ProviderGemini),
 		Messages:  []oaMsg{{Role: "user", Content: "ping"}},
 		MaxTokens: 1,
 	})

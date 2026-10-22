@@ -2,12 +2,16 @@ package assistant
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -28,8 +32,10 @@ const (
 )
 
 const (
-	// Gemini's OpenAI-compatible endpoint and the free tier's default model.
-	geminiBase = "https://generativelanguage.googleapis.com/v1beta/openai"
+	// geminiAPI is the native API, where the model list lives; geminiBase is the
+	// OpenAI-compatible door the chat goes through.
+	geminiAPI  = "https://generativelanguage.googleapis.com/v1beta"
+	geminiBase = geminiAPI + "/openai"
 	ollamaBase = "http://127.0.0.1:11434"
 
 	providerName = "assistant.provider"
@@ -75,9 +81,10 @@ var anthropicModels = []Model{
 	{ID: "claude-fable-5-1", Label: "Claude Fable 5.1"},
 }
 
-// Gemini names are a curated list: the free tier changes often, and an unknown model
-// should read as "pick another one", not as a broken request.
-var geminiModels = []Model{
+// geminiFallback is shown before a key is saved, and whenever Google cannot answer the
+// list of what that key may use. It is a preview of the free tier, not the truth: the
+// real list comes from models.list (see geminiModelsFor).
+var geminiFallback = []Model{
 	{ID: "gemini-2.5-flash", Label: "Gemini 2.5 Flash", Hint: "Fast, balanced free quota"},
 	{ID: "gemini-2.5-flash-lite", Label: "Gemini 2.5 Flash Lite", Hint: "Largest free quota"},
 	{ID: "gemini-2.5-pro", Label: "Gemini 2.5 Pro", Hint: "Best reasoning, smaller quota"},
@@ -99,7 +106,8 @@ func (e *Engine) Providers(ctx context.Context) []Provider {
 			ID: ProviderGemini, Label: "Gemini", Kind: "openai", Badge: "online · free",
 			Note:     "Google's free tier. A key from AI Studio, no card needed.",
 			NeedsKey: true, KeyHint: hint(e.keyFor(ctx, ProviderGemini), "AIza"),
-			Models: geminiModels, Model: e.model(ctx, ProviderGemini),
+			Model:  e.model(ctx, ProviderGemini),
+			Models: geminiFallback,
 		},
 		{
 			ID: ProviderClaudeCode, Label: "Claude Code", Kind: "cli", Badge: "subscription",
@@ -116,6 +124,22 @@ func (e *Engine) Providers(ctx context.Context) []Provider {
 		list[0].Install = ollamaInstall
 	}
 	list[1].Ready = list[1].KeyHint != ""
+	// Which models the key can use is Google's answer, not ours; the curated names only
+	// stand in before a key exists or when Google cannot be reached.
+	models, live, modelHint := e.geminiModelsFor(ctx)
+	list[1].Models, list[1].Hint = models, modelHint
+	switch {
+	case !list[1].Ready:
+		// Nothing connected yet: the preview names are what the free key will offer.
+		list[1].Hint = ""
+	case live && firstModel(models, list[1].Model) != list[1].Model:
+		// Google stopped offering the saved model to this key: the first one takes over,
+		// and the panel asks for a choice instead of failing every message. The choice is
+		// recorded, so a message sent before the panel is opened uses it too.
+		list[1].Model = firstModel(models, "")
+		list[1].Hint = "The model that was saved is no longer offered to this key. Pick one below."
+		e.Store.SetSetting(ctx, "assistant.model."+ProviderGemini, list[1].Model)
+	}
 
 	// Claude Code needs the binary as well as a token, and says which one is missing.
 	_, cliVersion, cliErr := e.claudeInfo(ctx)
@@ -133,6 +157,227 @@ func (e *Engine) Providers(ctx context.Context) []Provider {
 		list[i].Active = list[i].ID == active
 	}
 	return list
+}
+
+// geminiList is one page of models.list, on the native Gemini API. Google renamed the
+// capability field once (supportedGenerationMethods, then supportedActions), so both
+// are read.
+type geminiList struct {
+	Models []struct {
+		Name                       string   `json:"name"`
+		DisplayName                string   `json:"displayName"`
+		SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
+		SupportedActions           []string `json:"supportedActions"`
+	} `json:"models"`
+	NextPageToken string `json:"nextPageToken"`
+}
+
+// geminiNotChat are models that do answer generateContent but cannot stand in for a
+// chat turn: they generate images or speech, or embed text, and would fail on the first
+// tool call. Gemini names them plainly enough to leave them out.
+var geminiNotChat = []string{
+	"embedding", "aqa", "imagen", "veo", "image", "tts", "audio", "live", "computer-use",
+}
+
+// Only the gemini family is offered: this panel works through tool calls, and the other
+// chat models Google lists (Gemma) do not do them, so they would answer once and then
+// ignore every request to look at the server.
+
+// geminiModelsFor lists the models the saved key can use. live says whether that list
+// came from Google: when it did not, the curated names are shown and hint says why.
+func (e *Engine) geminiModelsFor(ctx context.Context) (models []Model, live bool, hint string) {
+	key := e.keyFor(ctx, ProviderGemini)
+	if key == "" {
+		return geminiFallback, false, ""
+	}
+	tag := keyTag(key)
+	e.gmu.Lock()
+	if tag == e.gemKey {
+		ttl := 10 * time.Minute
+		if !e.gemLive {
+			ttl = time.Minute // a failure is retried sooner than a success
+		}
+		if time.Since(e.gemAt) < ttl {
+			models, live, hint := e.gemList, e.gemLive, e.gemHint
+			e.gmu.Unlock()
+			return models, live, hint
+		}
+	}
+	e.gmu.Unlock()
+	models, live, hint = e.fetchGeminiModels(ctx, key)
+	if !live {
+		models = geminiFallback
+	}
+	e.gmu.Lock()
+	e.gemKey, e.gemAt, e.gemList, e.gemLive, e.gemHint = tag, time.Now(), models, live, hint
+	e.gmu.Unlock()
+	return models, live, hint
+}
+
+func keyTag(key string) string {
+	sum := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(sum[:8])
+}
+
+// lastGeminiModels is the list from the previous fetch, without asking Google again:
+// sending a message must not wait on a round trip that may take seconds.
+func (e *Engine) lastGeminiModels(key string) ([]Model, bool) {
+	if key == "" {
+		return nil, false
+	}
+	e.gmu.Lock()
+	defer e.gmu.Unlock()
+	if keyTag(key) != e.gemKey || !e.gemLive || time.Since(e.gemAt) > 10*time.Minute {
+		return nil, false
+	}
+	return e.gemList, true
+}
+
+// fetchGeminiModels asks Google which models this key may use. Listing needs the key:
+// without one Google refuses, which is exactly why the curated list is the fallback.
+func (e *Engine) fetchGeminiModels(ctx context.Context, key string) ([]Model, bool, string) {
+	base := geminiAPI
+	if e.GeminiModelsURL != "" {
+		base = strings.TrimRight(e.GeminiModelsURL, "/")
+	}
+	client := &http.Client{Timeout: 4 * time.Second}
+	var found []Model
+	pageToken := ""
+	for page := 0; page < 3; page++ {
+		u := base + "/models?pageSize=1000"
+		if pageToken != "" {
+			u += "&pageToken=" + url.QueryEscape(pageToken)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return nil, false, "Gemini's model list could not be requested."
+		}
+		// The key travels in a header: a URL is written to logs and proxies.
+		req.Header.Set("x-goog-api-key", key)
+		resp, err := client.Do(req)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, false, "Gemini's model list was interrupted."
+			}
+			return nil, false, "Google did not answer the model list. Check this server's connection, then press Check again."
+		}
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return nil, false, geminiListError(resp.StatusCode, body)
+		}
+		if readErr != nil {
+			return nil, false, "Google's model list was cut short. Press Check again."
+		}
+		var list geminiList
+		if err := json.Unmarshal(body, &list); err != nil {
+			return nil, false, "Google answered the model list in a shape this panel does not know."
+		}
+		for _, m := range list.Models {
+			caps := append(m.SupportedGenerationMethods, m.SupportedActions...)
+			if !hasString(caps, "generateContent") || !chatCapable(m.Name) {
+				continue
+			}
+			id := strings.TrimPrefix(m.Name, "models/")
+			if id == "" || !modelRe.MatchString(id) {
+				continue
+			}
+			label := m.DisplayName
+			if label == "" {
+				label = id
+			}
+			found = append(found, Model{ID: id, Label: label})
+		}
+		pageToken = list.NextPageToken
+		if pageToken == "" {
+			break
+		}
+	}
+	if len(found) == 0 {
+		return nil, false, "This key may not use any Gemini chat model. Check that the key belongs to a project with the Gemini API enabled."
+	}
+	return orderGemini(found), true, ""
+}
+
+// orderGemini keeps the familiar names on top, with the hints written for them, and
+// puts everything else the key can reach after, alphabetically.
+func orderGemini(found []Model) []Model {
+	known := map[string]bool{}
+	out := make([]Model, 0, len(found))
+	for _, m := range found {
+		known[m.ID] = true
+	}
+	for _, c := range geminiFallback {
+		if known[c.ID] {
+			out = append(out, c)
+		}
+	}
+	var rest []Model
+	for _, m := range found {
+		if own := findModel(geminiFallback, m.ID); own != nil {
+			continue
+		}
+		if strings.Contains(m.ID, "preview") || strings.Contains(m.ID, "exp") {
+			m.Hint = "Preview"
+		}
+		rest = append(rest, m)
+	}
+	sort.Slice(rest, func(i, j int) bool { return rest[i].ID < rest[j].ID })
+	return append(out, rest...)
+}
+
+func findModel(models []Model, id string) *Model {
+	for i := range models {
+		if models[i].ID == id {
+			return &models[i]
+		}
+	}
+	return nil
+}
+
+func hasString(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}
+
+func chatCapable(name string) bool {
+	low := strings.ToLower(strings.TrimPrefix(name, "models/"))
+	if !strings.HasPrefix(low, "gemini-") {
+		return false
+	}
+	for _, s := range geminiNotChat {
+		if strings.Contains(low, s) {
+			return false
+		}
+	}
+	return true
+}
+
+// geminiListError turns a refused models.list into one sentence the panel can show.
+func geminiListError(status int, body []byte) string {
+	var payload struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	json.Unmarshal(body, &payload)
+	msg := strings.TrimSpace(payload.Error.Message)
+	switch status {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return "Gemini refused this API key when listing models. Save the key again."
+	case http.StatusBadRequest:
+		if strings.Contains(strings.ToLower(msg), "api key") {
+			return "Gemini does not accept this API key. Save it again from AI Studio."
+		}
+	}
+	if msg == "" {
+		return fmt.Sprintf("Google answered %d when listing models.", status)
+	}
+	return "Google answered: " + msg
 }
 
 func firstModel(models []Model, want string) string {

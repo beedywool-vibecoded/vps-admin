@@ -357,7 +357,9 @@ onBeforeUnmount(() => {
 
             <p v-if="active?.hint" class="small muted">{{ active.hint }}</p>
 
-            <M3Select v-if="modelOptions.length" v-model="model" label="Model" :options="modelOptions" :disabled="!settings" />
+            <!-- Only once the provider answers: before that the list is a stand-in, and
+                 choosing a model for something that cannot run reads as noise. -->
+            <M3Select v-if="modelOptions.length && active?.ready" v-model="model" label="Model" :options="modelOptions" :disabled="!settings" />
 
             <div v-if="active?.needsKey" class="key">
               <span class="dot" :class="{ on: active.ready }" aria-hidden="true" />

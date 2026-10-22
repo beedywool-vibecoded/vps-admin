@@ -35,12 +35,13 @@ type Event struct {
 type Engine struct {
 	Deps
 	Box *secret.Box
-	// BaseURL overrides the Anthropic endpoint, GeminiURL the Gemini one, and ClaudeURL
-	// the endpoint the Claude Code CLI talks to; all three are for tests and never set in
-	// production.
-	BaseURL   string
-	GeminiURL string
-	ClaudeURL string
+	// BaseURL overrides the Anthropic endpoint, GeminiURL the Gemini one, GeminiModelsURL
+	// the native API that lists Gemini models, and ClaudeURL the endpoint the Claude Code
+	// CLI talks to; all are for tests and never set in production.
+	BaseURL         string
+	GeminiURL       string
+	GeminiModelsURL string
+	ClaudeURL       string
 
 	mu      sync.Mutex
 	running map[string]context.CancelFunc
@@ -63,6 +64,15 @@ type Engine struct {
 	tagsList []Model
 	tagsOK   bool
 	tagsHint string
+
+	// Gemini's model list is cached too, for longer: it costs a round trip to Google and
+	// only changes when Google ships models. See geminiModelsFor.
+	gmu     sync.Mutex
+	gemKey  string
+	gemAt   time.Time
+	gemList []Model
+	gemLive bool
+	gemHint string
 }
 
 func (e *Engine) Init(ctx context.Context) {
@@ -607,6 +617,14 @@ func (e *Engine) resolve(ctx context.Context) (target, error) {
 	}
 	if t.Key == "" {
 		return target{}, fmt.Errorf("%w (%s).", ErrNoKey, t.ID)
+	}
+	if t.ID == ProviderGemini {
+		// The panel already replaced a model Google no longer offers; a message sent
+		// before that refresh must not fail on the retired name either. Only the cached
+		// list is used: the first token must not wait on a round trip.
+		if models, live := e.lastGeminiModels(t.Key); live {
+			t.Model = firstModel(models, t.Model)
+		}
 	}
 	return t, nil
 }
