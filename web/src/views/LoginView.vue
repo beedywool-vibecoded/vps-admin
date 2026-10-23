@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import M3Shape from '@/components/M3Shape.vue'
+import ShapeLoader from '@/components/ShapeLoader.vue'
 import Icon from '@/components/Icon.vue'
 import { api, ApiError, type AuthState } from '@/lib/api'
 import { loginWithPasskey, passkeysSupported, registerPasskey } from '@/lib/passkey'
@@ -121,7 +122,7 @@ onMounted(() => {
       </div>
 
       <template v-if="step === 'loading'">
-        <p class="muted">Connecting…</p>
+        <p class="muted connect"><ShapeLoader :size="24" label="Connecting" /> Connecting…</p>
       </template>
 
       <template v-else-if="step === 'signin'">
@@ -207,6 +208,11 @@ onMounted(() => {
   border-radius: 32px;
   background: var(--sc);
   text-align: center;
+}
+.connect {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .brand {
   margin: 0 0 6px;

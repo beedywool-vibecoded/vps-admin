@@ -2,6 +2,7 @@
 // so the app reads like the panel. Sizes are the panel's CSS pixels.
 import 'dart:math' as math;
 
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 
 import 'web_icon.dart';
@@ -103,6 +104,17 @@ ThemeData webTheme(ColorScheme cs) {
   return base.copyWith(
     textTheme: text,
     primaryTextTheme: text,
+    // Pushed screens rise in like the panel's pages; iOS keeps its edge-swipe transition.
+    pageTransitionsTheme: const PageTransitionsTheme(
+      builders: {
+        TargetPlatform.android: _FadeRiseTransitions(),
+        TargetPlatform.fuchsia: _FadeRiseTransitions(),
+        TargetPlatform.linux: _FadeRiseTransitions(),
+        TargetPlatform.windows: _FadeRiseTransitions(),
+        TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+      },
+    ),
     scaffoldBackgroundColor: cs.surface,
     canvasColor: cs.surface,
     dividerColor: cs.surfaceContainerHigh,
@@ -566,12 +578,16 @@ class WButton extends StatelessWidget {
     this.onPressed,
     this.kind = BtnKind.filled,
     this.large = false,
+    this.busy = false,
   });
   final String label;
   final String? icon;
   final VoidCallback? onPressed;
   final BtnKind kind;
   final bool large;
+
+  /// Keeps the label and puts Pelote's small loader in front while the action runs.
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -585,7 +601,13 @@ class WButton extends StatelessWidget {
     final child = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (icon != null) ...[
+        if (busy) ...[
+          SizedBox.square(
+            dimension: 18,
+            child: PeloteLoader(size: 18, color: fg, label: label),
+          ),
+          const SizedBox(width: 8),
+        ] else if (icon != null) ...[
           WIcon(
             icon!,
             size: 18,
@@ -1188,3 +1210,34 @@ const groupIconChoices = [
   'security',
   'github',
 ];
+
+/// A pushed page fades in and rises a little, like the panel's page transition.
+class _FadeRiseTransitions extends PageTransitionsBuilder {
+  const _FadeRiseTransitions();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    if (MediaQuery.disableAnimationsOf(context)) return child;
+    final curved = CurvedAnimation(
+      parent: animation,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeIn,
+    );
+    return FadeTransition(
+      opacity: curved,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.02),
+          end: Offset.zero,
+        ).animate(curved),
+        child: child,
+      ),
+    );
+  }
+}

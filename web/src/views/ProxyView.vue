@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import Icon from '@/components/Icon.vue'
+import ShapeLoader from '@/components/ShapeLoader.vue'
 import { api, type ProxyReport, type ProxySite } from '@/lib/api'
 import { toastError } from '@/lib/ui'
 
@@ -56,7 +57,7 @@ onMounted(async () => {
       </label>
     </div>
 
-    <p v-if="loading" class="muted">Loading…</p>
+    <div v-if="loading" class="loading-block"><ShapeLoader label="Loading domains" /></div>
 
     <section v-else-if="!rep?.engine" class="card">
       <h2>No reverse proxy found</h2>

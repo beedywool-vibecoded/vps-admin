@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import Icon from '@/components/Icon.vue'
 import M3Shape from '@/components/M3Shape.vue'
+import ShapeLoader from '@/components/ShapeLoader.vue'
 import StatusDot from '@/components/StatusDot.vue'
 import M3Dialog from '@/components/M3Dialog.vue'
 import { api, streamScript, type Script, type ScriptRun } from '@/lib/api'
@@ -131,7 +132,7 @@ onBeforeUnmount(() => closeStream?.())
       <button class="btn btn-tonal st" type="button" @click="load"><Icon name="restart" :size="18" /> Refresh</button>
     </div>
 
-    <p v-if="loading" class="muted">Loading…</p>
+    <div v-if="loading" class="loading-block"><ShapeLoader label="Loading scripts" /></div>
 
     <section v-else-if="!scripts.length" class="card empty">
       <M3Shape kind="sunny" :size="64" fill="var(--tc)" />

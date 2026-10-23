@@ -220,7 +220,7 @@ class _AppsPageState extends State<AppsPage> {
             'No reverse proxy (Caddy or nginx) was set up by the installer, so apps get no public domain. They can still be served on Tailscale or stay on 127.0.0.1.',
           ),
         if (loading)
-          const Muted('Loading…', size: 15)
+          const LoadingBlock(label: 'Loading apps')
         else if (apps.isEmpty && connected)
           EmptyCard(
             shape: M3Shape.flower,
@@ -604,7 +604,7 @@ class _AppDetailPageState extends State<AppDetailPage> {
         title: Text(widget.id),
       ),
       body: a == null
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: PeloteLoader(label: 'Loading app'))
           : WPage(
               onRefresh: _load,
               children: [

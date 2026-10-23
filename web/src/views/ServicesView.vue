@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import Icon from '@/components/Icon.vue'
+import ShapeLoader from '@/components/ShapeLoader.vue'
 import StatusDot, { type Tone } from '@/components/StatusDot.vue'
 import LogViewer from '@/components/LogViewer.vue'
 import { api, type Service } from '@/lib/api'
@@ -94,7 +95,7 @@ onMounted(load)
     </div>
 
     <section class="card">
-      <p v-if="loading" class="muted">Loading…</p>
+      <div v-if="loading" class="loading-block"><ShapeLoader :size="40" label="Loading services" /></div>
       <p v-else-if="!shown.length" class="muted">No service matches.</p>
       <div v-for="s in shown" :key="s.name" class="row">
         <StatusDot :tone="tone(s)" :label="s.active" />

@@ -193,7 +193,7 @@ class _ContainersPageState extends State<ContainersPage> {
           onChanged: (v) => setState(() => query = v),
         ),
         if (loading)
-          const Muted('Loading…', size: 15)
+          const LoadingBlock(label: 'Loading containers')
         else if (error.isNotEmpty)
           WCard(
             child: Column(

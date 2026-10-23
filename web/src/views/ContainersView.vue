@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import Icon from '@/components/Icon.vue'
+import ShapeLoader from '@/components/ShapeLoader.vue'
 import StatusDot, { type Tone } from '@/components/StatusDot.vue'
 import LogViewer from '@/components/LogViewer.vue'
 import ScriptRunDialog from '@/components/ScriptRunDialog.vue'
@@ -147,7 +148,7 @@ onBeforeUnmount(() => clearInterval(timer))
       </label>
     </div>
 
-    <p v-if="loading" class="muted">Loading…</p>
+    <div v-if="loading" class="loading-block"><ShapeLoader label="Loading containers" /></div>
     <section v-else-if="error" class="card">
       <h2>Docker is not reachable</h2>
       <p class="muted">{{ error }}. Check that Docker runs and that the vps-admin user is in the docker group.</p>

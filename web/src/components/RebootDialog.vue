@@ -3,6 +3,7 @@
 // server; afterwards the dialog waits for the agent to answer again.
 import { ref } from 'vue'
 import M3Dialog from './M3Dialog.vue'
+import ShapeLoader from './ShapeLoader.vue'
 import { api } from '@/lib/api'
 import { session } from '@/lib/session'
 import { toast, toastError } from '@/lib/ui'
@@ -53,7 +54,8 @@ async function reboot() {
     <p v-else class="muted" style="margin: 0">Rebooting… the panel reconnects as soon as the server answers.</p>
     <template #actions>
       <button class="btn btn-text st" type="button" :disabled="state === 'rebooting'" @click="open = false">Cancel</button>
-      <button class="btn btn-danger st" type="button" :disabled="state === 'rebooting' || typed.trim() !== session.host?.hostname" @click="reboot">
+      <button class="btn btn-danger st" type="button" :disabled="state === 'rebooting' || typed.trim() !== session.host?.hostname" :aria-busy="state === 'rebooting'" @click="reboot">
+        <ShapeLoader v-if="state === 'rebooting'" :size="18" label="Rebooting" />
         {{ state === 'rebooting' ? 'Rebooting…' : 'Restart now' }}
       </button>
     </template>

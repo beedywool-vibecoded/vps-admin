@@ -382,7 +382,10 @@ h3 {
 }
 /* M3 search bar: filled pill */
 .field.search {
+  /* In a short flex column (the repository card) the list must scroll, not the bar squash. */
+  flex: none;
   height: 56px;
+  min-height: 56px;
   padding: 0 20px;
   border: none;
   border-radius: 28px;
@@ -399,6 +402,13 @@ h3 {
   min-width: 0;
   color: var(--on-surface);
   font-size: 15px;
+}
+
+/* Loading placeholders (ShapeLoader): never a lone "Loading…" line, always a moving shape */
+.loading-block {
+  display: grid;
+  place-items: center;
+  padding: 36px 0;
 }
 
 /* Page transitions (App.vue): a short fade through, the next page rises into place */

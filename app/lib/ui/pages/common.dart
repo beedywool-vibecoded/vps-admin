@@ -253,18 +253,23 @@ class _LogsState extends State<_Logs> {
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: cs.surfaceContainerHigh),
             ),
-            child: SingleChildScrollView(
-              controller: _scroll,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              child: SelectableText(
-                text.isEmpty ? 'Loading…' : text,
-                style: const TextStyle(
-                  fontFamily: kMono,
-                  fontSize: 12,
-                  height: 1.6,
-                ),
-              ),
-            ),
+            child: text.isEmpty
+                ? const LoadingBlock(label: 'Loading logs')
+                : SingleChildScrollView(
+                    controller: _scroll,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    child: SelectableText(
+                      text,
+                      style: const TextStyle(
+                        fontFamily: kMono,
+                        fontSize: 12,
+                        height: 1.6,
+                      ),
+                    ),
+                  ),
           ),
         ),
       ],

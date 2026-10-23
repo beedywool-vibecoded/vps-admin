@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import Icon from '@/components/Icon.vue'
 import M3Shape from '@/components/M3Shape.vue'
+import ShapeLoader from '@/components/ShapeLoader.vue'
 import StatusDot from '@/components/StatusDot.vue'
 import { api, type AppView, type GitHubStatus } from '@/lib/api'
 import { BUILD_LABEL, STATUS_LABEL, appTone } from '@/lib/deploys'
@@ -116,7 +117,7 @@ onBeforeUnmount(() => clearInterval(timer))
       No reverse proxy (Caddy or nginx) was set up by the installer, so apps get no public domain. They can still be served on Tailscale or stay on 127.0.0.1.
     </p>
 
-    <p v-if="loading" class="muted">Loading…</p>
+    <div v-if="loading" class="loading-block"><ShapeLoader label="Loading apps" /></div>
     <section v-else-if="!apps.length && gh?.connected" class="card empty">
       <M3Shape kind="flower" :size="64" fill="var(--pc)" />
       <p class="muted">No app yet. Pick a repository and it is online in a few minutes.</p>

@@ -6,6 +6,7 @@ import M3Slider from '@/components/M3Slider.vue'
 import M3Dialog from '@/components/M3Dialog.vue'
 import { appearance, loadAppearance, removeBackground, setOpacity, uploadBackground } from '@/lib/appearance'
 import { api, type AuditEntry, type Device, type ServerSetup } from '@/lib/api'
+import ShapeLoader from '@/components/ShapeLoader.vue'
 import StatusDot from '@/components/StatusDot.vue'
 import { passkeysSupported, registerPasskey } from '@/lib/passkey'
 import { SEEDS, mode, seed, type ThemeMode } from '@/lib/theme'
@@ -504,8 +505,16 @@ onMounted(async () => {
           {{ auditOpen ? 'Show less' : `Show more (${audit.length - 5})` }}
           <Icon name="chevron" :size="18" :class="{ flip: auditOpen }" />
         </button>
-        <button v-if="auditOpen && moreAudit" class="btn btn-tonal st" type="button" :disabled="loadingAudit" @click="olderAudit">
-          {{ loadingAudit ? 'Loading…' : 'Load older' }}
+        <button
+          v-if="auditOpen && moreAudit"
+          class="btn btn-tonal st"
+          type="button"
+          :disabled="loadingAudit"
+          :aria-busy="loadingAudit"
+          @click="olderAudit"
+        >
+          <ShapeLoader v-if="loadingAudit" :size="18" label="Loading older entries" />
+          Load older
         </button>
       </div>
     </section>

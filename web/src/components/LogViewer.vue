@@ -3,6 +3,7 @@
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import M3Dialog from './M3Dialog.vue'
 import M3Switch from './M3Switch.vue'
+import ShapeLoader from './ShapeLoader.vue'
 import { toastError } from '@/lib/ui'
 
 const open = defineModel<boolean>({ required: true })
@@ -50,7 +51,8 @@ onBeforeUnmount(() => clearInterval(timer))
       <label class="follow small muted">Follow <M3Switch v-model="follow" label="Follow new lines" /></label>
       <button class="btn btn-tonal st" type="button" :disabled="loading" @click="refresh">Refresh</button>
     </template>
-    <pre ref="pre" class="logs">{{ text || 'Loading…' }}</pre>
+    <pre v-if="text" ref="pre" class="logs">{{ text }}</pre>
+    <div v-else class="logs logs-empty" aria-busy="true"><ShapeLoader :label="`Loading ${title}`" /></div>
   </M3Dialog>
 </template>
 
@@ -59,6 +61,10 @@ onBeforeUnmount(() => clearInterval(timer))
   display: flex;
   align-items: center;
   gap: 10px;
+}
+.logs-empty {
+  display: grid;
+  place-items: center;
 }
 .logs {
   margin: 0;

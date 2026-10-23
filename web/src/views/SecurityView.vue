@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import M3Shape from '@/components/M3Shape.vue'
 import Icon from '@/components/Icon.vue'
+import ShapeLoader from '@/components/ShapeLoader.vue'
 import { api, type Check, type Security } from '@/lib/api'
 import { ago } from '@/lib/format'
 import { toastError } from '@/lib/ui'
@@ -42,8 +43,10 @@ onMounted(() => load())
     <div class="page-title">
       <h1>Security</h1>
       <span v-if="report" class="muted small">Checked {{ ago(report.checked) }}</span>
-      <button class="btn btn-tonal st" type="button" :disabled="loading" @click="load(true)">
-        <Icon name="restart" :size="18" /> {{ loading ? 'Checking…' : 'Check again' }}
+      <button class="btn btn-tonal st" type="button" :disabled="loading" :aria-busy="loading" @click="load(true)">
+        <ShapeLoader v-if="loading" :size="18" label="Running the checks" />
+        <Icon v-else name="restart" :size="18" />
+        Check again
       </button>
     </div>
 

@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Icon from '@/components/Icon.vue'
 import M3Shape from '@/components/M3Shape.vue'
+import ShapeLoader from '@/components/ShapeLoader.vue'
 import M3Switch from '@/components/M3Switch.vue'
 import EnvEditor from '@/components/EnvEditor.vue'
 import M3Select from '@/components/M3Select.vue'
@@ -180,7 +181,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCards))
           <Icon name="search" :size="20" />
           <input v-model="query" placeholder="Search repositories" aria-label="Search repositories" />
         </label>
-        <p v-if="loadingRepos" class="muted">Loading repositories…</p>
+        <div v-if="loadingRepos" class="loading-block"><ShapeLoader :size="40" label="Loading repositories" /></div>
         <p v-else-if="!repos.length" class="muted small">
           The GitHub App cannot read any repository yet.
           <a :href="gh?.app?.installUrl" target="_blank" rel="noopener">Choose repositories on GitHub</a>, then reload.

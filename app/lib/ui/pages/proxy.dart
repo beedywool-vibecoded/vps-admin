@@ -178,7 +178,7 @@ class _ProxyPageState extends State<ProxyPage> {
           onChanged: (v) => setState(() => query = v),
         ),
         if (loading)
-          const WCard(child: Muted('Loading…', size: 15))
+          const WCard(child: LoadingBlock(label: 'Loading domains'))
         else if (r == null || engine.isEmpty)
           _empty()
         else ...[

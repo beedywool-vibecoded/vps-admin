@@ -281,7 +281,7 @@ class _NewAppPageState extends State<NewAppPage> {
                   onChanged: (v) => setState(() => query = v),
                 ),
                 if (loadingRepos)
-                  const Muted('Loading repositories…', size: 15)
+                  const LoadingBlock(label: 'Loading repositories')
                 else if (repos.isEmpty)
                   const Muted(
                     'The GitHub App cannot read any repository yet. Choose repositories on GitHub (Apps page), then come back.',

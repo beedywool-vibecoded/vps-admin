@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../data/api.dart';
+import 'loader_shapes.dart';
 
 /// Material 3 Expressive shapes: same polar formula as the web panel and the portfolio.
 enum M3Shape {
@@ -63,6 +64,144 @@ class _ShapePainter extends CustomPainter {
   @override
   bool shouldRepaint(_ShapePainter old) =>
       old.color != color || old.shape != shape;
+}
+
+/// Pelote's indeterminate loader: an M3 Expressive shape that changes and turns a little further
+/// every 700 ms, like the one on the web panel. Reduced motion keeps the first shape still.
+class PeloteLoader extends StatefulWidget {
+  const PeloteLoader({
+    super.key,
+    this.size = 48,
+    this.color,
+    this.label = 'Loading',
+  });
+  final double size;
+  final Color? color;
+  final String label;
+
+  @override
+  State<PeloteLoader> createState() => _PeloteLoaderState();
+}
+
+class _PeloteLoaderState extends State<PeloteLoader> {
+  int _index = 0;
+  int _turn = 0;
+  bool? _reduce;
+  Timer? _timer;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reduce = MediaQuery.disableAnimationsOf(context);
+    if (reduce == _reduce) return;
+    _reduce = reduce;
+    _timer?.cancel();
+    _timer = reduce
+        ? null
+        : Timer.periodic(const Duration(milliseconds: 700), (_) {
+            if (!mounted) return;
+            setState(() {
+              _index = (_index + 1) % kLoaderSequence.length;
+              _turn++;
+            });
+          });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.color ?? Theme.of(context).colorScheme.primary;
+    return Semantics(
+      label: widget.label,
+      child: ExcludeSemantics(
+        child: SizedBox.square(
+          dimension: widget.size,
+          child: Center(
+            child: AnimatedRotation(
+              turns: _turn * 140 / 360,
+              duration: const Duration(milliseconds: 650),
+              curve: const Cubic(0.34, 1.56, 0.64, 1),
+              child: CustomPaint(
+                size: Size.square(widget.size * 0.79),
+                painter: _LoaderPainter(kLoaderSequence[_index], color),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LoaderPainter extends CustomPainter {
+  _LoaderPainter(this.shape, this.color);
+  final String shape;
+  final Color color;
+
+  static final Map<String, Path> _paths = {};
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = _paths.putIfAbsent(
+      shape,
+      () => _svgPath(kLoaderShapes[shape] ?? kLoaderShapes['cookie9']!),
+    );
+    canvas.save();
+    canvas.scale(size.width / 100, size.height / 100);
+    canvas.drawPath(path, Paint()..color = color);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_LoaderPainter old) =>
+      old.shape != shape || old.color != color;
+}
+
+final _svgToken = RegExp(r'[MCZ]|-?\d+(?:\.\d+)?');
+
+/// Reads the small subset of SVG path data Pelote uses: absolute M, C and Z.
+Path _svgPath(String d) {
+  final tokens = _svgToken.allMatches(d).map((m) => m.group(0)!).toList();
+  final path = Path();
+  var i = 0;
+  while (i < tokens.length) {
+    final cmd = tokens[i++];
+    if (cmd == 'M') {
+      path.moveTo(double.parse(tokens[i++]), double.parse(tokens[i++]));
+    } else if (cmd == 'C') {
+      path.cubicTo(
+        double.parse(tokens[i++]),
+        double.parse(tokens[i++]),
+        double.parse(tokens[i++]),
+        double.parse(tokens[i++]),
+        double.parse(tokens[i++]),
+        double.parse(tokens[i++]),
+      );
+    } else if (cmd == 'Z') {
+      path.close();
+    }
+  }
+  return path;
+}
+
+/// A centred Pelote loader for a section whose content is still on its way.
+class LoadingBlock extends StatelessWidget {
+  const LoadingBlock({super.key, this.size = 40, this.label = 'Loading'});
+  final double size;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 28),
+    child: Center(
+      child: PeloteLoader(size: size, label: label),
+    ),
+  );
 }
 
 /// M3 Expressive wavy progress, as in Pelote: a wave in primary up to [value], a 6dp gap, a flat
@@ -549,7 +688,7 @@ class _LoaderState<T> extends State<Loader<T>> {
         ),
       );
     }
-    if (data == null) return const Center(child: CircularProgressIndicator());
+    if (data == null) return const Center(child: PeloteLoader());
     return RefreshIndicator(
       onRefresh: reload,
       child: widget.builder(context, data as T, reload),
@@ -645,11 +784,7 @@ class _StreamPageState extends State<StreamPage> {
                     ok && _error == null ? Tone.ok : Tone.bad,
                     label: ok ? 'done' : 'failed',
                   )
-                : const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+                : const PeloteLoader(size: 18, label: 'Starting'),
           ),
         ],
       ),

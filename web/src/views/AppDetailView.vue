@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Icon from '@/components/Icon.vue'
 import M3Shape from '@/components/M3Shape.vue'
+import ShapeLoader from '@/components/ShapeLoader.vue'
 import M3Switch from '@/components/M3Switch.vue'
 import StatusDot from '@/components/StatusDot.vue'
 import EnvEditor from '@/components/EnvEditor.vue'
@@ -230,7 +231,10 @@ onBeforeUnmount(() => {
           <span v-if="app.dir"><Icon name="folder" :size="14" /> <code>{{ app.dir }}</code></span>
         </div>
       </div>
-      <button class="btn btn-text st" type="button" :disabled="checking" @click="checkUpdates">{{ checking ? 'Checking…' : 'Check for updates' }}</button>
+      <button class="btn btn-text st" type="button" :disabled="checking" :aria-busy="checking" @click="checkUpdates">
+        <ShapeLoader v-if="checking" :size="18" label="Checking for updates" />
+        Check for updates
+      </button>
       <button class="btn btn-outlined st" type="button" :disabled="busy || !app.live" @click="restart">Restart</button>
       <button class="btn btn-filled st" type="button" :disabled="busy || running" @click="redeploy">Redeploy</button>
     </header>
@@ -261,8 +265,8 @@ onBeforeUnmount(() => {
           <span v-if="app.autoDeploy" class="chip">Auto-deploy on push</span>
         </div>
         <p v-if="!deployments.length" class="muted">No deployment yet.</p>
-        <div v-for="d in visibleDeps" :key="d.id" class="dep" :class="{ sel: d.id === selected }">
-          <button type="button" class="dep-main st" :aria-pressed="d.id === selected" @click="select(d.id)">
+        <div v-for="d in visibleDeps" :key="d.id" class="dep st" :class="{ sel: d.id === selected }">
+          <button type="button" class="dep-main" :aria-pressed="d.id === selected" @click="select(d.id)">
             <span class="status" :class="d.status"><StatusDot :tone="depTone(d)" :label="d.status" /> {{ STATUS_LABEL[d.status] }}</span>
             <code>{{ d.sha.slice(0, 7) || '…' }}</code>
             <span class="msg ellipsis">{{ d.message || d.trigger }}</span>
@@ -340,7 +344,7 @@ onBeforeUnmount(() => {
       </section>
     </template>
   </div>
-  <p v-else class="muted">Loading…</p>
+  <div v-else class="loading-block"><ShapeLoader label="Loading app" /></div>
 </template>
 
 <style scoped>
@@ -420,8 +424,10 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* The state layer covers the whole row, the Roll back button included. */
   padding-right: 8px;
   border-radius: 14px;
+  transition: background 0.2s var(--ease);
 }
 .dep-main {
   flex: 1;

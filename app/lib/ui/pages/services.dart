@@ -117,7 +117,7 @@ class _ServicesPageState extends State<ServicesPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (loading)
-                const Muted('Loading…', size: 15)
+                const LoadingBlock(label: 'Loading services')
               else if (shown.isEmpty)
                 const Muted('No service matches.', size: 15),
               for (var i = 0; i < shown.length; i++)

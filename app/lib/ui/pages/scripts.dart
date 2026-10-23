@@ -388,7 +388,7 @@ class _ScriptsPageState extends State<ScriptsPage> {
           ],
         ),
         if (loading)
-          const Muted('Loading…', size: 15)
+          const LoadingBlock(label: 'Loading scripts')
         else if (scripts.isEmpty)
           WCard(
             padding: const EdgeInsets.all(36),

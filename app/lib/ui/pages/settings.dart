@@ -700,8 +700,9 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   if (auditOpen && moreAudit)
                     WButton(
-                      loadingAudit ? 'Loading…' : 'Load older',
+                      'Load older',
                       kind: BtnKind.tonal,
+                      busy: loadingAudit,
                       onPressed: loadingAudit ? null : () => _audit(more: true),
                     ),
                 ],
