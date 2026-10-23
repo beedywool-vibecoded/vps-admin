@@ -113,6 +113,11 @@ void main() {
     await tester.ensureVisible(find.text('Continue'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Continue'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    // Both steps share the transition: the old one is still fading out.
+    expect(find.text('Environment variables'), findsOneWidget);
+    expect(find.text('Ready to deploy'), findsOneWidget);
     await tester.pumpAndSettle();
     expect(find.text('Ready to deploy'), findsOneWidget);
     expect(find.text('Environment variables'), findsNothing);

@@ -230,50 +230,65 @@ class _NewAppPageState extends State<NewAppPage> {
     final current = step == n;
     final done = step > n;
     final locked = n > 1 && repo == null;
+    final motion = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 200);
     return Opacity(
       opacity: locked ? 0.5 : 1,
-      child: Material(
-        color: current ? cs.primaryContainer : cs.surfaceContainer,
-        shape: const StadiumBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: locked ? null : () => setState(() => step = n),
-          child: Container(
-            height: 44,
-            padding: const EdgeInsets.fromLTRB(8, 0, 18, 0),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 28,
-                  height: 28,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: current || done
-                        ? cs.primary
-                        : cs.surfaceContainerHigh,
-                    shape: BoxShape.circle,
-                  ),
-                  child: done
-                      ? WIcon('check', size: 18, color: cs.onPrimary)
-                      : Text(
-                          '$n',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: current ? cs.onPrimary : cs.onSurfaceVariant,
+      child: AnimatedContainer(
+        duration: motion,
+        curve: Curves.easeOutCubic,
+        decoration: BoxDecoration(
+          color: current ? cs.primaryContainer : cs.surfaceContainer,
+          borderRadius: BorderRadius.circular(22),
+        ),
+        child: Material(
+          type: MaterialType.transparency,
+          shape: const StadiumBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: locked ? null : () => setState(() => step = n),
+            child: Container(
+              height: 44,
+              padding: const EdgeInsets.fromLTRB(8, 0, 18, 0),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedContainer(
+                    duration: motion,
+                    curve: Curves.easeOutCubic,
+                    width: 28,
+                    height: 28,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: current || done
+                          ? cs.primary
+                          : cs.surfaceContainerHigh,
+                      shape: BoxShape.circle,
+                    ),
+                    child: done
+                        ? WIcon('check', size: 18, color: cs.onPrimary)
+                        : Text(
+                            '$n',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: current
+                                  ? cs.onPrimary
+                                  : cs.onSurfaceVariant,
+                            ),
                           ),
-                        ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w500,
-                    color: current ? cs.onSurface : cs.onSurfaceVariant,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 10),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w500,
+                      color: current ? cs.onSurface : cs.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -311,112 +326,142 @@ class _NewAppPageState extends State<NewAppPage> {
               _stepTab(context, 3, 'Deploy'),
             ],
           ),
-          if (step == 1)
-            WCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                spacing: 14,
-                children: [
-                  Text(
-                    'Pick a repository',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  SearchField(
-                    hint: 'Search repositories',
-                    onChanged: (v) => setState(() => query = v),
-                  ),
-                  if (loadingRepos)
-                    const LoadingBlock(label: 'Loading repositories')
-                  else if (repos.isEmpty)
-                    const Muted(
-                      'The GitHub App cannot read any repository yet. Choose repositories on GitHub (Apps page), then come back.',
-                    ),
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxHeight: repo == null ? 520 : 240,
-                    ),
-                    child: ListView(
-                      shrinkWrap: true,
+          AnimatedSwitcher(
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 240),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeIn,
+            layoutBuilder: (current, previous) => Stack(
+              alignment: Alignment.topLeft,
+              fit: StackFit.passthrough,
+              children: [...previous, ?current],
+            ),
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.02),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            ),
+            child: Column(
+              key: ValueKey(step),
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (step == 1)
+                  WCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      spacing: 14,
                       children: [
-                        for (final r in shown)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: Material(
-                              color: repo?['fullName'] == r['fullName']
-                                  ? cs.primaryContainer
-                                  : Colors.transparent,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                side: BorderSide(
-                                  color: repo?['fullName'] == r['fullName']
-                                      ? cs.primary
-                                      : Colors.transparent,
-                                  width: 2,
-                                ),
-                              ),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(16),
-                                onTap: () => _pick(r),
-                                child: Container(
-                                  constraints: const BoxConstraints(
-                                    minHeight: 64,
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 12,
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
+                        Text(
+                          'Pick a repository',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        SearchField(
+                          hint: 'Search repositories',
+                          onChanged: (v) => setState(() => query = v),
+                        ),
+                        if (loadingRepos)
+                          const LoadingBlock(label: 'Loading repositories')
+                        else if (repos.isEmpty)
+                          const Muted(
+                            'The GitHub App cannot read any repository yet. Choose repositories on GitHub (Apps page), then come back.',
+                          ),
+                        ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight: repo == null ? 520 : 240,
+                          ),
+                          child: ListView(
+                            shrinkWrap: true,
+                            children: [
+                              for (final r in shown)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 6),
+                                  child: Material(
+                                    color: repo?['fullName'] == r['fullName']
+                                        ? cs.primaryContainer
+                                        : Colors.transparent,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      side: BorderSide(
+                                        color:
+                                            repo?['fullName'] == r['fullName']
+                                            ? cs.primary
+                                            : Colors.transparent,
+                                        width: 2,
+                                      ),
+                                    ),
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(16),
+                                      onTap: () => _pick(r),
+                                      child: Container(
+                                        constraints: const BoxConstraints(
+                                          minHeight: 64,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 12,
+                                        ),
+                                        child: Row(
                                           children: [
-                                            Text(
-                                              (r['fullName'] as String)
-                                                  .split('/')
-                                                  .last,
-                                              style: const TextStyle(
-                                                fontSize: 15,
-                                                fontWeight: FontWeight.w500,
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    (r['fullName'] as String)
+                                                        .split('/')
+                                                        .last,
+                                                    style: const TextStyle(
+                                                      fontSize: 15,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                    ),
+                                                  ),
+                                                  Muted(
+                                                    '${(r['fullName'] as String).split('/').first}${(r['language'] as String? ?? '').isNotEmpty ? ' · ${r['language']}' : ''} · pushed ${agoIso(r['pushedAt'] as String?)}',
+                                                    maxLines: 1,
+                                                  ),
+                                                ],
                                               ),
                                             ),
-                                            Muted(
-                                              '${(r['fullName'] as String).split('/').first}${(r['language'] as String? ?? '').isNotEmpty ? ' · ${r['language']}' : ''} · pushed ${agoIso(r['pushedAt'] as String?)}',
-                                              maxLines: 1,
-                                            ),
+                                            if (r['private'] == true)
+                                              WIcon(
+                                                'lock',
+                                                size: 16,
+                                                color: cs.onSurfaceVariant,
+                                              ),
                                           ],
                                         ),
                                       ),
-                                      if (r['private'] == true)
-                                        WIcon(
-                                          'lock',
-                                          size: 16,
-                                          color: cs.onSurfaceVariant,
-                                        ),
-                                    ],
+                                    ),
                                   ),
                                 ),
-                              ),
+                            ],
+                          ),
+                        ),
+                        if (repo != null)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: WButton(
+                              'Continue',
+                              large: true,
+                              onPressed: () => setState(() => step = 2),
                             ),
                           ),
                       ],
                     ),
                   ),
-                  if (repo != null)
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: WButton(
-                        'Continue',
-                        large: true,
-                        onPressed: () => setState(() => step = 2),
-                      ),
-                    ),
-                ],
-              ),
+                if (step == 2 && repo != null) _config(context),
+                if (step == 3 && repo != null) _review(context),
+              ],
             ),
-          if (step == 2 && repo != null) _config(context),
-          if (step == 3 && repo != null) _review(context),
+          ),
         ],
       ),
     );

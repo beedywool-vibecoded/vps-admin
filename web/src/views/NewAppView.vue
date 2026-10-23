@@ -175,6 +175,7 @@ onMounted(async () => {
       </li>
     </ol>
 
+    <Transition name="step" mode="out-in">
     <section v-if="step === 1" class="card source">
         <h2>Pick a repository</h2>
         <label class="field search">
@@ -323,6 +324,7 @@ onMounted(async () => {
           </button>
         </div>
       </section>
+    </Transition>
   </div>
 </template>
 
@@ -340,6 +342,10 @@ onMounted(async () => {
   background: var(--sc);
   color: var(--on-sv);
   font-weight: 500;
+  transition:
+    background-color 0.2s var(--ease),
+    color 0.2s var(--ease),
+    opacity 0.2s var(--ease);
 }
 .steps li.locked {
   opacity: 0.5;
@@ -369,6 +375,28 @@ onMounted(async () => {
   background: var(--outline-v);
   font-size: 13px;
   font-weight: 700;
+  transition:
+    background-color 0.2s var(--ease),
+    color 0.2s var(--ease);
+}
+/* A step replaces the previous one: short fade and rise, like a page */
+.step-enter-active {
+  transition:
+    opacity 0.16s var(--ease-decel),
+    translate 0.22s var(--ease-decel);
+}
+.step-leave-active {
+  transition:
+    opacity 0.1s var(--ease),
+    translate 0.1s var(--ease);
+}
+.step-enter-from {
+  opacity: 0;
+  translate: 0 8px;
+}
+.step-leave-to {
+  opacity: 0;
+  translate: 0 -4px;
 }
 .steps li.current {
   background: var(--pc);
