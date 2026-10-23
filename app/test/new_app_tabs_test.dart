@@ -150,6 +150,22 @@ void main() {
     );
     expect(branchBox.height, tester.getSize(nameField).height);
 
+    // The switch, the versions field and the buttons end on the same edge.
+    await tester.drag(find.byType(ListView).first, const Offset(0, -800));
+    await tester.pumpAndSettle();
+    final switchBox = tester.getRect(find.byType(Switch));
+    final keepBox = tester.getRect(
+      find.descendant(
+        of: find.widgetWithText(FilledField, 'Versions'),
+        matching: find.byType(TextField),
+      ),
+    );
+    final continueBox = tester.getRect(
+      find.ancestor(of: find.text('Continue'), matching: find.byType(WButton)),
+    );
+    expect(switchBox.right, continueBox.right);
+    expect(keepBox.right, continueBox.right);
+
     await tester.ensureVisible(find.text('Continue'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Continue'));

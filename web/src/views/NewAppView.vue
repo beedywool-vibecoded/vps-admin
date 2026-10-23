@@ -303,20 +303,19 @@ onMounted(async () => {
               <div>Deploy on every push</div>
               <div class="muted small">GitHub notifies the server; the new version replaces the old one without downtime</div>
             </div>
-            <M3Switch v-model="autoDeploy" label="Deploy on every push" />
+            <div class="ctl"><M3Switch v-model="autoDeploy" label="Deploy on every push" /></div>
           </div>
           <div class="setting">
             <div class="grow">
               <div>Versions kept for rollback</div>
               <div class="muted small">Older images are removed after each deploy</div>
             </div>
-            <input v-model.number="keep" class="num" inputmode="numeric" aria-label="Versions kept" />
+            <div class="ctl"><input v-model.number="keep" class="num" inputmode="numeric" aria-label="Versions kept" /></div>
           </div>
-        </div>
-
-        <div class="actions">
-          <button class="btn btn-text st" type="button" @click="step = 1">Back</button>
-          <button class="btn btn-filled btn-lg st" type="button" :disabled="invalid" @click="step = 3">Continue</button>
+          <div class="actions">
+            <button class="btn btn-text st" type="button" @click="step = 1">Back</button>
+            <button class="btn btn-filled btn-lg st" type="button" :disabled="invalid" @click="step = 3">Continue</button>
+          </div>
         </div>
       </section>
 
@@ -591,7 +590,7 @@ onMounted(async () => {
   color: var(--on-surface);
 }
 .num {
-  width: 80px;
+  width: 100%;
   text-align: center;
 }
 /* One readable block per idea: a title, a line that says what it is for, then its fields. */
@@ -612,6 +611,15 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+/* One control column: the switch and the number end on the same edge as the buttons. */
+.ctl {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 80px;
+  min-height: 40px;
 }
 .review {
   display: grid;

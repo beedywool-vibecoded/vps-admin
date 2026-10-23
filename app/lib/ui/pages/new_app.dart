@@ -488,6 +488,14 @@ class _NewAppPageState extends State<NewAppPage> {
     );
   }
 
+  /// Both deploy controls sit in the same column: same width, same right edge, same
+  /// height, so the switch, the number and the buttons below line up.
+  Widget _deployControl(Widget child) => SizedBox(
+    width: 90,
+    height: FilledField.height,
+    child: Align(alignment: Alignment.centerRight, child: child),
+  );
+
   /// One readable block per idea: a title, a line that says what it is for, then fields.
   Widget _group(
     BuildContext context,
@@ -683,53 +691,51 @@ class _NewAppPageState extends State<NewAppPage> {
             'Values passed to the app when it starts. Secrets stay hidden in the panel.',
             [EnvEditor(vars: env, onChanged: (v) => setState(() => env = v))],
           ),
-          _group(
-            context,
-            'Deploy',
-            'What happens after each push to the branch.',
-            [
-              Row(
-                children: [
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Deploy on every push'),
-                        Muted(
-                          'GitHub notifies the server; the new version replaces the old one without downtime',
-                        ),
-                      ],
-                    ),
+          _group(context, 'Deploy', 'What happens after each push to the branch.', [
+            Row(
+              children: [
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Deploy on every push'),
+                      Muted(
+                        'GitHub notifies the server; the new version replaces the old one without downtime',
+                      ),
+                    ],
                   ),
+                ),
+                _deployControl(
                   Switch(
                     value: autoDeploy,
+                    // The painted track reaches the edge, like the fields beside it.
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     onChanged: (v) => setState(() => autoDeploy = v),
                   ),
-                ],
-              ),
-              Row(
-                children: [
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Versions kept for rollback'),
-                        Muted('Older images are removed after each deploy'),
-                      ],
-                    ),
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Versions kept for rollback'),
+                      Muted('Older images are removed after each deploy'),
+                    ],
                   ),
-                  SizedBox(
-                    width: 90,
-                    child: FilledField(
-                      label: 'Versions',
-                      controller: f['keep']!,
-                      number: true,
-                    ),
+                ),
+                _deployControl(
+                  FilledField(
+                    label: 'Versions',
+                    controller: f['keep']!,
+                    number: true,
                   ),
-                ],
-              ),
-            ],
-          ),
+                ),
+              ],
+            ),
+          ]),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             spacing: 8,
