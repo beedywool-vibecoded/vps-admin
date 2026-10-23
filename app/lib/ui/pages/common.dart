@@ -45,7 +45,7 @@ class ContainerGroup {
   String? get dir => items.first.workDir;
 }
 
-/// Containers by compose project, Standalone last, like the panel.
+/// Containers by panel app or compose project, Standalone last, like the panel.
 List<ContainerGroup> groupContainers(
   List<DockerContainer> list, {
   String query = '',
@@ -59,7 +59,7 @@ List<ContainerGroup> groupContainers(
         !(c.project ?? '').contains(q)) {
       continue;
     }
-    (map[c.project ?? 'Standalone'] ??= []).add(c);
+    (map[c.group] ??= []).add(c);
   }
   final names = map.keys.toList()
     ..sort(

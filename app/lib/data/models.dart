@@ -75,14 +75,21 @@ class DockerContainer {
       status = j['status'] as String,
       health = j['health'] as String?,
       project = j['project'] as String?,
+      app = j['app'] as String?,
       workDir = j['workDir'] as String?,
       service = j['service'] as String?,
       ports = ((j['ports'] as List?) ?? []).cast<Map<String, dynamic>>(),
       exposed = j['exposed'] as bool? ?? false;
   final String id, name, image, state, status;
-  final String? health, project, workDir, service;
+  final String? health, project, app, workDir, service;
   final List<Map<String, dynamic>> ports;
   final bool exposed;
+
+  /// The group it belongs to, as on the panel: the app it was deployed for,
+  /// else its compose project, else Standalone.
+  String get group => (app ?? '').isNotEmpty
+      ? app!
+      : ((project ?? '').isNotEmpty ? project! : 'Standalone');
   bool get bad =>
       health == 'unhealthy' || state == 'restarting' || state == 'dead';
 }
