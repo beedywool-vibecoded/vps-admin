@@ -715,7 +715,7 @@ class _NewAppPageState extends State<NewAppPage> {
                 line('Root folder', root.isEmpty ? '/' : root),
                 line('Access', accessText),
                 line('Build', build),
-                line('Port', port.isEmpty || port == '0' ? '—' : port),
+                line('Port', port.isEmpty || port == '0' ? 'None' : port),
                 line(
                   'Memory limit',
                   mem.isEmpty || mem == '0' ? 'No limit' : '$mem MiB',

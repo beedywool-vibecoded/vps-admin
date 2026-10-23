@@ -305,7 +305,7 @@ onMounted(async () => {
           <div><dt>Root folder</dt><dd>{{ rootDir || '/' }}</dd></div>
           <div><dt>Access</dt><dd>{{ accessText }}</dd></div>
           <div><dt>Build</dt><dd>{{ BUILD_LABEL[effectiveBuild] ?? (detecting ? 'Detecting…' : 'Not detected') }}</dd></div>
-          <div><dt>Port</dt><dd>{{ port || '—' }}</dd></div>
+          <div><dt>Port</dt><dd>{{ port || 'None' }}</dd></div>
           <div><dt>Memory limit</dt><dd>{{ memoryMb ? `${memoryMb} MiB` : 'No limit' }}</dd></div>
           <div><dt>Environment</dt><dd>{{ envCount ? `${envCount} variable${envCount > 1 ? 's' : ''}` : 'None' }}</dd></div>
           <div><dt>Auto-deploy</dt><dd>{{ autoDeploy ? 'On every push' : 'Off' }}</dd></div>
