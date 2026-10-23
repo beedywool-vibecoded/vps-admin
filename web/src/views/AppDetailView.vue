@@ -525,28 +525,42 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
 }
+/* Same box as the dropdowns beside them (M3Select), so a row keeps one height. */
 .tf {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px 16px 8px;
+  justify-content: center;
+  gap: 2px;
+  height: 56px;
+  padding: 6px 16px;
   border-radius: 12px 12px 4px 4px;
   background: var(--schh);
   border-bottom: 1px solid var(--on-sv);
+  overflow: hidden;
+}
+.tf:focus-within {
+  border-bottom-color: var(--primary);
+  box-shadow: inset 0 -1px 0 var(--primary);
 }
 .tf span {
   font-size: 12px;
+  line-height: 16px;
   font-weight: 500;
   color: var(--primary);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .tf input,
 .tf select {
+  height: 24px;
   border: none;
   background: none;
   outline: none;
   font-size: 16px;
   color: var(--on-surface);
-  padding: 2px 0;
+  padding: 0;
 }
 .tf select option {
   background: var(--sch);
