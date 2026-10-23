@@ -39,6 +39,7 @@ class _NewAppPageState extends State<NewAppPage> {
   Map<String, dynamic>? gh, repo, detection;
   List<String> branches = [];
   String query = '', branch = '', buildType = 'auto', access = 'public';
+  int step = 1;
   bool loadingRepos = true,
       detecting = false,
       saving = false,
@@ -98,11 +99,33 @@ class _NewAppPageState extends State<NewAppPage> {
   bool get needsPort =>
       effectiveBuild == 'dockerfile' &&
       (int.tryParse(f['port']!.text) ?? 0) == 0;
+  bool get invalid =>
+      name.text.isEmpty ||
+      branch.isEmpty ||
+      needsPort ||
+      (effectiveBuild.isEmpty && !detecting);
+
+  String get accessText {
+    final domain = f['domain']!.text.trim();
+    final allow = f['allow']!.text.trim();
+    return switch (access) {
+      'public' => domain.isEmpty ? 'Public domain' : 'Public domain · $domain',
+      'vpn' => allow.isEmpty ? 'VPN only' : 'VPN only · $allow',
+      'tailscale' => 'Tailscale only',
+      _ => 'No domain',
+    };
+  }
 
   void _pick(Map<String, dynamic> r) {
+    // Coming back to the step keeps the settings of the repository already chosen.
+    if (repo?['fullName'] == r['fullName']) {
+      setState(() => step = 2);
+      return;
+    }
     final n = slugify((r['fullName'] as String).split('/').last);
     setState(() {
       repo = r;
+      step = 2;
       name.text = n;
       branch = r['defaultBranch'] as String? ?? 'main';
       branches = [];
@@ -202,10 +225,65 @@ class _NewAppPageState extends State<NewAppPage> {
     }
   }
 
+  Widget _stepTab(BuildContext context, int n, String label) {
+    final cs = Theme.of(context).colorScheme;
+    final current = step == n;
+    final done = step > n;
+    final locked = n > 1 && repo == null;
+    return Opacity(
+      opacity: locked ? 0.5 : 1,
+      child: Material(
+        color: current ? cs.primaryContainer : cs.surfaceContainer,
+        shape: const StadiumBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: locked ? null : () => setState(() => step = n),
+          child: Container(
+            height: 44,
+            padding: const EdgeInsets.fromLTRB(8, 0, 18, 0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: current || done
+                        ? cs.primary
+                        : cs.surfaceContainerHigh,
+                    shape: BoxShape.circle,
+                  ),
+                  child: done
+                      ? WIcon('check', size: 18, color: cs.onPrimary)
+                      : Text(
+                          '$n',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: current ? cs.onPrimary : cs.onSurfaceVariant,
+                          ),
+                        ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    color: current ? cs.onSurface : cs.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final step = repo == null ? 1 : 2;
     final q = query.trim().toLowerCase();
     final shown = repos
         .where(
@@ -213,40 +291,6 @@ class _NewAppPageState extends State<NewAppPage> {
               q.isEmpty || (r['fullName'] as String).toLowerCase().contains(q),
         )
         .toList();
-    Widget stepDot(
-      int n,
-      String label, {
-      bool current = false,
-      bool done = false,
-    }) => Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 28,
-          height: 28,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: current || done ? cs.primary : cs.surfaceContainerHigh,
-            shape: BoxShape.circle,
-          ),
-          child: Text(
-            done ? '✓' : '$n',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: current || done ? cs.onPrimary : cs.onSurfaceVariant,
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          label,
-          style: TextStyle(
-            fontWeight: FontWeight.w500,
-            color: current ? cs.onSurface : cs.onSurfaceVariant,
-          ),
-        ),
-      ],
-    );
     return Scaffold(
       backgroundColor: cs.surface,
       appBar: AppBar(
@@ -259,109 +303,120 @@ class _NewAppPageState extends State<NewAppPage> {
       body: WPage(
         children: [
           Wrap(
-            spacing: 20,
-            runSpacing: 10,
+            spacing: 8,
+            runSpacing: 8,
             children: [
-              stepDot(1, 'Source', current: step == 1, done: step > 1),
-              stepDot(2, 'Build and settings', current: step == 2),
-              stepDot(3, 'Deploy'),
+              _stepTab(context, 1, 'Source'),
+              _stepTab(context, 2, 'Build and settings'),
+              _stepTab(context, 3, 'Deploy'),
             ],
           ),
-          WCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              spacing: 14,
-              children: [
-                Text(
-                  'Pick a repository',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                SearchField(
-                  hint: 'Search repositories',
-                  onChanged: (v) => setState(() => query = v),
-                ),
-                if (loadingRepos)
-                  const LoadingBlock(label: 'Loading repositories')
-                else if (repos.isEmpty)
-                  const Muted(
-                    'The GitHub App cannot read any repository yet. Choose repositories on GitHub (Apps page), then come back.',
+          if (step == 1)
+            WCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                spacing: 14,
+                children: [
+                  Text(
+                    'Pick a repository',
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: repo == null ? 520 : 240,
+                  SearchField(
+                    hint: 'Search repositories',
+                    onChanged: (v) => setState(() => query = v),
                   ),
-                  child: ListView(
-                    shrinkWrap: true,
-                    children: [
-                      for (final r in shown)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Material(
-                            color: repo?['fullName'] == r['fullName']
-                                ? cs.primaryContainer
-                                : Colors.transparent,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              side: BorderSide(
-                                color: repo?['fullName'] == r['fullName']
-                                    ? cs.primary
-                                    : Colors.transparent,
-                                width: 2,
+                  if (loadingRepos)
+                    const LoadingBlock(label: 'Loading repositories')
+                  else if (repos.isEmpty)
+                    const Muted(
+                      'The GitHub App cannot read any repository yet. Choose repositories on GitHub (Apps page), then come back.',
+                    ),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: repo == null ? 520 : 240,
+                    ),
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        for (final r in shown)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Material(
+                              color: repo?['fullName'] == r['fullName']
+                                  ? cs.primaryContainer
+                                  : Colors.transparent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                side: BorderSide(
+                                  color: repo?['fullName'] == r['fullName']
+                                      ? cs.primary
+                                      : Colors.transparent,
+                                  width: 2,
+                                ),
                               ),
-                            ),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(16),
-                              onTap: () => _pick(r),
-                              child: Container(
-                                constraints: const BoxConstraints(
-                                  minHeight: 64,
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 12,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            (r['fullName'] as String)
-                                                .split('/')
-                                                .last,
-                                            style: const TextStyle(
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w500,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(16),
+                                onTap: () => _pick(r),
+                                child: Container(
+                                  constraints: const BoxConstraints(
+                                    minHeight: 64,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              (r['fullName'] as String)
+                                                  .split('/')
+                                                  .last,
+                                              style: const TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w500,
+                                              ),
                                             ),
-                                          ),
-                                          Muted(
-                                            '${(r['fullName'] as String).split('/').first}${(r['language'] as String? ?? '').isNotEmpty ? ' · ${r['language']}' : ''} · pushed ${agoIso(r['pushedAt'] as String?)}',
-                                            maxLines: 1,
-                                          ),
-                                        ],
+                                            Muted(
+                                              '${(r['fullName'] as String).split('/').first}${(r['language'] as String? ?? '').isNotEmpty ? ' · ${r['language']}' : ''} · pushed ${agoIso(r['pushedAt'] as String?)}',
+                                              maxLines: 1,
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                    if (r['private'] == true)
-                                      WIcon(
-                                        'lock',
-                                        size: 16,
-                                        color: cs.onSurfaceVariant,
-                                      ),
-                                  ],
+                                      if (r['private'] == true)
+                                        WIcon(
+                                          'lock',
+                                          size: 16,
+                                          color: cs.onSurfaceVariant,
+                                        ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  if (repo != null)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: WButton(
+                        'Continue',
+                        large: true,
+                        onPressed: () => setState(() => step = 2),
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-          if (repo != null) _config(context),
+          if (step == 2 && repo != null) _config(context),
+          if (step == 3 && repo != null) _review(context),
         ],
       ),
     );
@@ -396,6 +451,11 @@ class _NewAppPageState extends State<NewAppPage> {
                     ),
                   ],
                 ),
+              ),
+              WButton(
+                'Change',
+                kind: BtnKind.text,
+                onPressed: () => setState(() => step = 1),
               ),
             ],
           ),
@@ -572,20 +632,126 @@ class _NewAppPageState extends State<NewAppPage> {
               ),
             ],
           ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: WButton(
-              saving ? 'Creating…' : 'Deploy',
-              large: true,
-              onPressed:
-                  saving ||
-                      name.text.isEmpty ||
-                      branch.isEmpty ||
-                      needsPort ||
-                      (effectiveBuild.isEmpty && !detecting)
-                  ? null
-                  : _submit,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            spacing: 8,
+            children: [
+              WButton(
+                'Back',
+                kind: BtnKind.text,
+                onPressed: () => setState(() => step = 1),
+              ),
+              WButton(
+                'Continue',
+                large: true,
+                onPressed: invalid ? null : () => setState(() => step = 3),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _review(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final r = repo!;
+    final root = f['rootDir']!.text.trim();
+    final port = f['port']!.text.trim();
+    final mem = f['memoryMb']!.text.trim();
+    final envCount = env
+        .where((e) => (e['key'] as String? ?? '').trim().isNotEmpty)
+        .length;
+    final build =
+        buildLabel[effectiveBuild] ??
+        (detecting ? 'Detecting…' : 'Not detected');
+    Widget line(String k, String v) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 150, child: Muted(k)),
+          Expanded(
+            child: Text(v, style: const TextStyle(fontWeight: FontWeight.w500)),
+          ),
+        ],
+      ),
+    );
+    return WCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 18,
+        children: [
+          Row(
+            children: [
+              ShapeIcon(M3Shape.cookie, size: 44, color: cs.primaryContainer),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ready to deploy',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    Muted(
+                      '${r['fullName']}${r['private'] == true ? ' · private' : ''}',
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(20),
             ),
+            child: Column(
+              children: [
+                line('Name', name.text),
+                line('Branch', branch),
+                line('Root folder', root.isEmpty ? '/' : root),
+                line('Access', accessText),
+                line('Build', build),
+                line('Port', port.isEmpty || port == '0' ? '—' : port),
+                line(
+                  'Memory limit',
+                  mem.isEmpty || mem == '0' ? 'No limit' : '$mem MiB',
+                ),
+                line(
+                  'Environment',
+                  envCount == 0
+                      ? 'None'
+                      : '$envCount variable${envCount > 1 ? 's' : ''}',
+                ),
+                line('Auto-deploy', autoDeploy ? 'On every push' : 'Off'),
+                line('Versions kept', f['keep']!.text),
+              ],
+            ),
+          ),
+          if ((detection?['reason'] as String? ?? '').isNotEmpty)
+            Muted(detection!['reason'] as String),
+          const Muted(
+            'The app is created and its first deployment starts immediately.',
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            spacing: 8,
+            children: [
+              WButton(
+                'Back',
+                kind: BtnKind.text,
+                onPressed: saving ? null : () => setState(() => step = 2),
+              ),
+              WButton(
+                saving ? 'Creating…' : 'Deploy',
+                large: true,
+                busy: saving,
+                onPressed: saving || invalid ? null : _submit,
+              ),
+            ],
           ),
         ],
       ),

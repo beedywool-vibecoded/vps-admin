@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Icon from '@/components/Icon.vue'
 import M3Shape from '@/components/M3Shape.vue'
@@ -46,11 +46,30 @@ const shown = computed(() => {
 })
 const effectiveBuild = computed(() => (build.value === 'auto' ? detection.value?.build || '' : build.value))
 const needsPort = computed(() => effectiveBuild.value === 'dockerfile' && !port.value)
-const step = computed(() => (repo.value ? 2 : 1))
+const step = ref<1 | 2 | 3>(1)
 const buildOptions = (Object.keys(BUILD_LABEL) as BuildType[]).map((k) => ({ value: k, label: BUILD_LABEL[k]! }))
+const invalid = computed(() => !name.value || !branch.value || needsPort.value || (!effectiveBuild.value && !detecting.value))
+const accessText = computed(() => {
+  if (access.value === 'public') return domain.value ? `Public domain · ${domain.value}` : 'Public domain'
+  if (access.value === 'vpn') return allow.value ? `VPN only · ${allow.value}` : 'VPN only'
+  if (access.value === 'tailscale') return 'Tailscale only'
+  return 'No domain'
+})
+const envCount = computed(() => env.value.filter((v) => v.key.trim()).length)
+
+function go(n: 1 | 2 | 3) {
+  if (n > 1 && !repo.value) return
+  step.value = n
+}
 
 function pick(r: Repo) {
+  // Coming back to the step keeps the settings of the repository already chosen.
+  if (repo.value?.fullName === r.fullName) {
+    step.value = 2
+    return
+  }
   repo.value = r
+  step.value = 2
   name.value = slugify(r.fullName.split('/')[1] ?? r.fullName)
   branch.value = r.defaultBranch
   branches.value = []
@@ -118,34 +137,7 @@ async function submit() {
   }
 }
 
-// Both cards scroll on their own, so each stops where the window does instead of running past
-// the fold and pushing the page: it gets the height left below its own top edge.
-const sourceCard = ref<HTMLElement | null>(null)
-const configCard = ref<HTMLElement | null>(null)
-const sourceMax = ref(0)
-const configMax = ref(0)
-function capFor(el: HTMLElement | null, floor: number) {
-  if (!el) return 0
-  // The page keeps its own bottom padding, which is what the window shows below the card.
-  const shell = el.closest('.main-col')
-  const below = shell ? parseFloat(getComputedStyle(shell).paddingBottom) || 0 : 24
-  const avail = Math.round(window.innerHeight - el.getBoundingClientRect().top - below)
-  // A scroll box too short to show a field is worse than the page scrolling: stacked under
-  // the other card, or on a window with only a sliver left, the card keeps its own height.
-  return avail < floor ? 0 : avail
-}
-function fitCards() {
-  sourceMax.value = capFor(sourceCard.value, 240)
-  configMax.value = capFor(configCard.value, 300)
-}
-// Picking a repository adds the settings card, which is another card to fit.
-watch(repo, async () => {
-  await nextTick()
-  fitCards()
-})
-
 onMounted(async () => {
-  window.addEventListener('resize', fitCards)
   try {
     gh.value = await api.github()
     if (!gh.value.connected) return router.replace('/apps')
@@ -154,11 +146,8 @@ onMounted(async () => {
     toastError(e)
   } finally {
     loadingRepos.value = false
-    await nextTick()
-    fitCards()
   }
 })
-onBeforeUnmount(() => window.removeEventListener('resize', fitCards))
 </script>
 
 <template>
@@ -168,14 +157,25 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCards))
       <h1>New app</h1>
     </div>
 
-    <ol class="steps" aria-label="Steps">
-      <li :class="{ current: step === 1, done: step > 1 }"><span>{{ step > 1 ? '✓' : 1 }}</span>Source</li>
-      <li :class="{ current: step === 2 }"><span>2</span>Build and settings</li>
-      <li><span>3</span>Deploy</li>
+    <ol class="steps" aria-label="New app steps">
+      <li :class="{ current: step === 1, done: step > 1 }">
+        <button type="button" class="step st" :aria-current="step === 1 ? 'step' : undefined" @click="go(1)">
+          <span><Icon v-if="step > 1" name="check" :size="18" /><template v-else>1</template></span>Source
+        </button>
+      </li>
+      <li :class="{ current: step === 2, done: step > 2, locked: !repo }">
+        <button type="button" class="step st" :aria-current="step === 2 ? 'step' : undefined" :disabled="!repo" @click="go(2)">
+          <span><Icon v-if="step > 2" name="check" :size="18" /><template v-else>2</template></span>Build and settings
+        </button>
+      </li>
+      <li :class="{ current: step === 3, locked: !repo }">
+        <button type="button" class="step st" :aria-current="step === 3 ? 'step' : undefined" :disabled="!repo" @click="go(3)">
+          <span>3</span>Deploy
+        </button>
+      </li>
     </ol>
 
-    <div class="cols">
-      <section ref="sourceCard" class="card source" :style="{ maxHeight: sourceMax ? `${sourceMax}px` : undefined }">
+    <section v-if="step === 1" class="card source">
         <h2>Pick a repository</h2>
         <label class="field search">
           <Icon name="search" :size="20" />
@@ -206,15 +206,19 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCards))
             <Icon v-if="r.private" name="lock" :size="16" />
           </button>
         </div>
-      </section>
+        <div v-if="repo" class="actions">
+          <button class="btn btn-filled btn-lg st" type="button" @click="step = 2">Continue</button>
+        </div>
+    </section>
 
-      <section v-if="repo" ref="configCard" class="card config" :style="{ maxHeight: configMax ? `${configMax}px` : undefined }">
+      <section v-else-if="step === 2 && repo" class="card config">
         <div class="cfg-head">
           <M3Shape kind="cookie" :size="44" fill="var(--pc)" />
           <div class="grow">
             <h2>{{ repo.fullName.split('/')[1] }}</h2>
             <div class="muted small">{{ repo.fullName }}{{ repo.private ? ' · private' : '' }}</div>
           </div>
+          <button class="btn btn-text st" type="button" @click="step = 1">Change</button>
         </div>
 
         <div class="grid">
@@ -281,12 +285,44 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCards))
         </div>
 
         <div class="actions">
-          <button class="btn btn-filled btn-lg st" type="button" :disabled="saving || !name || !branch || needsPort || (!effectiveBuild && !detecting)" @click="submit">
+          <button class="btn btn-text st" type="button" @click="step = 1">Back</button>
+          <button class="btn btn-filled btn-lg st" type="button" :disabled="invalid" @click="step = 3">Continue</button>
+        </div>
+      </section>
+
+      <section v-else-if="step === 3 && repo" class="card config review-card">
+        <div class="cfg-head">
+          <M3Shape kind="cookie" :size="44" fill="var(--pc)" />
+          <div class="grow">
+            <h2>Ready to deploy</h2>
+            <div class="muted small">{{ repo.fullName }}{{ repo.private ? ' · private' : '' }}</div>
+          </div>
+        </div>
+
+        <dl class="review">
+          <div><dt>Name</dt><dd>{{ name }}</dd></div>
+          <div><dt>Branch</dt><dd>{{ branch }}</dd></div>
+          <div><dt>Root folder</dt><dd>{{ rootDir || '/' }}</dd></div>
+          <div><dt>Access</dt><dd>{{ accessText }}</dd></div>
+          <div><dt>Build</dt><dd>{{ BUILD_LABEL[effectiveBuild] ?? (detecting ? 'Detecting…' : 'Not detected') }}</dd></div>
+          <div><dt>Port</dt><dd>{{ port || '—' }}</dd></div>
+          <div><dt>Memory limit</dt><dd>{{ memoryMb ? `${memoryMb} MiB` : 'No limit' }}</dd></div>
+          <div><dt>Environment</dt><dd>{{ envCount ? `${envCount} variable${envCount > 1 ? 's' : ''}` : 'None' }}</dd></div>
+          <div><dt>Auto-deploy</dt><dd>{{ autoDeploy ? 'On every push' : 'Off' }}</dd></div>
+          <div><dt>Versions kept</dt><dd>{{ keep }}</dd></div>
+        </dl>
+
+        <p v-if="detection?.reason" class="muted small">{{ detection.reason }}</p>
+        <p class="muted small">The app is created and its first deployment starts immediately.</p>
+
+        <div class="actions">
+          <button class="btn btn-text st" type="button" @click="step = 2">Back</button>
+          <button class="btn btn-filled btn-lg st" type="button" :disabled="saving || invalid" @click="submit">
+            <ShapeLoader v-if="saving" small label="Creating app" />
             {{ saving ? 'Creating…' : 'Deploy' }}
           </button>
         </div>
       </section>
-    </div>
   </div>
 </template>
 
@@ -300,15 +336,29 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCards))
   gap: 8px;
 }
 .steps li {
+  border-radius: 22px;
+  background: var(--sc);
+  color: var(--on-sv);
+  font-weight: 500;
+}
+.steps li.locked {
+  opacity: 0.5;
+}
+.step {
   display: flex;
   align-items: center;
   gap: 10px;
   height: 44px;
   padding: 0 18px 0 8px;
+  border: none;
   border-radius: 22px;
-  background: var(--sc);
-  color: var(--on-sv);
+  background: none;
+  color: inherit;
+  font: inherit;
   font-weight: 500;
+}
+.step:disabled {
+  cursor: default;
 }
 .steps span {
   width: 28px;
@@ -329,14 +379,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCards))
   background: var(--primary);
   color: var(--on-primary);
 }
-.cols {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  align-items: flex-start;
-}
 .source {
-  flex: 1 1 min(380px, 100%);
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -350,10 +393,6 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCards))
   display: flex;
   flex-direction: column;
   gap: 6px;
-  /* The list is what shrinks when the window is short: it already scrolls on its own. */
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
 }
 .repo {
   /* the state layer clips (overflow: hidden), which would let the list squash rows */
@@ -383,18 +422,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCards))
   font-weight: 500;
 }
 .config {
-  flex: 1.4 1 min(520px, 100%);
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 18px;
-  /* The settings are taller than the window long before the page is: they scroll here.
-     The dropdowns of the fields are drawn on the body, so nothing gets clipped. */
-  overflow: auto;
-}
-/* Fields keep their own height while the card scrolls, instead of being squashed to fit. */
-.config > * {
-  flex-shrink: 0;
 }
 .cfg-head {
   display: flex;
@@ -475,8 +506,30 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCards))
   align-items: center;
   gap: 16px;
 }
+.review {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.review > div {
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: var(--sch);
+}
+.review dt {
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--on-sv);
+}
+.review dd {
+  margin: 0;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
 .actions {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
 }
 </style>
