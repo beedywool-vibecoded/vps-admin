@@ -151,7 +151,10 @@ void main() {
     expect(branchBox.height, tester.getSize(nameField).height);
 
     // The switch, the versions field and the buttons end on the same edge.
-    await tester.drag(find.byType(ListView).first, const Offset(0, -800));
+    await tester.drag(
+      find.byType(SingleChildScrollView).first,
+      const Offset(0, -800),
+    );
     await tester.pumpAndSettle();
     final switchBox = tester.getRect(find.byType(Switch));
     final keepBox = tester.getRect(
@@ -183,8 +186,11 @@ void main() {
       ),
       findsOneWidget,
     );
-    // The step row is the first item of the page list: scroll back to it.
-    await tester.drag(find.byType(ListView).first, const Offset(0, 2000));
+    // The step row sits above the card: scroll the card back to its top.
+    await tester.drag(
+      find.byType(SingleChildScrollView).first,
+      const Offset(0, 2000),
+    );
     await tester.pumpAndSettle();
     expect(
       find.byWidgetPredicate((w) => w is WIcon && w.name == 'check'),

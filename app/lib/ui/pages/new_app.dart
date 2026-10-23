@@ -336,154 +336,158 @@ class _NewAppPageState extends State<NewAppPage> {
         ),
         title: const Text('New app'),
       ),
-      body: WPage(
-        children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _stepTab(context, 1, 'Source'),
-              _stepTab(context, 2, 'Build and settings'),
-              _stepTab(context, 3, 'Deploy'),
-            ],
-          ),
-          AnimatedSwitcher(
-            duration: MediaQuery.disableAnimationsOf(context)
-                ? Duration.zero
-                : const Duration(milliseconds: 240),
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeIn,
-            layoutBuilder: (current, previous) => Stack(
-              alignment: Alignment.topLeft,
-              fit: StackFit.passthrough,
-              children: [...previous, ?current],
-            ),
-            transitionBuilder: (child, animation) => FadeTransition(
-              opacity: animation,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0, 0.02),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
-              ),
-            ),
-            child: Column(
-              key: ValueKey(step),
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 16,
+          children: [
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                if (step == 1)
-                  WCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      spacing: 14,
-                      children: [
-                        Text(
-                          'Pick a repository',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        SearchField(
-                          hint: 'Search repositories',
-                          onChanged: (v) => setState(() => query = v),
-                        ),
-                        if (loadingRepos)
-                          const LoadingBlock(label: 'Loading repositories')
-                        else if (repos.isEmpty)
-                          const Muted(
-                            'The GitHub App cannot read any repository yet. Choose repositories on GitHub (Apps page), then come back.',
-                          ),
-                        ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxHeight: repo == null ? 520 : 240,
-                          ),
-                          child: ListView(
-                            shrinkWrap: true,
-                            children: [
-                              for (final r in shown)
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 6),
-                                  child: Material(
-                                    color: repo?['fullName'] == r['fullName']
-                                        ? cs.primaryContainer
-                                        : Colors.transparent,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                      side: BorderSide(
-                                        color:
-                                            repo?['fullName'] == r['fullName']
-                                            ? cs.primary
-                                            : Colors.transparent,
-                                        width: 2,
+                _stepTab(context, 1, 'Source'),
+                _stepTab(context, 2, 'Build and settings'),
+                _stepTab(context, 3, 'Deploy'),
+              ],
+            ),
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 240),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeIn,
+                layoutBuilder: (current, previous) => Stack(
+                  alignment: Alignment.topLeft,
+                  fit: StackFit.passthrough,
+                  children: [...previous, ?current],
+                ),
+                transitionBuilder: (child, animation) => FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.02),
+                      end: Offset.zero,
+                    ).animate(animation),
+                    child: child,
+                  ),
+                ),
+                child: Stack(
+                  key: ValueKey(step),
+                  fit: StackFit.expand,
+                  children: [
+                    if (step == 1)
+                      _StepCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          spacing: 14,
+                          children: [
+                            Text(
+                              'Pick a repository',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            SearchField(
+                              hint: 'Search repositories',
+                              onChanged: (v) => setState(() => query = v),
+                            ),
+                            if (loadingRepos)
+                              const LoadingBlock(label: 'Loading repositories')
+                            else if (repos.isEmpty)
+                              const Muted(
+                                'The GitHub App cannot read any repository yet. Choose repositories on GitHub (Apps page), then come back.',
+                              ),
+                            ListView(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              padding: EdgeInsets.zero,
+                              children: [
+                                for (final r in shown)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 6),
+                                    child: Material(
+                                      color: repo?['fullName'] == r['fullName']
+                                          ? cs.primaryContainer
+                                          : Colors.transparent,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                        side: BorderSide(
+                                          color:
+                                              repo?['fullName'] == r['fullName']
+                                              ? cs.primary
+                                              : Colors.transparent,
+                                          width: 2,
+                                        ),
                                       ),
-                                    ),
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(16),
-                                      onTap: () => _pick(r),
-                                      child: Container(
-                                        constraints: const BoxConstraints(
-                                          minHeight: 64,
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 12,
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    (r['fullName'] as String)
-                                                        .split('/')
-                                                        .last,
-                                                    style: const TextStyle(
-                                                      fontSize: 15,
-                                                      fontWeight:
-                                                          FontWeight.w500,
+                                      child: InkWell(
+                                        borderRadius: BorderRadius.circular(16),
+                                        onTap: () => _pick(r),
+                                        child: Container(
+                                          constraints: const BoxConstraints(
+                                            minHeight: 64,
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 12,
+                                          ),
+                                          child: Row(
+                              children: [
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                              children: [
+                                                    Text(
+                                                      (r['fullName'] as String)
+                                                          .split('/')
+                                                          .last,
+                                                      style: const TextStyle(
+                                                        fontSize: 15,
+                                                        fontWeight:
+                                                            FontWeight.w500,
+                                                      ),
                                                     ),
-                                                  ),
-                                                  Muted(
-                                                    '${(r['fullName'] as String).split('/').first}${(r['language'] as String? ?? '').isNotEmpty ? ' · ${r['language']}' : ''} · pushed ${agoIso(r['pushedAt'] as String?)}',
-                                                    maxLines: 1,
-                                                  ),
-                                                ],
+                                                    Muted(
+                                                      '${(r['fullName'] as String).split('/').first}${(r['language'] as String? ?? '').isNotEmpty ? ' · ${r['language']}' : ''} · pushed ${agoIso(r['pushedAt'] as String?)}',
+                                                      maxLines: 1,
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
-                                            ),
-                                            if (r['private'] == true)
-                                              WIcon(
-                                                'lock',
-                                                size: 16,
-                                                color: cs.onSurfaceVariant,
-                                              ),
-                                          ],
+                                              if (r['private'] == true)
+                                                WIcon(
+                                                  'lock',
+                                                  size: 16,
+                                                  color: cs.onSurfaceVariant,
+                                                ),
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ),
                                   ),
-                                ),
-                            ],
-                          ),
-                        ),
-                        if (repo != null)
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: WButton(
-                              'Continue',
-                              large: true,
-                              onPressed: () => setState(() => step = 2),
+                              ],
                             ),
-                          ),
-                      ],
-                    ),
-                  ),
-                if (step == 2 && repo != null) _config(context),
-                if (step == 3 && repo != null) _review(context),
-              ],
+                            if (repo != null)
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: WButton(
+                                  'Continue',
+                                  large: true,
+                                  onPressed: () => setState(() => step = 2),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    if (step == 2 && repo != null) _config(context),
+                    if (step == 3 && repo != null) _review(context),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -525,7 +529,7 @@ class _NewAppPageState extends State<NewAppPage> {
       ...[branch, ...branches].where((b) => b.isNotEmpty),
     }.map((b) => (b, b)).toList();
     final reason = detection?['reason'] as String? ?? '';
-    return WCard(
+    return _StepCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         spacing: 18,
@@ -781,7 +785,7 @@ class _NewAppPageState extends State<NewAppPage> {
         ],
       ),
     );
-    return WCard(
+    return _StepCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         spacing: 18,
@@ -861,4 +865,15 @@ class _NewAppPageState extends State<NewAppPage> {
       ),
     );
   }
+}
+
+/// A step's card: it fills the window and scrolls its own content, so going back and forth
+/// between steps never resizes the page.
+class _StepCard extends StatelessWidget {
+  const _StepCard({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) =>
+      WCard(child: SingleChildScrollView(child: child));
 }
