@@ -37,6 +37,7 @@ const fileInput = ref<HTMLInputElement>()
 const uploading = ref(false)
 const opacity = ref(appearance.opacity)
 const setup = ref<ServerSetup | null>(null)
+const setupError = ref(false)
 const proxyTools = computed(() =>
   setup.value
     ? [
@@ -46,6 +47,42 @@ const proxyTools = computed(() =>
       ]
     : [],
 )
+const accessLabel = computed(() => {
+  const a = setup.value?.panel.access
+  return a === 'tailscale' ? 'Tailscale only' : a === 'local' ? 'Local' : 'Public'
+})
+const domains = computed(() => {
+  const e = setup.value?.environment
+  if (!e) return { ok: false, title: '', detail: '' }
+  if (!setup.value?.sites) {
+    return { ok: false, title: 'Not configured', detail: 'Rerun the installer with --domain to publish apps on HTTPS.' }
+  }
+  const caddy = e.caddy.installed && e.caddy.running
+  return {
+    ok: true,
+    title: 'HTTPS ready',
+    detail: caddy ? 'Served by Caddy, certificates by Caddy' : 'Served by nginx, certificates by certbot',
+  }
+})
+// One row per private network, so the tile reads the same whether none or several are up.
+const networks = computed(() => {
+  const e = setup.value?.environment
+  if (!e) return []
+  const rows: { name: string; detail: string; tone: 'ok' | 'warn' | 'idle' }[] = []
+  if (e.tailscale) {
+    rows.push({
+      name: 'Tailscale',
+      detail: e.tailscale.running ? `${e.tailscale.name} · HTTPS ${e.tailscale.https ? 'on' : 'off'}` : 'installed, stopped',
+      tone: e.tailscale.running ? 'ok' : 'warn',
+    })
+  } else {
+    rows.push({ name: 'Tailscale', detail: 'not installed', tone: 'idle' })
+  }
+  for (const l of e.wireguard) rows.push({ name: `WireGuard ${l.name}`, detail: l.addresses.join(', '), tone: 'ok' })
+  for (const l of e.zerotier) rows.push({ name: `ZeroTier ${l.name}`, detail: l.addresses.join(', '), tone: 'ok' })
+  if (!e.wireguard.length && !e.zerotier.length) rows.push({ name: 'WireGuard, ZeroTier', detail: 'none linked', tone: 'idle' })
+  return rows
+})
 
 async function pickBackground(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
@@ -208,7 +245,7 @@ const describe = (e: AuditEntry) => {
 
 onMounted(async () => {
   try {
-    api.environment().then((e) => (setup.value = e)).catch(() => {})
+    api.environment().then((e) => (setup.value = e)).catch(() => (setupError.value = true))
     await Promise.all([loadDevices(), loadAudit(), loadAppearance()])
     opacity.value = appearance.opacity
   } catch (e) {
@@ -301,54 +338,93 @@ onMounted(async () => {
         <h2>Server setup</h2>
         <span class="muted small">What this server offers to publish apps, detected {{ setup ? ago(setup.environment.checked) : '…' }}</span>
       </div>
-      <p v-if="!setup" class="muted small">Looking at the server…</p>
-      <template v-else>
-        <div class="env">
-          <div class="env-row">
-            <span class="env-k">Panel</span>
-            <span class="grow">
-              <code class="plain">{{ setup.panel.url }}</code>
-              <span class="chip" :class="setup.panel.access === 'public' ? 'chip-outline' : ''">{{ setup.panel.access === 'tailscale' ? 'Tailscale only' : setup.panel.access === 'local' ? 'Local' : 'Public' }}</span>
-              <span v-if="setup.panel.webhookUrl" class="muted small"> · GitHub webhooks via {{ setup.panel.webhookUrl }}</span>
-            </span>
-          </div>
-          <div class="env-row">
-            <span class="env-k">Reverse proxy</span>
-            <span class="grow tools">
-              <span v-for="t in proxyTools" :key="t.name" class="tool" :class="{ off: !t.tool.installed }">
+      <div v-if="!setup && !setupError" class="setup-grid" aria-busy="true">
+        <div v-for="n in 6" :key="n" class="tile skeleton" />
+        <span class="sr-only">Looking at the server…</span>
+      </div>
+      <p v-else-if="setupError" class="muted small">Could not read the server environment.</p>
+      <template v-else-if="setup">
+        <div class="setup-grid">
+          <article class="tile">
+            <div class="tile-head">
+              <span class="tile-icon primary"><Icon name="globe" :size="20" /></span>
+              <h3 class="tile-label">Panel</h3>
+              <span class="chip" :class="setup.panel.access === 'public' ? 'chip-outline' : ''">{{ accessLabel }}</span>
+            </div>
+            <div class="tile-value"><code class="plain">{{ setup.panel.url }}</code></div>
+            <div v-if="setup.panel.webhookUrl" class="tile-sub muted small">
+              GitHub webhooks through <code class="plain">{{ setup.panel.webhookUrl }}</code>
+            </div>
+          </article>
+
+          <article class="tile">
+            <div class="tile-head">
+              <span class="tile-icon tertiary"><Icon name="apps" :size="20" /></span>
+              <h3 class="tile-label">App domains</h3>
+              <StatusDot :tone="domains.ok ? 'ok' : 'idle'" :label="domains.ok ? 'configured' : 'not configured'" />
+            </div>
+            <div class="tile-value">{{ domains.title }}</div>
+            <div class="tile-sub muted small">{{ domains.detail }}</div>
+          </article>
+
+          <article class="tile">
+            <div class="tile-head">
+              <span class="tile-icon"><Icon name="server" :size="20" /></span>
+              <h3 class="tile-label">Reverse proxy</h3>
+            </div>
+            <div class="tool-list">
+              <div v-for="t in proxyTools" :key="t.name" class="tool" :class="{ off: !t.tool.installed }">
                 <StatusDot :tone="!t.tool.installed ? 'idle' : t.tool.running ? 'ok' : 'warn'" :label="t.tool.installed ? (t.tool.running ? 'running' : 'stopped') : 'not installed'" />
-                {{ t.name }}<span v-if="t.tool.version" class="muted small"> {{ t.tool.version }}</span>
-              </span>
-              <span v-if="setup.environment.traefik" class="tool"><StatusDot tone="ok" label="running" /> Traefik <span class="muted small">(in Docker, managed outside the panel)</span></span>
-            </span>
-          </div>
-          <div class="env-row">
-            <span class="env-k">App domains</span>
-            <span class="grow">{{ setup.sites ? (setup.environment.caddy.installed && setup.environment.caddy.running ? 'Through Caddy, HTTPS by Caddy' : 'Through nginx, HTTPS by certbot') : 'Not set up: rerun the installer with --domain' }}</span>
-          </div>
-          <div class="env-row">
-            <span class="env-k">Private networks</span>
-            <span class="grow tools">
-              <span class="tool" :class="{ off: !setup.environment.tailscale }">
-                <StatusDot :tone="!setup.environment.tailscale ? 'idle' : setup.environment.tailscale.running ? 'ok' : 'warn'" :label="setup.environment.tailscale ? (setup.environment.tailscale.running ? 'running' : 'stopped') : 'not installed'" />
-                Tailscale<template v-if="setup.environment.tailscale?.running"><span class="muted small"> {{ setup.environment.tailscale.name }} · HTTPS {{ setup.environment.tailscale.https ? 'on' : 'off' }}</span></template>
-              </span>
-              <span v-for="l in setup.environment.wireguard" :key="l.name" class="tool"><StatusDot tone="ok" label="up" /> WireGuard {{ l.name }} <span class="muted small">{{ l.addresses.join(', ') }}</span></span>
-              <span v-for="l in setup.environment.zerotier" :key="l.name" class="tool"><StatusDot tone="ok" label="up" /> ZeroTier {{ l.name }} <span class="muted small">{{ l.addresses.join(', ') }}</span></span>
-              <span v-if="!setup.environment.wireguard.length && !setup.environment.zerotier.length" class="tool off"><StatusDot tone="idle" label="none" /> WireGuard, ZeroTier</span>
-            </span>
-          </div>
-          <div class="env-row">
-            <span class="env-k">Firewall</span>
-            <span class="grow">ufw {{ setup.environment.ufw || 'not installed' }} · nftables {{ setup.environment.nftables ? 'active' : 'not active' }}</span>
-          </div>
-          <div class="env-row">
-            <span class="env-k">Docker</span>
-            <span class="grow">{{ setup.environment.docker || 'not reachable' }}</span>
-          </div>
+                <span class="grow ellipsis">{{ t.name }}</span>
+                <span class="muted small">{{ t.tool.installed ? t.tool.version || (t.tool.running ? 'running' : 'stopped') : 'not installed' }}</span>
+              </div>
+              <div v-if="setup.environment.traefik" class="tool">
+                <StatusDot tone="ok" label="running" />
+                <span class="grow ellipsis">Traefik</span>
+                <span class="muted small">in Docker</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="tile">
+            <div class="tile-head">
+              <span class="tile-icon primary"><Icon name="lock" :size="20" /></span>
+              <h3 class="tile-label">Private networks</h3>
+            </div>
+            <div class="tool-list">
+              <div v-for="n in networks" :key="n.name" class="tool">
+                <StatusDot :tone="n.tone" :label="n.detail" />
+                <span class="grow ellipsis">{{ n.name }}</span>
+                <span class="muted small ellipsis">{{ n.detail }}</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="tile">
+            <div class="tile-head">
+              <span class="tile-icon tertiary"><Icon name="security" :size="20" /></span>
+              <h3 class="tile-label">Firewall</h3>
+              <StatusDot :tone="setup.environment.ufw ? 'ok' : 'idle'" :label="setup.environment.ufw ? setup.environment.ufw : 'not installed'" />
+            </div>
+            <div class="tile-value">{{ setup.environment.ufw ? `ufw ${setup.environment.ufw}` : 'ufw not installed' }}</div>
+            <div class="tile-sub muted small">nftables {{ setup.environment.nftables ? 'active' : 'not active' }}</div>
+          </article>
+
+          <article class="tile">
+            <div class="tile-head">
+              <span class="tile-icon"><Icon name="containers" :size="20" /></span>
+              <h3 class="tile-label">Docker</h3>
+              <StatusDot :tone="setup.environment.docker ? 'ok' : 'idle'" :label="setup.environment.docker || 'not reachable'" />
+            </div>
+            <div class="tile-value">{{ setup.environment.docker || 'Not reachable' }}</div>
+            <div class="tile-sub muted small">Runs the published apps</div>
+          </article>
         </div>
-        <p class="muted small" style="margin: 8px 0 0">
-          Change how the panel is reached by rerunning the installer: <code>--tailscale</code> (private), <code>--allow 10.8.0.0/24</code> (VPN networks), <code>--proxy caddy|nginx</code>.
+        <p class="setup-note muted small">
+          <Icon name="info" :size="16" />
+          <span>
+            Change how the panel is reached by rerunning the installer: <code>--tailscale</code> (private), <code>--allow 10.8.0.0/24</code> (VPN networks), <code>--proxy caddy|nginx</code>.
+          </span>
         </p>
       </template>
     </section>
@@ -437,37 +513,105 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.env {
+.setup-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 12px;
+}
+.tile {
   display: flex;
   flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
+  border-radius: 20px;
+  background: var(--sch);
 }
-.env-row {
+.tile.skeleton {
+  min-height: 128px;
+  animation: tile-pulse 1.6s var(--ease) infinite;
+}
+@keyframes tile-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+.tile-head {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
-  padding: 10px 0;
-  border-top: 1px solid var(--sch);
-  font-size: 14px;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
-.env-row:first-child {
-  border-top: none;
+.tile-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 17px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: var(--secc);
+  color: var(--on-secc);
 }
-.env-k {
-  width: 140px;
+.tile-icon.primary {
+  background: var(--pc);
+  color: var(--on-pc);
+}
+.tile-icon.tertiary {
+  background: var(--tc);
+  color: var(--on-tc);
+}
+.tile-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--on-sv);
 }
-.tools {
+.tile-value {
+  font-size: 16px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.tile-value code {
+  font-size: 14px;
+}
+.tile-sub {
+  overflow-wrap: anywhere;
+}
+.tile-sub code {
+  font-size: 12px;
+}
+.tool-list {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px 18px;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
 }
 .tool {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  min-width: 0;
+  font-size: 14px;
 }
 .tool.off {
   color: var(--on-sv);
+}
+.setup-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 14px 0 0;
+}
+.setup-note svg {
+  flex: none;
+  margin-top: 2px;
 }
 .setting {
   display: flex;
