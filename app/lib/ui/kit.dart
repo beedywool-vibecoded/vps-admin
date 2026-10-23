@@ -791,7 +791,12 @@ class Seg<T> extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return Container(
       height: 40,
-      decoration: BoxDecoration(
+      // The outline sits above the segments: behind them, the selected one paints over the
+      // border on its rounded end and the pill looks cut there.
+      decoration: const BoxDecoration(
+        borderRadius: BorderRadius.all(Radius.circular(20)),
+      ),
+      foregroundDecoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: cs.outline),
       ),
