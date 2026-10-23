@@ -259,7 +259,7 @@ onMounted(async () => {
   <div class="page">
     <div class="page-title">
       <h1>Settings</h1>
-      <button class="btn btn-outlined st" type="button" @click="logout"><Icon name="logout" :size="18" /> Sign out</button>
+      <button class="btn btn-outlined st" type="button" @click="logout"><Icon name="logout" small /> Sign out</button>
     </div>
 
     <section class="card">
@@ -320,7 +320,7 @@ onMounted(async () => {
         <div class="grow bg-controls">
           <div class="bg-buttons">
             <button class="btn btn-tonal st" type="button" :disabled="uploading" @click="fileInput?.click()">
-              <Icon name="plus" :size="18" /> {{ appearance.background ? 'Change image' : 'Choose an image' }}
+              <Icon name="plus" small /> {{ appearance.background ? 'Change image' : 'Choose an image' }}
             </button>
             <button v-if="appearance.background" class="btn btn-text st" type="button" @click="dropBackground">Use a plain background</button>
             <input ref="fileInput" class="sr-only" type="file" accept="image/jpeg,image/png,image/webp" tabindex="-1" aria-hidden="true" @change="pickBackground" />
@@ -434,7 +434,7 @@ onMounted(async () => {
       <div class="card-head">
         <h2>Devices</h2>
         <button class="btn btn-tonal st" type="button" :disabled="addingKey || !passkeysSupported()" @click="addPasskey">
-          <Icon name="key" :size="18" /> Add a passkey
+          <Icon name="key" small /> Add a passkey
         </button>
       </div>
       <p class="muted small" style="margin: 0 0 8px">
@@ -467,7 +467,7 @@ onMounted(async () => {
               added {{ ago(d.createdAt) }} · seen {{ ago(d.lastSeenAt) }}{{ d.lastIp ? ` from ${d.lastIp}` : '' }}
             </div>
           </div>
-          <button class="icon-btn st" type="button" :aria-label="`Rename ${d.name}`" v-tip="'Rename'" @click="startEdit(d)"><Icon name="edit" :size="18" /></button>
+          <button class="icon-btn st" type="button" :aria-label="`Rename ${d.name}`" v-tip="'Rename'" @click="startEdit(d)"><Icon name="edit" small /></button>
           <button class="btn btn-text st" type="button" @click="revoke(d)">Remove</button>
         </div>
       </div>
@@ -503,7 +503,7 @@ onMounted(async () => {
       <div class="audit-actions">
         <button v-if="audit.length > 5" class="btn btn-text st" type="button" :aria-expanded="auditOpen" @click="auditOpen = !auditOpen">
           {{ auditOpen ? 'Show less' : `Show more (${audit.length - 5})` }}
-          <Icon name="chevron" :size="18" :class="{ flip: auditOpen }" />
+          <Icon name="chevron" small :class="{ flip: auditOpen }" />
         </button>
         <button
           v-if="auditOpen && moreAudit"
@@ -513,7 +513,7 @@ onMounted(async () => {
           :aria-busy="loadingAudit"
           @click="olderAudit"
         >
-          <ShapeLoader v-if="loadingAudit" :size="18" label="Loading older entries" />
+          <ShapeLoader v-if="loadingAudit" small label="Loading older entries" />
           Load older
         </button>
       </div>

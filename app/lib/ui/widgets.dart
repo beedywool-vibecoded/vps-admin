@@ -71,11 +71,11 @@ class _ShapePainter extends CustomPainter {
 class PeloteLoader extends StatefulWidget {
   const PeloteLoader({
     super.key,
-    this.size = 48,
+    this.small = false,
     this.color,
     this.label = 'Loading',
   });
-  final double size;
+  final bool small;
   final Color? color;
   final String label;
 
@@ -83,26 +83,18 @@ class PeloteLoader extends StatefulWidget {
   State<PeloteLoader> createState() => _PeloteLoaderState();
 }
 
-class _PeloteLoaderState extends State<PeloteLoader>
-    with SingleTickerProviderStateMixin {
+class _PeloteLoaderState extends State<PeloteLoader> {
   int _index = 0;
+  int _turn = 0;
   bool? _reduce;
   Timer? _timer;
-  late final AnimationController _spin;
-
-  @override
-  void initState() {
-    super.initState();
-    // Always turning, like Pelote's ring (ld-turn): it never sits still between shapes.
-    _spin = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    );
-  }
 
   void _advance() {
     if (!mounted) return;
-    setState(() => _index = (_index + 1) % kLoaderSequence.length);
+    setState(() {
+      _index = (_index + 1) % kLoaderSequence.length;
+      _turn++;
+    });
   }
 
   @override
@@ -112,44 +104,37 @@ class _PeloteLoaderState extends State<PeloteLoader>
     if (reduce == _reduce) return;
     _reduce = reduce;
     _timer?.cancel();
-    // The first change lands at 300 ms so a short wait already moves; then Pelote's 700 ms cadence.
     _timer = reduce
         ? null
-        : Timer(const Duration(milliseconds: 300), () {
-            _advance();
-            _timer = Timer.periodic(
-              const Duration(milliseconds: 700),
-              (_) => _advance(),
-            );
-          });
-    if (reduce) {
-      _spin.stop();
-      _spin.value = 0;
-    } else if (!_spin.isAnimating) {
-      _spin.repeat();
-    }
+        : Timer.periodic(
+            const Duration(milliseconds: 700),
+            (_) => _advance(),
+          );
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    _spin.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final color = widget.color ?? Theme.of(context).colorScheme.primary;
+    final box = widget.small ? 20.0 : 48.0;
+    final glyph = widget.small ? 18.0 : 38.0;
     return Semantics(
       label: widget.label,
       child: ExcludeSemantics(
         child: SizedBox.square(
-          dimension: widget.size,
+          dimension: box,
           child: Center(
-            child: RotationTransition(
-              turns: _spin,
+            child: AnimatedRotation(
+              turns: _turn * 140 / 360,
+              duration: const Duration(milliseconds: 650),
+              curve: const Cubic(0.34, 1.56, 0.64, 1),
               child: CustomPaint(
-                size: Size.square(widget.size * 0.79),
+                size: Size.square(glyph),
                 painter: _LoaderPainter(kLoaderSequence[_index], color),
               ),
             ),
@@ -213,15 +198,14 @@ Path _svgPath(String d) {
 
 /// A centred Pelote loader for a section whose content is still on its way.
 class LoadingBlock extends StatelessWidget {
-  const LoadingBlock({super.key, this.size = 40, this.label = 'Loading'});
-  final double size;
+  const LoadingBlock({super.key, this.label = 'Loading'});
   final String label;
 
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 28),
     child: Center(
-      child: PeloteLoader(size: size, label: label),
+      child: PeloteLoader(label: label),
     ),
   );
 }
@@ -806,7 +790,7 @@ class _StreamPageState extends State<StreamPage> {
                     ok && _error == null ? Tone.ok : Tone.bad,
                     label: ok ? 'done' : 'failed',
                   )
-                : const PeloteLoader(size: 18, label: 'Starting'),
+                : const PeloteLoader(small: true, label: 'Starting'),
           ),
         ],
       ),

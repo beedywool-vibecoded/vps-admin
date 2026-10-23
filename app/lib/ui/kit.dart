@@ -604,7 +604,7 @@ class WButton extends StatelessWidget {
         if (busy) ...[
           SizedBox.square(
             dimension: 18,
-            child: PeloteLoader(size: 18, color: fg, label: label),
+            child: PeloteLoader(small: true, color: fg, label: label),
           ),
           const SizedBox(width: 8),
         ] else if (icon != null) ...[

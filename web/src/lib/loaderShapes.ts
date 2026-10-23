@@ -20,6 +20,4 @@ export type LoaderShape = keyof typeof LOADER_SHAPES
 // Pelote's sequence: the shape changes, and each step turns a little further.
 export const LOADER_SEQUENCE: LoaderShape[] = ['cookie9', 'pentagon', 'pill', 'sunny', 'cookie4', 'oval']
 export const LOADER_STEP_MS = 700
-// Pelote waits a full 700 ms before the first change, which reads as a frozen shape on a
-// short wait; the first change lands at its 300 ms "show something" threshold instead.
-export const LOADER_START_MS = 300
+export const LOADER_TURN_DEG = 140

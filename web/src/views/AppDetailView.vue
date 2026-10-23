@@ -232,7 +232,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <button class="btn btn-text st" type="button" :disabled="checking" :aria-busy="checking" @click="checkUpdates">
-        <ShapeLoader v-if="checking" :size="18" label="Checking for updates" />
+        <ShapeLoader v-if="checking" small label="Checking for updates" />
         Check for updates
       </button>
       <button class="btn btn-outlined st" type="button" :disabled="busy || !app.live" @click="restart">Restart</button>
@@ -249,7 +249,7 @@ onBeforeUnmount(() => {
         </template>
       </div>
       <button v-if="!checkResult.upToDate" class="btn btn-filled st" type="button" :disabled="busy || running" @click="redeploy(); checkResult = null">Update now</button>
-      <button class="icon-btn st" type="button" aria-label="Dismiss" @click="checkResult = null"><Icon name="close" :size="18" /></button>
+      <button class="icon-btn st" type="button" aria-label="Dismiss" @click="checkResult = null"><Icon name="close" small /></button>
     </div>
 
     <div class="tabs" role="tablist" aria-label="App sections">
@@ -275,7 +275,7 @@ onBeforeUnmount(() => {
           <button v-if="d.status === 'superseded'" type="button" class="btn btn-outlined st rb" :disabled="busy || running" @click="rollback(d)">Roll back</button>
         </div>
         <button v-if="deployments.length > DEPLOY_LIMIT" type="button" class="btn btn-text st more" :aria-expanded="showAllDeps" @click="toggleDeps">
-          <span class="chev"><Icon name="chevron" :size="18" /></span>
+          <span class="chev"><Icon name="chevron" small /></span>
           {{ showAllDeps ? 'Show fewer' : `Show all ${deployments.length} deployments` }}
         </button>
       </section>

@@ -44,8 +44,8 @@ onMounted(() => load())
       <h1>Security</h1>
       <span v-if="report" class="muted small">Checked {{ ago(report.checked) }}</span>
       <button class="btn btn-tonal st" type="button" :disabled="loading" :aria-busy="loading" @click="load(true)">
-        <ShapeLoader v-if="loading" :size="18" label="Running the checks" />
-        <Icon v-else name="restart" :size="18" />
+        <ShapeLoader v-if="loading" small label="Running the checks" />
+        <Icon v-else name="restart" small />
         Check again
       </button>
     </div>

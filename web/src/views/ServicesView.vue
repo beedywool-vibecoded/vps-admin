@@ -89,13 +89,13 @@ onMounted(load)
         :aria-checked="filter === f"
         @click="filter = f"
       >
-        <Icon v-if="filter === f" name="check" :size="18" />
+        <Icon v-if="filter === f" name="check" small />
         {{ f.charAt(0).toUpperCase() + f.slice(1) }} · {{ counts[f] }}
       </button>
     </div>
 
     <section class="card">
-      <div v-if="loading" class="loading-block"><ShapeLoader :size="40" label="Loading services" /></div>
+      <div v-if="loading" class="loading-block"><ShapeLoader label="Loading services" /></div>
       <p v-else-if="!shown.length" class="muted">No service matches.</p>
       <div v-for="s in shown" :key="s.name" class="row">
         <StatusDot :tone="tone(s)" :label="s.active" />
@@ -113,7 +113,7 @@ onMounted(load)
             <Icon name="restart" :size="20" />
           </button>
           <button class="icon-btn st" type="button" :aria-label="`Stop ${s.name}`" :disabled="busy[s.name] || s.active !== 'active'" @click="act(s, 'stop')">
-            <Icon name="stop" :size="18" />
+            <Icon name="stop" small />
           </button>
           <button class="icon-btn st" type="button" :aria-label="`Logs of ${s.name}`" @click="logsFor = s">
             <Icon name="logs" :size="20" />

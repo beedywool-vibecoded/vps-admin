@@ -322,7 +322,7 @@ class _ChatScreenState extends State<ChatScreen> {
           padding: EdgeInsets.all(8),
           child: Row(
             children: [
-              PeloteLoader(size: 16, label: 'Assistant working'),
+              PeloteLoader(small: true, label: 'Assistant working'),
               SizedBox(width: 10),
               Text('The assistant is working…'),
             ],

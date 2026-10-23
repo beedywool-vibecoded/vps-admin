@@ -31,11 +31,12 @@ void main() {
   testWidgets('the loader turns while it waits', (tester) async {
     await tester.pumpWidget(host());
     final before = angleOf(tester);
-    await tester.pump(const Duration(milliseconds: 250));
-    final turning = angleOf(tester);
-    expect(turning, isNot(closeTo(before, 0.1)));
+    // Pelote's own beat: nothing turns during the first 700 ms.
+    await tester.pump(const Duration(milliseconds: 650));
+    expect(angleOf(tester), closeTo(before, 0.001));
+    await tester.pump(const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 350));
-    expect(angleOf(tester), isNot(closeTo(turning, 0.1)));
+    expect(angleOf(tester), isNot(closeTo(before, 0.1)));
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -47,7 +48,7 @@ void main() {
           body: Center(
             child: RepaintBoundary(
               key: key,
-              child: PeloteLoader(size: 96, label: 'Painting loader'),
+              child: PeloteLoader(label: 'Painting loader'),
             ),
           ),
         ),

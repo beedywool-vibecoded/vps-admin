@@ -122,7 +122,7 @@ onMounted(() => {
       </div>
 
       <template v-if="step === 'loading'">
-        <p class="muted connect"><ShapeLoader :size="24" label="Connecting" /> Connecting…</p>
+        <p class="muted connect"><ShapeLoader small label="Connecting" /> Connecting…</p>
       </template>
 
       <template v-else-if="step === 'signin'">

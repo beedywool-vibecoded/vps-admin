@@ -203,10 +203,10 @@ onBeforeUnmount(() => clearInterval(timer))
             <Icon name="restart" :size="20" />
           </button>
           <button class="icon-btn st" type="button" :aria-label="`Stop ${c.name}`" :disabled="busy[c.id] || c.state !== 'running'" @click="act(c, 'stop')">
-            <Icon name="stop" :size="18" />
+            <Icon name="stop" small />
           </button>
           <button v-if="c.service" class="icon-btn st" type="button" :aria-label="`Rebuild ${c.name}`" v-tip="'Rebuild: newer image or new build, then recreate'" @click="(rebuildFor = c), (rebuildOpen = true)">
-            <Icon name="wrench" :size="18" />
+            <Icon name="wrench" small />
           </button>
           <button class="icon-btn st" type="button" :aria-label="`Logs of ${c.name}`" @click="logsFor = c">
             <Icon name="logs" :size="20" />

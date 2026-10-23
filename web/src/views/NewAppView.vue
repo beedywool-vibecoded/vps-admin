@@ -181,7 +181,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCards))
           <Icon name="search" :size="20" />
           <input v-model="query" placeholder="Search repositories" aria-label="Search repositories" />
         </label>
-        <div v-if="loadingRepos" class="loading-block"><ShapeLoader :size="40" label="Loading repositories" /></div>
+        <div v-if="loadingRepos" class="loading-block"><ShapeLoader label="Loading repositories" /></div>
         <p v-else-if="!repos.length" class="muted small">
           The GitHub App cannot read any repository yet.
           <a :href="gh?.app?.installUrl" target="_blank" rel="noopener">Choose repositories on GitHub</a>, then reload.

@@ -129,7 +129,7 @@ onBeforeUnmount(() => closeStream?.())
   <div class="page">
     <div class="page-title">
       <h1>Scripts</h1>
-      <button class="btn btn-tonal st" type="button" @click="load"><Icon name="restart" :size="18" /> Refresh</button>
+      <button class="btn btn-tonal st" type="button" @click="load"><Icon name="restart" small /> Refresh</button>
     </div>
 
     <div v-if="loading" class="loading-block"><ShapeLoader label="Loading scripts" /></div>
@@ -146,7 +146,7 @@ onBeforeUnmount(() => closeStream?.())
       <div class="list">
         <section v-for="(s, i) in scripts" :key="s.name" class="card script">
           <div class="head">
-            <M3Shape :kind="SHAPES[i % SHAPES.length]!" :size="40" :fill="i % 2 ? 'var(--secc)' : 'var(--pc)'" />
+            <M3Shape :kind="SHAPES[i % SHAPES.length]!" :fill="i % 2 ? 'var(--secc)' : 'var(--pc)'" />
             <div class="grow">
               <div class="name">
                 {{ s.title || s.name }}
@@ -167,7 +167,7 @@ onBeforeUnmount(() => closeStream?.())
             <button v-if="s.running" class="btn btn-outlined st" type="button" @click="follow(s)">Output</button>
             <button v-if="s.running" class="btn btn-danger st" type="button" @click="stop(s)"><Icon name="stop" :size="16" /> Stop</button>
             <button v-else class="btn btn-filled st" type="button" :disabled="busy[s.name] || s.missing || !s.executable" @click="run(s)">
-              <Icon name="play" :size="18" /> Run
+              <Icon name="play" small /> Run
             </button>
           </div>
         </section>

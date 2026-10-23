@@ -55,7 +55,7 @@ async function reboot() {
     <template #actions>
       <button class="btn btn-text st" type="button" :disabled="state === 'rebooting'" @click="open = false">Cancel</button>
       <button class="btn btn-danger st" type="button" :disabled="state === 'rebooting' || typed.trim() !== session.host?.hostname" :aria-busy="state === 'rebooting'" @click="reboot">
-        <ShapeLoader v-if="state === 'rebooting'" :size="18" label="Rebooting" />
+        <ShapeLoader v-if="state === 'rebooting'" small label="Rebooting" />
         {{ state === 'rebooting' ? 'Rebooting…' : 'Restart now' }}
       </button>
     </template>

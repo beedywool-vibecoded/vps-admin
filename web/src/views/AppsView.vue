@@ -86,7 +86,7 @@ onBeforeUnmount(() => clearInterval(timer))
     </div>
 
     <section v-if="gh && !gh.connected" class="card connect">
-      <Icon name="github" :size="40" />
+      <Icon name="github" />
       <div class="grow">
         <h2>Deploy from GitHub</h2>
         <p class="muted">
