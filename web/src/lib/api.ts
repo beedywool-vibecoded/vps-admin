@@ -95,6 +95,8 @@ export interface ProxySite {
   id: string
   vpnOnly: boolean
   scheme: 'http' | 'https'
+  /** An app's URL turned off from the panel: the snippet is gone, the app keeps running. */
+  paused: boolean
 }
 
 export interface ProxyReport {
@@ -157,6 +159,14 @@ export interface UpdateStatus {
   prerelease: boolean
 }
 
+export interface AlertSettings {
+  enabled: boolean
+  webhook: string
+  disk: number
+  error?: string
+  errorAt?: number
+}
+
 export interface Device {
   id: string
   name: string
@@ -204,6 +214,8 @@ export interface App {
   access: AccessMode | ''
   allow: string
   tsPort: number
+  envFile: boolean
+  envPath: string
 }
 
 export type AccessMode = 'public' | 'vpn' | 'tailscale' | 'local'
@@ -313,6 +325,8 @@ export interface AppInput {
   dockerfile?: string
   composeFile?: string
   env?: EnvVar[]
+  envFile?: boolean
+  envPath?: string
   deploy?: boolean
 }
 
@@ -478,6 +492,9 @@ export const api = {
 
   security: (refresh = false) => request<Security>('GET', `/api/security${refresh ? '?refresh=1' : ''}`),
   proxy: () => request<ProxyReport>('GET', '/api/proxy'),
+  proxyPause: (app: string, paused: boolean) => request<ProxyReport>('POST', '/api/proxy/pause', { app, paused }),
+  proxyOrder: (order: string[]) => request<ProxyReport>('POST', '/api/proxy/order', { order }),
+  removeProxyOrphan: (file: string) => request<ProxyReport>('POST', '/api/proxy/orphans/remove', { file }),
 
   containers: () => request<{ containers: Container[] }>('GET', '/api/docker/containers'),
   containerStats: () => request<{ stats: ContainerStats[] }>('GET', '/api/docker/stats'),
@@ -491,6 +508,10 @@ export const api = {
   applyUpdate: () => request<{ installed: string }>('POST', '/api/update/apply'),
   updateSettings: (s: { auto?: boolean; prerelease?: boolean }) =>
     request<UpdateStatus>('PUT', '/api/settings/update', s),
+  alerts: () => request<AlertSettings>('GET', '/api/alerts'),
+  updateAlerts: (s: { enabled?: boolean; webhook?: string; disk?: number }) =>
+    request<AlertSettings>('PUT', '/api/alerts', s),
+  testAlerts: (webhook: string) => request<{ sent: boolean }>('POST', '/api/alerts/test', { webhook }),
 
   devices: () => request<{ devices: Device[]; current: string }>('GET', '/api/devices'),
   revokeDevice: (id: string) => request<void>('DELETE', `/api/devices/${encodeURIComponent(id)}`),
@@ -521,7 +542,8 @@ export const api = {
   createApp: (a: AppInput) => request<{ app: App; deployment?: Deployment }>('POST', '/api/apps', a),
   updateApp: (id: string, a: AppInput) => request<{ app: App }>('PUT', `/api/apps/${id}`, a),
   deleteApp: (id: string, volumes: boolean) => request<void>('DELETE', `/api/apps/${id}${volumes ? '?volumes=1' : ''}`),
-  setEnv: (id: string, env: EnvVar[]) => request<void>('PUT', `/api/apps/${id}/env`, { env }),
+  setEnv: (id: string, env: EnvVar[], opts?: { envFile?: boolean; envPath?: string }) =>
+    request<void>('PUT', `/api/apps/${id}/env`, { env, ...opts }),
   deploy: (id: string) => request<Deployment>('POST', `/api/apps/${id}/deploy`),
   checkApp: (id: string) => request<UpdateCheck>('GET', `/api/apps/${id}/check`),
   inspectFolder: (project: string) =>

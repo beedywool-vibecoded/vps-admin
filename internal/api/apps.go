@@ -309,6 +309,10 @@ type appInput struct {
 	Allow       string  `json:"allow"`
 	Env         []envIn `json:"env"`
 	Deploy      bool    `json:"deploy"`
+	// Optional: the variables can be written to a file in the app's folder instead of
+	// being handed to the app. Pointers so an older panel cannot wipe the setting.
+	EnvFile *bool   `json:"envFile"`
+	EnvPath *string `json:"envPath"`
 }
 
 type envIn struct {
@@ -329,7 +333,13 @@ func validBuild(b string) bool {
 func (in *appInput) validate() string {
 	in.Domain = strings.ToLower(strings.TrimSpace(in.Domain))
 	in.RootDir = strings.Trim(strings.TrimSpace(in.RootDir), "/")
+	if in.EnvPath != nil {
+		p := strings.TrimSpace(*in.EnvPath)
+		in.EnvPath = &p
+	}
 	switch {
+	case in.EnvPath != nil && !deploy.ValidEnvPath(*in.EnvPath):
+		return "the .env path must be a file inside the app's folder"
 	case strings.TrimSpace(in.Branch) == "":
 		return "branch is required"
 	case !validBuild(in.Build):
@@ -472,6 +482,12 @@ func (s *Server) appCreate(w http.ResponseWriter, r *http.Request) {
 		InstallCmd: strings.TrimSpace(in.InstallCmd), BuildCmd: strings.TrimSpace(in.BuildCmd), StartCmd: strings.TrimSpace(in.StartCmd),
 		Dockerfile: strings.TrimSpace(in.Dockerfile), ComposeFile: strings.TrimSpace(in.ComposeFile),
 		Access: in.Access, Allow: strings.TrimSpace(in.Allow)}
+	if in.EnvFile != nil {
+		a.EnvFile = *in.EnvFile
+	}
+	if in.EnvPath != nil {
+		a.EnvPath = *in.EnvPath
+	}
 	err = s.Store.AddApp(r.Context(), a)
 	if errors.Is(err, store.ErrExists) {
 		writeErrorMsg(w, http.StatusConflict, "exists", "an app with this name already exists")
@@ -544,6 +560,12 @@ func (s *Server) appUpdate(w http.ResponseWriter, r *http.Request) {
 	a.InstallCmd, a.BuildCmd, a.StartCmd = strings.TrimSpace(in.InstallCmd), strings.TrimSpace(in.BuildCmd), strings.TrimSpace(in.StartCmd)
 	a.Dockerfile, a.ComposeFile = strings.TrimSpace(in.Dockerfile), strings.TrimSpace(in.ComposeFile)
 	a.Access, a.Allow = in.Access, strings.TrimSpace(in.Allow)
+	if in.EnvFile != nil {
+		a.EnvFile = *in.EnvFile
+	}
+	if in.EnvPath != nil {
+		a.EnvPath = *in.EnvPath
+	}
 	if a.Dir != "" {
 		a.Build = deploy.BuildCompose // a linked folder is always a compose stack
 	}
@@ -562,18 +584,37 @@ func (s *Server) appSetEnv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Env []envIn `json:"env"`
+		Env     []envIn `json:"env"`
+		EnvFile *bool   `json:"envFile"`
+		EnvPath *string `json:"envPath"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request")
 		return
+	}
+	if in.EnvPath != nil {
+		p := strings.TrimSpace(*in.EnvPath)
+		if !deploy.ValidEnvPath(p) {
+			writeErrorMsg(w, http.StatusBadRequest, "invalid", "the .env path must be a file inside the app's folder")
+			return
+		}
+		a.EnvPath = p
+	}
+	if in.EnvFile != nil {
+		a.EnvFile = *in.EnvFile
 	}
 	env, msg := s.sealEnv(r.Context(), a.ID, in.Env)
 	if msg != "" {
 		writeErrorMsg(w, http.StatusBadRequest, "invalid", msg)
 		return
 	}
-	err := s.Store.SetEnv(r.Context(), a.ID, env)
+	var err error
+	if in.EnvFile != nil || in.EnvPath != nil {
+		err = s.Store.UpdateApp(r.Context(), a)
+	}
+	if err == nil {
+		err = s.Store.SetEnv(r.Context(), a.ID, env)
+	}
 	s.audit(r, "app.env", a.ID, err)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal")

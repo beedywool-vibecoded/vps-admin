@@ -3,9 +3,10 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Icon from '@/components/Icon.vue'
 import M3Slider from '@/components/M3Slider.vue'
+import M3Switch from '@/components/M3Switch.vue'
 import M3Dialog from '@/components/M3Dialog.vue'
 import { appearance, loadAppearance, removeBackground, setOpacity, uploadBackground } from '@/lib/appearance'
-import { api, type AuditEntry, type Device, type ServerSetup } from '@/lib/api'
+import { api, type AlertSettings, type AuditEntry, type Device, type ServerSetup, type Tool } from '@/lib/api'
 import ShapeLoader from '@/components/ShapeLoader.vue'
 import StatusDot from '@/components/StatusDot.vue'
 import { passkeysSupported, registerPasskey } from '@/lib/passkey'
@@ -37,6 +38,15 @@ const addingKey = ref(false)
 const fileInput = ref<HTMLInputElement>()
 const uploading = ref(false)
 const opacity = ref(appearance.opacity)
+const alertSet = ref<AlertSettings | null>(null)
+const alertWebhook = ref('')
+const alertDisk = ref(90)
+const alertTesting = ref(false)
+const alertEnabled = computed({
+  get: () => alertSet.value?.enabled ?? false,
+  set: (v: boolean) => saveAlerts({ enabled: v }),
+})
+const diskLimit = () => Math.min(99, Math.max(50, Math.round(alertDisk.value || 90)))
 const setup = ref<ServerSetup | null>(null)
 const setupError = ref(false)
 const proxyTools = computed(() =>
@@ -48,6 +58,20 @@ const proxyTools = computed(() =>
       ]
     : [],
 )
+// One value per tool: what it is doing now, and its release when it has one.
+function toolValue(t: Tool): string {
+  if (!t.installed) return 'not installed'
+  return [t.running ? '' : 'stopped', t.version ?? ''].filter(Boolean).join(' · ') || 'installed'
+}
+// The proxy that actually serves the apps, if any is up.
+const activeProxy = computed(() => {
+  const e = setup.value?.environment
+  if (!e) return ''
+  if (e.caddy.installed && e.caddy.running) return 'Caddy'
+  if (e.nginx.installed && e.nginx.running) return 'nginx'
+  if (e.traefik) return 'Traefik'
+  return ''
+})
 const accessLabel = computed(() => {
   const a = setup.value?.panel.access
   return a === 'tailscale' ? 'Tailscale only' : a === 'local' ? 'Local' : 'Public'
@@ -62,9 +86,10 @@ const domains = computed(() => {
   return {
     ok: true,
     title: 'HTTPS ready',
-    detail: caddy ? 'Served by Caddy, certificates by Caddy' : 'Served by nginx, certificates by certbot',
+    detail: caddy ? 'Served by Caddy, which issues its own certificates' : 'Served by nginx, certificates by certbot',
   }
 })
+const networkUp = computed(() => networks.value.filter((n) => n.tone === 'ok').length)
 // One row per private network, so the tile reads the same whether none or several are up.
 const networks = computed(() => {
   const e = setup.value?.environment
@@ -104,6 +129,36 @@ async function commitOpacity(v: number) {
     await setOpacity(v)
   } catch (err) {
     toastError(err)
+  }
+}
+
+// Alerts save themselves, like the appearance above: the switch at once, the URL and
+// the threshold when the field is left.
+async function loadAlerts() {
+  alertSet.value = await api.alerts()
+  alertWebhook.value = alertSet.value.webhook
+  alertDisk.value = alertSet.value.disk
+}
+async function saveAlerts(s: { enabled?: boolean; webhook?: string; disk?: number }) {
+  try {
+    alertSet.value = await api.updateAlerts(s)
+    alertWebhook.value = alertSet.value.webhook
+    alertDisk.value = alertSet.value.disk
+    toast(s.enabled === undefined ? 'Alerts saved' : s.enabled ? 'Alerts on' : 'Alerts off')
+  } catch (err) {
+    toastError(err)
+  }
+}
+async function testAlerts() {
+  alertTesting.value = true
+  try {
+    await api.testAlerts(alertWebhook.value.trim())
+    toast('Test sent: check what received it')
+    await loadAlerts()
+  } catch (err) {
+    toastError(err)
+  } finally {
+    alertTesting.value = false
   }
 }
 async function dropBackground() {
@@ -237,6 +292,9 @@ const ACTIONS: Record<string, string> = {
   'update.apply': 'Installed an update',
   'update.auto': 'Auto-update',
   'settings.update': 'Changed update settings',
+  'settings.alerts': 'Changed alert settings',
+  'alert.sent': 'Sent an alert',
+  'alert.failed': 'Alert could not be sent',
 }
 const describe = (e: AuditEntry) => {
   if (ACTIONS[e.action]) return ACTIONS[e.action]
@@ -247,7 +305,7 @@ const describe = (e: AuditEntry) => {
 onMounted(async () => {
   try {
     api.environment().then((e) => (setup.value = e)).catch(() => (setupError.value = true))
-    await Promise.all([loadDevices(), loadAudit(), loadAppearance()])
+    await Promise.all([loadDevices(), loadAudit(), loadAppearance(), loadAlerts()])
     opacity.value = appearance.opacity
   } catch (e) {
     toastError(e)
@@ -336,8 +394,67 @@ onMounted(async () => {
 
     <section class="card">
       <div class="card-head">
+        <h2>Alerts</h2>
+        <span class="muted small">A webhook for what breaks on this server</span>
+      </div>
+      <div class="setting">
+        <div class="grow">
+          <div>Notify me</div>
+          <div class="muted small">A container that stops, crashes or turns unhealthy, and a disk that fills up. Deployments and stops from the panel never alert, and every delivery is listed in Activity.</div>
+        </div>
+        <M3Switch v-model="alertEnabled" label="Send alerts" :disabled="!alertSet" />
+      </div>
+      <div class="setting col">
+        <div>
+          <div>Webhook URL</div>
+          <div class="muted small">
+            Anything that takes a POST: ntfy, Discord, Slack, n8n. The body is JSON with <code>title</code>, <code>body</code>, <code>text</code> and <code>name</code>.
+          </div>
+        </div>
+        <div class="alert-row">
+          <label class="field grow">
+            <Icon name="bell" :size="20" />
+            <input
+              v-model="alertWebhook"
+              placeholder="https://ntfy.sh/my-topic"
+              aria-label="Webhook URL"
+              spellcheck="false"
+              autocomplete="off"
+              @change="saveAlerts({ webhook: alertWebhook.trim() })"
+            />
+          </label>
+          <button class="btn btn-tonal st" type="button" :disabled="alertTesting || !alertWebhook.trim()" @click="testAlerts">
+            <Icon name="send" small /> {{ alertTesting ? 'Sending…' : 'Send a test' }}
+          </button>
+        </div>
+      </div>
+      <div class="setting">
+        <div class="grow">
+          <div>Disk alert</div>
+          <div class="muted small">Warn me when a disk goes above this share</div>
+        </div>
+        <label class="field alert-disk">
+          <input
+            v-model.number="alertDisk"
+            type="number"
+            min="50"
+            max="99"
+            aria-label="Disk threshold in percent"
+            @change="saveAlerts({ disk: diskLimit() })"
+          />
+          <span class="muted small">%</span>
+        </label>
+      </div>
+      <p v-if="alertSet?.error" class="alert-error muted small">
+        <Icon name="alert" :size="16" />
+        <span>Last delivery failed: {{ alertSet.error }}{{ alertSet.errorAt ? ` (${ago(new Date(alertSet.errorAt * 1000).toISOString())})` : '' }}</span>
+      </p>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
         <h2>Server setup</h2>
-        <span class="muted small">What this server offers to publish apps, detected {{ setup ? ago(setup.environment.checked) : '…' }}</span>
+        <span class="muted small">What this server offers to publish apps · detected {{ setup ? ago(setup.environment.checked) : '…' }}</span>
       </div>
       <div v-if="!setup && !setupError" class="setup-grid" aria-busy="true">
         <div v-for="n in 6" :key="n" class="tile skeleton" />
@@ -353,8 +470,9 @@ onMounted(async () => {
               <span class="chip" :class="setup.panel.access === 'public' ? 'chip-outline' : ''">{{ accessLabel }}</span>
             </div>
             <div class="tile-value"><code class="plain">{{ setup.panel.url }}</code></div>
-            <div v-if="setup.panel.webhookUrl" class="tile-sub muted small">
-              GitHub webhooks through <code class="plain">{{ setup.panel.webhookUrl }}</code>
+            <div class="tile-sub muted small">
+              <template v-if="setup.panel.webhookUrl">GitHub webhooks through <code class="plain">{{ setup.panel.webhookUrl }}</code></template>
+              <template v-else>GitHub webhooks arrive on this domain</template>
             </div>
           </article>
 
@@ -370,19 +488,30 @@ onMounted(async () => {
 
           <article class="tile">
             <div class="tile-head">
+              <span class="tile-icon tertiary"><Icon name="security" :size="20" /></span>
+              <h3 class="tile-label">Firewall</h3>
+              <StatusDot :tone="setup.environment.ufw ? 'ok' : 'idle'" :label="setup.environment.ufw ? setup.environment.ufw : 'not installed'" />
+            </div>
+            <div class="tile-value">{{ setup.environment.ufw ? `ufw ${setup.environment.ufw}` : 'No firewall' }}</div>
+            <div class="tile-sub muted small">nftables {{ setup.environment.nftables ? 'active' : 'not active' }}</div>
+          </article>
+
+          <article class="tile">
+            <div class="tile-head">
               <span class="tile-icon"><Icon name="server" :size="20" /></span>
               <h3 class="tile-label">Reverse proxy</h3>
+              <span v-if="activeProxy" class="chip">{{ activeProxy }}</span>
             </div>
             <div class="tool-list">
               <div v-for="t in proxyTools" :key="t.name" class="tool" :class="{ off: !t.tool.installed }">
                 <StatusDot :tone="!t.tool.installed ? 'idle' : t.tool.running ? 'ok' : 'warn'" :label="t.tool.installed ? (t.tool.running ? 'running' : 'stopped') : 'not installed'" />
-                <span class="grow ellipsis">{{ t.name }}</span>
-                <span class="muted small">{{ t.tool.installed ? t.tool.version || (t.tool.running ? 'running' : 'stopped') : 'not installed' }}</span>
+                <span class="tool-name">{{ t.name }}</span>
+                <span class="tool-value muted small" :title="toolValue(t.tool)">{{ toolValue(t.tool) }}</span>
               </div>
               <div v-if="setup.environment.traefik" class="tool">
                 <StatusDot tone="ok" label="running" />
-                <span class="grow ellipsis">Traefik</span>
-                <span class="muted small">in Docker</span>
+                <span class="tool-name">Traefik</span>
+                <span class="tool-value muted small">in Docker</span>
               </div>
             </div>
           </article>
@@ -391,40 +520,32 @@ onMounted(async () => {
             <div class="tile-head">
               <span class="tile-icon primary"><Icon name="lock" :size="20" /></span>
               <h3 class="tile-label">Private networks</h3>
+              <span class="chip">{{ networkUp ? `${networkUp} up` : 'none' }}</span>
             </div>
             <div class="tool-list">
-              <div v-for="n in networks" :key="n.name" class="tool">
+              <div v-for="n in networks" :key="n.name" class="tool" :class="{ off: n.tone === 'idle' }">
                 <StatusDot :tone="n.tone" :label="n.detail" />
-                <span class="grow ellipsis">{{ n.name }}</span>
-                <span class="muted small ellipsis">{{ n.detail }}</span>
+                <span class="tool-name">{{ n.name }}</span>
+                <span class="tool-value muted small" :title="n.detail">{{ n.detail }}</span>
               </div>
             </div>
           </article>
 
           <article class="tile">
             <div class="tile-head">
-              <span class="tile-icon tertiary"><Icon name="security" :size="20" /></span>
-              <h3 class="tile-label">Firewall</h3>
-              <StatusDot :tone="setup.environment.ufw ? 'ok' : 'idle'" :label="setup.environment.ufw ? setup.environment.ufw : 'not installed'" />
-            </div>
-            <div class="tile-value">{{ setup.environment.ufw ? `ufw ${setup.environment.ufw}` : 'ufw not installed' }}</div>
-            <div class="tile-sub muted small">nftables {{ setup.environment.nftables ? 'active' : 'not active' }}</div>
-          </article>
-
-          <article class="tile">
-            <div class="tile-head">
               <span class="tile-icon"><Icon name="containers" :size="20" /></span>
               <h3 class="tile-label">Docker</h3>
-              <StatusDot :tone="setup.environment.docker ? 'ok' : 'idle'" :label="setup.environment.docker || 'not reachable'" />
+              <StatusDot :tone="setup.environment.docker ? 'ok' : 'idle'" :label="setup.environment.docker ? 'running' : 'not reachable'" />
             </div>
-            <div class="tile-value">{{ setup.environment.docker || 'Not reachable' }}</div>
+            <div class="tile-value">{{ setup.environment.docker ? `v${setup.environment.docker}` : 'Not reachable' }}</div>
             <div class="tile-sub muted small">Runs the published apps</div>
           </article>
         </div>
         <p class="setup-note muted small">
           <Icon name="info" :size="16" />
           <span>
-            Change how the panel is reached by rerunning the installer: <code>--tailscale</code> (private), <code>--allow 10.8.0.0/24</code> (VPN networks), <code>--proxy caddy|nginx</code>.
+            Rerun the installer to change how the panel is reached: <code>--tailscale</code> keeps it on the tailnet,
+            <code>--allow 10.8.0.0/24</code> opens it to a VPN, <code>--proxy caddy|nginx</code> picks the reverse proxy.
           </span>
         </p>
       </template>
@@ -522,10 +643,22 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* Three cards per row: six of them fill two rows exactly, so the last one never sits
+   alone beside an empty cell. */
 .setup-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+@media (max-width: 1180px) {
+  .setup-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 720px) {
+  .setup-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .tile {
   display: flex;
@@ -590,6 +723,8 @@ onMounted(async () => {
 .tile-value code {
   font-size: 14px;
 }
+/* The cards of a row are ordered so their content is about as tall: a card only gets
+   a strip of spare room at the bottom instead of a hole in the middle. */
 .tile-sub {
   overflow-wrap: anywhere;
 }
@@ -608,6 +743,24 @@ onMounted(async () => {
   gap: 10px;
   min-width: 0;
   font-size: 14px;
+}
+/* A long value (a tailnet name, an address) ends in an ellipsis instead of pushing the
+   card wider than its column or wrapping onto a second line. */
+.tool-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tool-value {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 55%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: right;
 }
 .tool.off {
   color: var(--on-sv);
@@ -815,5 +968,29 @@ onMounted(async () => {
 .mark.fail {
   background: var(--bad);
   color: var(--on-bad);
+}
+.alert-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+.alert-row .field {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+.alert-disk {
+  width: 120px;
+  justify-content: flex-end;
+}
+.alert-disk input {
+  width: 48px;
+  text-align: right;
+}
+.alert-error {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0 0;
 }
 </style>

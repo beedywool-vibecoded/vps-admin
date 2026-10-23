@@ -351,6 +351,9 @@ class _AppDetailPageState extends State<AppDetailPage> {
   };
   String branch = '', buildType = 'auto', access = 'public';
   bool autoDeploy = true, formDirty = false, envDirty = false;
+  // The variables go to the app's environment, or to a file compose reads.
+  bool envFile = false;
+  final _envPath = TextEditingController();
 
   Api get api => Live.read(context).api;
   bool get running => deployments.any(
@@ -371,6 +374,7 @@ class _AppDetailPageState extends State<AppDetailPage> {
     _timer?.cancel();
     _stream?.cancel();
     _logScroll.dispose();
+    _envPath.dispose();
     super.dispose();
   }
 
@@ -387,6 +391,8 @@ class _AppDetailPageState extends State<AppDetailPage> {
             for (final e in (r['env'] as List).cast<Map<String, dynamic>>())
               {...e, 'keep': e['secret'] == true && e['hasValue'] == true},
           ];
+          envFile = a['envFile'] == true;
+          _envPath.text = a['envPath'] as String? ?? '';
         }
         if (!formDirty) {
           branch = a['branch'] as String? ?? '';
@@ -506,7 +512,12 @@ class _AppDetailPageState extends State<AppDetailPage> {
   Future<void> _saveEnv() async {
     setState(() => busy = true);
     try {
-      await api.setEnv(widget.id, env);
+      await api.setEnv(
+        widget.id,
+        env,
+        envFile: envFile,
+        envPath: _envPath.text.trim(),
+      );
       envDirty = false;
       await _load();
       if (mounted &&
@@ -956,6 +967,16 @@ class _AppDetailPageState extends State<AppDetailPage> {
     ];
   }
 
+  // Only a compose stack reads a file: another build gets the variables directly.
+  bool get composeApp {
+    final persisted = app?['build'] as String? ?? '';
+    final live =
+        (app?['live'] as Map<String, dynamic>?)?['build'] as String? ?? '';
+    return persisted == 'compose' ||
+        buildType == 'compose' ||
+        (buildType == 'auto' && live == 'compose');
+  }
+
   Widget _envCard(BuildContext context) => WCard(
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -972,6 +993,45 @@ class _AppDetailPageState extends State<AppDetailPage> {
             envDirty = true;
           }),
         ),
+        const SizedBox(height: 16),
+        if (composeApp)
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Write a .env file'),
+                    Muted(
+                      envFile
+                          ? 'The variables go into a file in the deployed folder instead of the app environment.'
+                          : 'The variables are handed to the app and to compose as environment variables.',
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: envFile,
+                onChanged: (v) => setState(() {
+                  envFile = v;
+                  envDirty = true;
+                }),
+              ),
+            ],
+          ),
+        if (composeApp && envFile)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: FilledField(
+              label: 'Path of the file',
+              controller: _envPath,
+              hint: '.env',
+              mono: true,
+              help:
+                  "Relative to the app's folder, for example .env or config/.env. It is rewritten at each deployment and never committed.",
+              onChanged: (_) => envDirty = true,
+            ),
+          ),
         const SizedBox(height: 12),
         Align(
           alignment: Alignment.centerRight,

@@ -21,8 +21,13 @@ class _ProxyPageState extends State<ProxyPage> {
   ProxyReport? rep;
   bool loading = true;
   String query = '';
+  String busy = '';
 
   Api get api => Live.read(context).api;
+
+  String _key(ProxySite s) => s.id.isNotEmpty
+      ? 'app:${s.id}'
+      : 'file:${s.file}|${s.domains.isEmpty ? '' : s.domains.first}';
 
   @override
   void initState() {
@@ -38,6 +43,50 @@ class _ProxyPageState extends State<ProxyPage> {
       if (mounted) showError(context, e);
     } finally {
       if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> _pause(ProxySite s) async {
+    final name = s.domains.isEmpty ? s.file : s.domains.first;
+    setState(() => busy = _key(s));
+    try {
+      final r = await api.proxyPause(s.id, !s.paused);
+      if (!mounted) return;
+      setState(() => rep = r);
+      showInfo(
+        context,
+        s.paused ? '$name is back on' : '$name paused, the app keeps running',
+      );
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => busy = '');
+    }
+  }
+
+  Future<void> _removeOrphan(ProxySite s) async {
+    final name = s.domains.isEmpty ? s.file : s.domains.first;
+    if (!await wConfirm(
+      context,
+      title: 'Remove $name?',
+      body:
+          'The panel wrote this site for an app that no longer exists. '
+          'Removing it takes the domain out of the proxy; nothing else is touched.',
+      action: 'Remove',
+      danger: true,
+    )) {
+      return;
+    }
+    setState(() => busy = _key(s));
+    try {
+      final r = await api.removeProxyOrphan(s.file);
+      if (!mounted) return;
+      setState(() => rep = r);
+      showInfo(context, 'Left-over site removed');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => busy = '');
     }
   }
 
@@ -77,72 +126,91 @@ class _ProxyPageState extends State<ProxyPage> {
     final warn = StatusDot.color(Tone.warn, cs);
     final warnBg = warn.withValues(alpha: .16);
     final extra = s.domains.length > 1 ? s.domains.skip(1).join(' · ') : '';
-    return WRow(
-      first: first,
-      padding: const EdgeInsets.fromLTRB(6, 12, 0, 12),
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              InkWell(
-                onTap: s.url.isEmpty ? null : () => Updater.openUrl(s.url),
-                borderRadius: BorderRadius.circular(6),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        s.domains.isEmpty ? s.file : s.domains.first,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          color: cs.primary,
+    return Opacity(
+      opacity: s.paused ? .62 : 1,
+      child: WRow(
+        first: first,
+        padding: const EdgeInsets.fromLTRB(6, 12, 0, 12),
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InkWell(
+                  onTap: s.url.isEmpty ? null : () => Updater.openUrl(s.url),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          s.domains.isEmpty ? s.file : s.domains.first,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            color: cs.primary,
+                          ),
                         ),
                       ),
-                    ),
-                    if (s.url.isNotEmpty) ...[
-                      const SizedBox(width: 4),
-                      WIcon('external', size: 14, color: cs.primary),
+                      if (s.url.isNotEmpty) ...[
+                        const SizedBox(width: 4),
+                        WIcon('external', size: 14, color: cs.primary),
+                      ],
                     ],
+                  ),
+                ),
+                if (extra.isNotEmpty) Muted(extra, maxLines: 1),
+                Muted(s.file, mono: true, size: 12, maxLines: 1),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (s.target.isNotEmpty)
+                      WChip(s.target)
+                    else
+                      const WChip('no upstream', outline: true),
+                    if (s.vpnOnly) const WChip('VPN only', outline: true),
+                    if (s.scheme == 'http')
+                      WChip('no HTTPS', color: warnBg, textColor: warn),
+                    if (s.domains.any(shared.contains))
+                      WChip('also elsewhere', color: warnBg, textColor: warn),
+                    if (s.paused)
+                      WChip('paused', color: warnBg, textColor: warn),
+                    if (s.id.isNotEmpty)
+                      InkWell(
+                        onTap: () => openApp(context, s.id),
+                        borderRadius: BorderRadius.circular(8),
+                        child: WChip('App ${s.id}'),
+                      )
+                    else if (s.managed)
+                      const WChip('left over', outline: true)
+                    else
+                      const WChip('by hand', outline: true),
                   ],
                 ),
-              ),
-              if (extra.isNotEmpty) Muted(extra, maxLines: 1),
-              Muted(s.file, mono: true, size: 12, maxLines: 1),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  if (s.target.isNotEmpty)
-                    WChip(s.target)
-                  else
-                    const WChip('no upstream', outline: true),
-                  if (s.vpnOnly) const WChip('VPN only', outline: true),
-                  if (s.scheme == 'http')
-                    WChip('no HTTPS', color: warnBg, textColor: warn),
-                  if (s.domains.any(shared.contains))
-                    WChip('also elsewhere', color: warnBg, textColor: warn),
-                  if (s.id.isNotEmpty)
-                    InkWell(
-                      onTap: () => openApp(context, s.id),
-                      borderRadius: BorderRadius.circular(8),
-                      child: WChip('App ${s.id}'),
-                    )
-                  else if (s.managed)
-                    const WChip('left over', outline: true)
-                  else
-                    const WChip('by hand', outline: true),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
+          if (s.id.isNotEmpty)
+            WIconButton(
+              s.paused ? 'play' : 'stop',
+              tooltip: s.paused ? 'Turn this URL back on' : 'Pause this URL',
+              size: 18,
+              onPressed: busy == _key(s) ? null : () => _pause(s),
+            )
+          else if (s.managed)
+            WIconButton(
+              'trash',
+              tooltip: 'Remove this left-over site',
+              size: 18,
+              onPressed: busy == _key(s) ? null : () => _removeOrphan(s),
+            ),
+        ],
+      ),
     );
   }
 
@@ -176,6 +244,10 @@ class _ProxyPageState extends State<ProxyPage> {
         SearchField(
           hint: 'Search domains',
           onChanged: (v) => setState(() => query = v),
+        ),
+        const Muted(
+          'Pausing a site takes its domain out of the proxy and leaves the app running; it stays in this list, ready to turn back on.',
+          size: 12,
         ),
         if (loading)
           const WCard(child: LoadingBlock(label: 'Loading domains'))

@@ -167,6 +167,9 @@ var migrations = []string{
 	`ALTER TABLE apps ADD COLUMN access TEXT NOT NULL DEFAULT '';
 	ALTER TABLE apps ADD COLUMN allow TEXT NOT NULL DEFAULT '';
 	ALTER TABLE apps ADD COLUMN ts_port INTEGER NOT NULL DEFAULT 0;`,
+	// 8: the variables can go to an .env file instead of the app's environment
+	`ALTER TABLE apps ADD COLUMN env_file INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE apps ADD COLUMN env_path TEXT NOT NULL DEFAULT '';`,
 }
 
 func Open(dataDir string) (*Store, error) {

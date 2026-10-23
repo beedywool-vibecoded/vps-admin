@@ -125,7 +125,8 @@ class ProxySite {
       managed = j['managed'] == true,
       id = j['id'] as String? ?? '',
       vpnOnly = j['vpnOnly'] == true,
-      scheme = j['scheme'] as String? ?? 'https';
+      scheme = j['scheme'] as String? ?? 'https',
+      paused = j['paused'] == true;
   final List<String> domains;
 
   /// Upstream it forwards to, like 127.0.0.1:8080; empty for files or a redirect.
@@ -139,6 +140,9 @@ class ProxySite {
   final String id;
   final bool vpnOnly;
   final String scheme;
+
+  /// An app's URL turned off from the panel: the snippet is gone, the app runs on.
+  final bool paused;
 
   String get url => domains.isEmpty ? '' : '$scheme://${domains.first}';
 }

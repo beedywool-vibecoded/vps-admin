@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import Icon from '@/components/Icon.vue'
 import ShapeLoader from '@/components/ShapeLoader.vue'
 import { api, type ProxyReport, type ProxySite } from '@/lib/api'
-import { toastError } from '@/lib/ui'
+import { confirm, toast, toastError } from '@/lib/ui'
 
 const rep = ref<ProxyReport | null>(null)
 const loading = ref(true)
@@ -31,6 +31,76 @@ const shared = computed(() => {
 
 const url = (s: ProxySite) => `${s.scheme}://${s.domains[0]}`
 const key = (s: ProxySite) => `${s.file}|${s.domains[0]}`
+// What the server stores for the manual order: the app for a managed site, the file and
+// its first domain otherwise.
+const siteKey = (s: ProxySite) => (s.id ? `app:${s.id}` : `file:${s.file}|${s.domains[0] ?? ''}`)
+
+const busy = ref('')
+const dragFrom = ref<number | null>(null)
+const dragTo = ref<number | null>(null)
+// A filtered list would reorder the wrong rows: no dragging while searching.
+const canDrag = computed(() => !query.value.trim())
+
+async function togglePause(s: ProxySite) {
+  busy.value = siteKey(s)
+  const name = s.domains[0]
+  try {
+    rep.value = await api.proxyPause(s.id, !s.paused)
+    toast(s.paused ? `${name} is back on` : `${name} paused, the app keeps running`)
+  } catch (e) {
+    toastError(e)
+  } finally {
+    busy.value = ''
+  }
+}
+
+async function removeOrphan(s: ProxySite) {
+  const ok = await confirm({
+    title: `Remove ${s.domains[0] ?? s.file}?`,
+    body: 'The panel wrote this site for an app that no longer exists. Removing it takes the domain out of the proxy; nothing else is touched.',
+    action: 'Remove',
+    danger: true,
+  })
+  if (!ok) return
+  busy.value = siteKey(s)
+  try {
+    rep.value = await api.removeProxyOrphan(s.file)
+    toast('Left-over site removed')
+  } catch (e) {
+    toastError(e)
+  } finally {
+    busy.value = ''
+  }
+}
+
+async function saveOrder(list: ProxySite[]) {
+  try {
+    rep.value = await api.proxyOrder(list.map(siteKey))
+  } catch (e) {
+    toastError(e)
+  }
+}
+
+async function move(from: number, to: number) {
+  const list = [...(rep.value?.sites ?? [])]
+  if (to < 0 || to >= list.length || from === to) return
+  const [item] = list.splice(from, 1)
+  if (!item) return
+  list.splice(to, 0, item)
+  if (rep.value) rep.value = { ...rep.value, sites: list }
+  await saveOrder(list)
+}
+
+function dragStart(i: number) {
+  dragFrom.value = i
+}
+
+async function drop(i: number) {
+  const from = dragFrom.value
+  dragFrom.value = dragTo.value = null
+  if (from === null) return
+  await move(from, i)
+}
 
 onMounted(async () => {
   try {
@@ -74,9 +144,36 @@ onMounted(async () => {
         <span class="muted small">{{ domains }} {{ domains === 1 ? 'domain' : 'domains' }}</span>
       </div>
 
+      <p v-if="sites.length" class="hint muted small">
+        Drag a row to set the order. Pausing a site takes its domain out of {{ engine }} and leaves the app running; the
+        row stays here so it can be turned back on.
+      </p>
+
       <section class="card">
         <p v-if="!shown.length" class="muted">{{ sites.length ? 'No domain matches.' : 'The proxy serves no site yet.' }}</p>
-        <div v-for="s in shown" :key="key(s)" class="row">
+        <div
+          v-for="(s, i) in shown"
+          :key="key(s)"
+          class="row site"
+          :class="{ paused: s.paused, over: dragTo === i && dragFrom !== null && dragFrom !== i }"
+          :draggable="canDrag"
+          @dragstart="dragStart(i)"
+          @dragover.prevent="dragTo = i"
+          @dragleave="dragTo = null"
+          @drop.prevent="drop(i)"
+          @dragend="dragFrom = dragTo = null"
+        >
+          <button
+            v-if="canDrag"
+            class="grip st"
+            type="button"
+            :aria-label="`Reorder ${s.domains[0] ?? s.file}`"
+            v-tip="'Drag, or use the up and down arrows'"
+            @keydown.up.prevent="move(i, -1)"
+            @keydown.down.prevent="move(i, 1)"
+          >
+            <span aria-hidden="true">⠿</span>
+          </button>
           <div class="grow">
             <div class="names">
               <a :href="url(s)" target="_blank" rel="noopener" class="dom">
@@ -91,9 +188,32 @@ onMounted(async () => {
           <span v-if="s.vpnOnly" class="chip chip-outline">VPN only</span>
           <span v-if="s.scheme === 'http'" class="chip chip-outline warn">no HTTPS</span>
           <span v-if="s.domains.some((d) => shared.has(d))" class="chip chip-outline warn">also elsewhere</span>
+          <span v-if="s.paused" class="chip chip-outline warn">paused</span>
           <RouterLink v-if="s.id" :to="`/apps/${s.id}`" class="chip">App {{ s.id }}</RouterLink>
           <span v-else-if="s.managed" class="chip chip-outline">left over</span>
           <span v-else class="chip chip-outline">by hand</span>
+          <button
+            v-if="s.id"
+            class="icon-btn st"
+            type="button"
+            :aria-label="s.paused ? `Turn ${s.domains[0]} back on` : `Pause ${s.domains[0]}`"
+            v-tip="s.paused ? 'Turn this URL back on' : 'Pause this URL'"
+            :disabled="busy === siteKey(s)"
+            @click="togglePause(s)"
+          >
+            <Icon :name="s.paused ? 'play' : 'stop'" :size="18" />
+          </button>
+          <button
+            v-else-if="s.managed"
+            class="icon-btn st"
+            type="button"
+            :aria-label="`Remove the left-over site ${s.domains[0] ?? s.file}`"
+            v-tip="'Remove this left-over site'"
+            :disabled="busy === siteKey(s)"
+            @click="removeOrphan(s)"
+          >
+            <Icon name="trash" :size="18" />
+          </button>
         </div>
       </section>
 
@@ -152,5 +272,34 @@ onMounted(async () => {
   display: block;
   font-family: var(--mono, ui-monospace, monospace);
   margin-top: 4px;
+}
+.hint {
+  margin: 0;
+}
+.site.paused {
+  opacity: 0.62;
+}
+.site.over {
+  box-shadow: inset 0 2px 0 var(--primary);
+}
+.grip {
+  width: 28px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--on-surface-variant);
+  font-size: 18px;
+  line-height: 1;
+  letter-spacing: -2px;
+  cursor: grab;
+  opacity: 0.7;
+}
+.grip:hover,
+.grip:focus-visible {
+  opacity: 1;
+  color: var(--primary);
+}
+.site[draggable='true'] {
+  cursor: default;
 }
 </style>

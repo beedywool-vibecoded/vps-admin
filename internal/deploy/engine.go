@@ -136,6 +136,15 @@ func (e *Engine) Busy(appID string) bool {
 	return e.running[appID]
 }
 
+// AnyBusy reports whether a deployment is running at all. A deployment stops and
+// recreates the containers of its app on purpose, so the alert watcher stays quiet
+// while one is going on.
+func (e *Engine) AnyBusy() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.running) > 0
+}
+
 // Subscribe streams log output of a running deployment.
 func (e *Engine) Subscribe(id int64) (<-chan string, func()) {
 	ch := make(chan string, 256)
@@ -286,7 +295,7 @@ func (e *Engine) process(ctx context.Context, j job) {
 	env, err := e.envFor(ctx, app.ID)
 	if err == nil {
 		if app.Dir != "" {
-			err = e.updateFolder(ctx, l, app, d)
+			err = e.updateFolder(ctx, l, app, d, env)
 		} else if d.Image == "" || app.Build == BuildCompose {
 			err = e.fetchAndBuild(ctx, l, &app, d, env)
 		} else {
@@ -559,23 +568,92 @@ func (e *Engine) retirePrevious(ctx context.Context, l *logger, app store.App, d
 
 func (e *Engine) composeProject(appID string) string { return "vpsadmin-" + appID }
 
-func (e *Engine) composeUp(ctx context.Context, l *logger, app store.App, root string, env []string) error {
-	// Compose reads this file for ${VAR} interpolation; variables also reach the CLI
-	// environment, which compose uses the same way.
-	var envFile strings.Builder
+// EnvFilePath is where an app's variables are written: the chosen file, or .env by
+// default, inside the folder that is deployed.
+func EnvFilePath(app store.App) string {
+	if p := strings.TrimSpace(app.EnvPath); p != "" {
+		return p
+	}
+	return ".env"
+}
+
+// ValidEnvPath refuses anything that would write outside the app's folder.
+func ValidEnvPath(p string) bool {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return true
+	}
+	if len(p) > 200 || filepath.IsAbs(p) || strings.ContainsAny(p, "\\\x00") || strings.HasSuffix(p, "/") {
+		return false
+	}
+	c := filepath.Clean(p)
+	return c != "." && c != ".." && !strings.HasPrefix(c, "../") && !strings.HasPrefix(c, "/")
+}
+
+// writeEnvFile puts the app's variables in a file the compose project can read, and
+// returns its path relative to root. 0600: it carries the secrets the panel holds.
+func (e *Engine) writeEnvFile(root string, app store.App, env []string) (string, error) {
+	rel := EnvFilePath(app)
+	if !ValidEnvPath(rel) {
+		return "", fmt.Errorf("the .env path %q must stay inside the app's folder", app.EnvPath)
+	}
+	full := filepath.Join(root, rel)
+	if dir := filepath.Dir(full); dir != filepath.Clean(root) {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return "", err
+		}
+	}
+	var b strings.Builder
 	for _, kv := range env {
 		k, v, _ := strings.Cut(kv, "=")
-		envFile.WriteString(k + "=" + strconv.Quote(v) + "\n")
+		b.WriteString(envLine(k, v))
 	}
-	if err := os.WriteFile(filepath.Join(root, ".env.vps-admin"), []byte(envFile.String()), 0o600); err != nil {
-		return err
+	if err := os.WriteFile(full, []byte(b.String()), 0o600); err != nil {
+		return "", err
+	}
+	return rel, nil
+}
+
+// envLine renders one variable for a compose env file: quoted, since the values hold
+// passwords and URLs where a space or a # would otherwise end the value, and with $
+// escaped so compose passes it through instead of reading it as a variable.
+func envLine(k, v string) string {
+	if v == "" {
+		return k + "=\n"
+	}
+	return k + "=" + strconv.Quote(strings.ReplaceAll(v, "$", "$$")) + "\n"
+}
+
+func (e *Engine) composeUp(ctx context.Context, l *logger, app store.App, root string, env []string) error {
+	args := []string{"compose", "-p", e.composeProject(app.ID)}
+	cliEnv := env
+	if app.EnvFile {
+		// The file is the app's only source: no variables reach compose's environment.
+		rel, err := e.writeEnvFile(root, app, env)
+		if err != nil {
+			return err
+		}
+		l.Printf("Writing %d variable(s) to %s", len(env), rel)
+		args = append(args, "--env-file", rel)
+		cliEnv = nil
+	} else {
+		// Compose reads .env.vps-admin for ${VAR} interpolation; variables also reach
+		// the CLI environment, which compose uses the same way.
+		var envFile strings.Builder
+		for _, kv := range env {
+			k, v, _ := strings.Cut(kv, "=")
+			envFile.WriteString(envLine(k, v))
+		}
+		if err := os.WriteFile(filepath.Join(root, ".env.vps-admin"), []byte(envFile.String()), 0o600); err != nil {
+			return err
+		}
+		args = append(args, "--env-file", ".env.vps-admin")
 	}
 	l.Printf("docker compose up (project %s)", e.composeProject(app.ID))
-	args := []string{"compose", "-p", e.composeProject(app.ID), "--env-file", ".env.vps-admin"}
 	if app.ComposeFile != "" {
 		args = append(args, "-f", app.ComposeFile)
 	}
-	return e.docker(ctx, l, root, env, append(args, "up", "-d", "--build", "--remove-orphans")...)
+	return e.docker(ctx, l, root, cliEnv, append(args, "up", "-d", "--build", "--remove-orphans")...)
 }
 
 func (e *Engine) goLiveCompose(ctx context.Context, l *logger, app store.App, d *store.Deployment) error {
@@ -687,6 +765,7 @@ func (e *Engine) Remove(ctx context.Context, app store.App, volumes bool) error 
 	if err := e.unpublish(ctx, app); err != nil {
 		errs = append(errs, err)
 	}
+	e.forgetPaused(ctx, app.ID)
 	if len(errs) == 0 {
 		os.RemoveAll(filepath.Join(e.DataDir, "apps", app.ID))
 	}

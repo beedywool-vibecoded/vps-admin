@@ -2,11 +2,14 @@ package deploy
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/beedywool/vps-admin/internal/store"
@@ -86,9 +89,30 @@ func (e *Engine) URL(ctx context.Context, app store.App) string {
 	return ""
 }
 
+// Printer is where a site change logs its progress: a deployment's log, or the agent's
+// own log when the change comes from the Proxy tab.
+type Printer interface {
+	Printf(format string, args ...any)
+}
+
+// agentLog prints to the agent log, for actions with no deployment behind them.
+type agentLog struct{}
+
+func (agentLog) Printf(format string, args ...any) { slog.Info(fmt.Sprintf(format, args...)) }
+
 // publish routes the app to its container port according to its access mode, and
 // withdraws it from the ways it no longer uses.
-func (e *Engine) publish(ctx context.Context, l *logger, app store.App, port int) error {
+func (e *Engine) publish(ctx context.Context, l Printer, app store.App, port int) error {
+	// A URL paused from the Proxy tab stays off after every deployment: the app runs,
+	// it is just not reachable.
+	if e.Paused(ctx, app.ID) {
+		err := e.unpublishProxy(ctx, app)
+		e.tailscaleOff(ctx, app)
+		if app.Domain != "" {
+			l.Printf("URL of %s paused: turn it back on from the Proxy tab", app.Domain)
+		}
+		return err
+	}
 	switch Access(app) {
 	case AccessLocal:
 		e.unpublishProxy(ctx, app)
@@ -120,6 +144,121 @@ func (e *Engine) unpublish(ctx context.Context, app store.App) error {
 	return err
 }
 
+// pausedSetting holds the apps whose URL was paused from the Proxy tab: the app keeps
+// running, its domain stops answering until it is turned back on.
+const pausedSetting = "proxy.paused"
+
+// Paused tells whether an app's URL is paused.
+func (e *Engine) Paused(ctx context.Context, appID string) bool {
+	return e.pausedMap(ctx)[appID]
+}
+
+func (e *Engine) pausedMap(ctx context.Context) map[string]bool {
+	m := map[string]bool{}
+	if e.Store == nil {
+		return m
+	}
+	json.Unmarshal([]byte(e.Store.Setting(ctx, pausedSetting, "{}")), &m)
+	return m
+}
+
+// SetPaused withdraws or restores an app's URL. Its containers keep running either way:
+// this is about the domain, not the app.
+func (e *Engine) SetPaused(ctx context.Context, app store.App, paused bool) error {
+	m := e.pausedMap(ctx)
+	if paused {
+		m[app.ID] = true
+	} else {
+		delete(m, app.ID)
+	}
+	b, _ := json.Marshal(m)
+	if err := e.Store.SetSetting(ctx, pausedSetting, string(b)); err != nil {
+		return err
+	}
+	if paused {
+		return e.unpublish(ctx, app)
+	}
+	port := e.LivePort(ctx, app)
+	if port == 0 {
+		return errors.New("this app has no port to publish: deploy it once first")
+	}
+	return e.publish(ctx, agentLog{}, app, port)
+}
+
+// forgetPaused drops the pause of an app that is gone, so its id can be used again.
+func (e *Engine) forgetPaused(ctx context.Context, appID string) {
+	m := e.pausedMap(ctx)
+	if !m[appID] {
+		return
+	}
+	delete(m, appID)
+	b, _ := json.Marshal(m)
+	e.Store.SetSetting(ctx, pausedSetting, string(b))
+}
+
+// LivePort is the local port the app answers on right now: the compose port it was
+// given, or the port of the container that is live.
+func (e *Engine) LivePort(ctx context.Context, app store.App) int {
+	if app.Build != BuildCompose {
+		if d, err := e.Store.LiveDeployment(ctx, app.ID); err == nil && d != nil && d.HostPort != 0 {
+			return d.HostPort
+		}
+	}
+	return app.Port
+}
+
+var snippetName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*\.(caddy|conf)$`)
+
+// RemoveOrphan deletes a snippet this panel wrote whose app no longer exists, then
+// reloads the proxy. Anything the panel did not write is refused: hand-written sites
+// belong to the administrator.
+func (e *Engine) RemoveOrphan(ctx context.Context, file string) error {
+	path := filepath.Clean(file)
+	base := filepath.Base(path)
+	if !snippetName.MatchString(base) {
+		return errors.New("this is not a proxy snippet")
+	}
+	dir := ""
+	switch {
+	case e.SitesDir != "" && filepath.Dir(path) == filepath.Clean(e.SitesDir):
+		dir = "caddy"
+	case e.NginxDir != "" && filepath.Dir(path) == filepath.Clean(e.NginxDir):
+		dir = "nginx"
+	default:
+		return errors.New("this file is not in the directories the panel writes")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return errors.New("this site is already gone")
+		}
+		return err
+	}
+	if !strings.HasPrefix(string(data), "# Managed by VPS Admin (app ") {
+		return errors.New("this file was not written by the panel")
+	}
+	id := strings.TrimSuffix(base, filepath.Ext(base))
+	if _, err := e.Store.App(ctx, id); err == nil {
+		return errors.New("this snippet still serves an app: delete the app instead")
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
+	if err := os.Remove(path); err != nil {
+		return err
+	}
+	if dir == "caddy" {
+		if e.ReloadCaddy == nil {
+			return nil // no Caddy to reload (tests, or a machine without it)
+		}
+		return e.ReloadCaddy(ctx)
+	}
+	if e.Helper == nil {
+		return nil
+	}
+	_, err = e.Helper(ctx, "nginx-reload")
+	return err
+}
+
 func (e *Engine) caddyPath(id string) string { return filepath.Join(e.SitesDir, id+".caddy") }
 func (e *Engine) nginxPath(id string) string { return filepath.Join(e.NginxDir, id+".conf") }
 
@@ -144,7 +283,7 @@ func (e *Engine) unpublishProxy(ctx context.Context, app store.App) error {
 // caddySite points the domain at port; Caddy gets the certificate itself. If Caddy
 // rejects the result (a domain already used elsewhere, for instance) the previous
 // snippet is restored.
-func (e *Engine) caddySite(ctx context.Context, l *logger, app store.App, port int) error {
+func (e *Engine) caddySite(ctx context.Context, l Printer, app store.App, port int) error {
 	path := e.caddyPath(app.ID)
 	prev, readErr := os.ReadFile(path)
 	var b strings.Builder
@@ -172,7 +311,7 @@ func (e *Engine) caddySite(ctx context.Context, l *logger, app store.App, port i
 
 // nginxSite writes the app's server block, then asks certbot for HTTPS. The block is
 // rewritten on every deploy; certbot reinstalls the existing certificate into it.
-func (e *Engine) nginxSite(ctx context.Context, l *logger, app store.App, port int) error {
+func (e *Engine) nginxSite(ctx context.Context, l Printer, app store.App, port int) error {
 	path := e.nginxPath(app.ID)
 	prev, readErr := os.ReadFile(path)
 	allow := ""
@@ -241,7 +380,7 @@ func lastLine(out string, err error) string {
 
 // tailscaleServe publishes the app at https://<machine>.<tailnet>.ts.net:<port>, only on
 // the tailnet. Each app keeps its own port, picked once from 8443 up.
-func (e *Engine) tailscaleServe(ctx context.Context, l *logger, app store.App, port int) error {
+func (e *Engine) tailscaleServe(ctx context.Context, l Printer, app store.App, port int) error {
 	if e.Helper == nil || e.TailscaleName == nil || e.TailscaleName(ctx) == "" {
 		return errors.New("Tailscale is not running on this server")
 	}

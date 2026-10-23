@@ -74,16 +74,14 @@ func (r *Runner) DetectEnvironment(ctx context.Context) *Environment {
 		out, _ := run("systemctl", "is-active", unit)
 		return out == "active"
 	}
-	firstLine := func(s string) string { l, _, _ := strings.Cut(s, "\n"); return l }
-
 	if v, ok := run("caddy", "version"); ok {
-		e.Caddy = Tool{Installed: true, Running: active("caddy"), Version: strings.Fields(v + " ")[0]}
+		e.Caddy = Tool{Installed: true, Running: active("caddy"), Version: toolVersion(v)}
 	}
 	if v, _ := run("nginx", "-v"); v != "" {
-		e.Nginx = Tool{Installed: true, Running: active("nginx"), Version: strings.TrimPrefix(firstLine(v), "nginx version: ")}
+		e.Nginx = Tool{Installed: true, Running: active("nginx"), Version: toolVersion(v)}
 	}
 	if v, ok := run("certbot", "--version"); ok {
-		e.Certbot = Tool{Installed: true, Version: strings.TrimPrefix(firstLine(v), "certbot ")}
+		e.Certbot = Tool{Installed: true, Version: toolVersion(v)}
 		e.Certbot.Running = active("certbot.timer")
 		_, err := os.Stat("/usr/lib/python3/dist-packages/certbot_nginx")
 		e.Certbot.NginxPlugin = err == nil || hasPluginDir()
@@ -109,6 +107,29 @@ func (r *Runner) DetectEnvironment(ctx context.Context) *Environment {
 	e.Nftables = err == nil && active("nftables")
 	envCache = e
 	return e
+}
+
+// versionIn matches a release number inside a tool's output.
+var versionIn = regexp.MustCompile(`\bv?\d+\.\d+(?:\.\d+)*\b`)
+
+// toolVersion reads a release number out of a tool's output. The first word is not
+// enough: caddy prints its warnings on the same stream as its version, and nginx
+// prefixes it ("nginx version: nginx/1.24.0").
+func toolVersion(out string) string {
+	var first string
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "{") || strings.HasPrefix(line, "[") {
+			continue // a log record, not the answer to the command
+		}
+		if v := versionIn.FindString(line); v != "" {
+			return v
+		}
+		if first == "" {
+			first = line
+		}
+	}
+	return first
 }
 
 // certbot's nginx plugin also comes from pip or snap.

@@ -22,6 +22,9 @@ type Site struct {
 	ID      string `json:"id"` // app id of a managed site, empty when the app is gone
 	VPNOnly bool   `json:"vpnOnly"`
 	Scheme  string `json:"scheme"` // https or http
+	// Paused is set for an app's site that was turned off from the panel: the snippet is
+	// gone, the entry stays so it can be turned back on.
+	Paused bool `json:"paused"`
 }
 
 // Report is the whole picture: which proxy answers, every site it serves, and the files

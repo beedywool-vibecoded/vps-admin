@@ -133,6 +133,11 @@ class Api {
   Future<Security> security({bool refresh = false}) async =>
       Security(await get('/api/security${refresh ? '?refresh=1' : ''}'));
   Future<ProxyReport> proxy() async => ProxyReport(await get('/api/proxy'));
+  Future<ProxyReport> proxyPause(String app, bool paused) async => ProxyReport(
+    await post('/api/proxy/pause', {'app': app, 'paused': paused}),
+  );
+  Future<ProxyReport> removeProxyOrphan(String file) async =>
+      ProxyReport(await post('/api/proxy/orphans/remove', {'file': file}));
   Future<UpdateStatus> update() async => UpdateStatus(await get('/api/update'));
   Future<UpdateStatus> checkUpdate() async =>
       UpdateStatus(await post('/api/update/check'));
@@ -284,14 +289,36 @@ class Api {
   Future<Map<String, dynamic>> securityRaw({bool refresh = false}) =>
       get('/api/security${refresh ? '?refresh=1' : ''}');
   Future<Map<String, dynamic>> updateRaw() => get('/api/update');
+
+  // The webhook that receives what breaks (see internal/alerts).
+  Future<Map<String, dynamic>> alerts() => get('/api/alerts');
+  Future<Map<String, dynamic>> updateAlerts({
+    bool? enabled,
+    String? webhook,
+    int? disk,
+  }) => put('/api/alerts', {
+    'enabled': ?enabled,
+    'webhook': ?webhook,
+    'disk': ?disk,
+  });
+  Future<void> testAlerts(String webhook) =>
+      post('/api/alerts/test', {'webhook': webhook});
   Future<Map<String, dynamic>> appsRaw() => get('/api/apps');
   Future<Map<String, dynamic>> appFull(String id) => get('/api/apps/$id');
   Future<Map<String, dynamic>> createApp(Map<String, dynamic> a) =>
       post('/api/apps', a);
   Future<void> deleteApp(String id, {bool volumes = false}) =>
       delete('/api/apps/$id${volumes ? '?volumes=1' : ''}');
-  Future<void> setEnv(String id, List<Map<String, dynamic>> env) =>
-      put('/api/apps/$id/env', {'env': env});
+  Future<void> setEnv(
+    String id,
+    List<Map<String, dynamic>> env, {
+    bool? envFile,
+    String? envPath,
+  }) => put('/api/apps/$id/env', {
+    'env': env,
+    'envFile': ?envFile,
+    'envPath': ?envPath,
+  });
   Future<Map<String, dynamic>> github() => get('/api/github');
   Future<List<Map<String, dynamic>>> repos() async =>
       ((await get('/api/github/repos'))['repos'] as List)

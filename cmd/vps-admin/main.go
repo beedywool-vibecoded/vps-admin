@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/beedywool/vps-admin/internal/alerts"
 	"github.com/beedywool/vps-admin/internal/api"
 	"github.com/beedywool/vps-admin/internal/assistant"
 	"github.com/beedywool/vps-admin/internal/auth"
@@ -186,11 +187,15 @@ func serve(cfgPath string) error {
 	}
 	asst.Init(ctx)
 
+	// Container and disk alerts, posted to the webhook set in the panel or the app.
+	alertWatcher := &alerts.Watcher{Store: st, Docker: dockerClient, Metrics: collector, Deploy: engine}
+	go alertWatcher.Run(ctx)
+
 	srv := &api.Server{
 		Cfg: cfg, Store: st, Auth: a, Collector: collector, Runner: runner,
 		Docker: dockerClient, Updater: up, Host: host,
 		Box: box, GitHub: gh, Deploy: engine, Assistant: asst, Scripts: scriptRunner,
-		Restart: stop,
+		Alerts: alertWatcher, Restart: stop,
 	}
 	srv.LoadGitHub(ctx)
 	httpSrv := &http.Server{

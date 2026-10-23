@@ -28,6 +28,11 @@ class _SettingsPageState extends State<SettingsPage> {
       loadingAudit = false,
       uploading = false;
   double? opacity;
+  Map<String, dynamic>? alerts;
+  final hookCtl = TextEditingController();
+  final diskCtl = TextEditingController();
+  bool loadingAlerts = false;
+  bool testingAlerts = false;
 
   LiveSession get live => Live.read(context);
   Api get api => live.api;
@@ -38,6 +43,7 @@ class _SettingsPageState extends State<SettingsPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _devices();
       _audit();
+      _alerts();
     });
   }
 
@@ -52,6 +58,73 @@ class _SettingsPageState extends State<SettingsPage> {
       }
     } catch (e) {
       if (mounted) showError(context, e);
+    }
+  }
+
+  @override
+  void dispose() {
+    hookCtl.dispose();
+    diskCtl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _alerts() async {
+    setState(() => loadingAlerts = true);
+    try {
+      final a = await api.alerts();
+      if (!mounted) return;
+      setState(() {
+        alerts = a;
+        // The fields are only filled once: a pass over them must not overwrite typing.
+        if (hookCtl.text.isEmpty) hookCtl.text = a['webhook'] as String? ?? '';
+        if (diskCtl.text.isEmpty) diskCtl.text = '${a['disk'] ?? 90}';
+      });
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => loadingAlerts = false);
+    }
+  }
+
+  int get _disk {
+    final v = int.tryParse(diskCtl.text.trim()) ?? 90;
+    return v < 50 ? 50 : (v > 99 ? 99 : v);
+  }
+
+  Future<void> _saveAlerts({bool? enabled, String? webhook}) async {
+    if (enabled == null && webhook == null) return;
+    try {
+      final a = await api.updateAlerts(
+        enabled: enabled,
+        webhook: webhook,
+        disk: webhook == null ? null : _disk,
+      );
+      if (!mounted) return;
+      setState(() {
+        alerts = a;
+        hookCtl.text = a['webhook'] as String? ?? '';
+        diskCtl.text = '${a['disk'] ?? 90}';
+      });
+      if (enabled != null) {
+        showInfo(context, enabled ? 'Alerts on' : 'Alerts off');
+      } else {
+        showInfo(context, 'Alerts saved');
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    }
+  }
+
+  Future<void> _testAlerts() async {
+    setState(() => testingAlerts = true);
+    try {
+      await api.testAlerts(hookCtl.text.trim());
+      if (mounted) showInfo(context, 'Test sent: check what received it');
+      await _alerts();
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => testingAlerts = false);
     }
   }
 
@@ -204,6 +277,9 @@ class _SettingsPageState extends State<SettingsPage> {
     'update.apply': 'Installed an update',
     'update.auto': 'Auto-update',
     'settings.update': 'Changed update settings',
+    'settings.alerts': 'Changed alert settings',
+    'alert.sent': 'Sent an alert',
+    'alert.failed': 'Alert could not be sent',
   };
   String _describe(AuditEntry e) {
     final l = _actions[e.action];
@@ -445,6 +521,97 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       ],
                     ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        WCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const CardHead(
+                'Alerts',
+                sub:
+                    'A webhook for what breaks: a container down, a disk filling up',
+              ),
+              setting(
+                titled(
+                  'Notify me',
+                  'Deployments and manual stops never alert; deliveries are listed in Activity',
+                ),
+                Switch(
+                  value: alerts?['enabled'] as bool? ?? false,
+                  onChanged: alerts == null
+                      ? null
+                      : (v) => _saveAlerts(enabled: v),
+                ),
+                first: true,
+              ),
+              const SizedBox(height: 12),
+              const Text('Webhook URL'),
+              const SizedBox(height: 8),
+              TextField(
+                controller: hookCtl,
+                autocorrect: false,
+                keyboardType: TextInputType.url,
+                decoration: const InputDecoration(
+                  hintText: 'https://ntfy.sh/my-topic',
+                ),
+                onSubmitted: (v) => _saveAlerts(webhook: v.trim()),
+              ),
+              const SizedBox(height: 8),
+              const Muted(
+                'Anything that takes a POST: ntfy, Discord, Slack, n8n. The body is JSON with title, body, text and name.',
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Disk alert'),
+                        const Muted('Warn me when a disk goes above this share'),
+                      ],
+                    ),
+                  ),
+                  SizedBox(
+                    width: 96,
+                    child: TextField(
+                      controller: diskCtl,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.end,
+                      decoration: const InputDecoration(suffixText: '%'),
+                    ),
+                  ),
+                ],
+              ),
+              if ((alerts?['error'] as String? ?? '').isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Muted('Last delivery failed: ${alerts!['error']}'),
+              ],
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  WButton(
+                    'Save',
+                    busy: loadingAlerts,
+                    onPressed: loadingAlerts
+                        ? null
+                        : () => _saveAlerts(webhook: hookCtl.text.trim()),
+                  ),
+                  WButton(
+                    'Send a test',
+                    icon: 'bell',
+                    kind: BtnKind.outlined,
+                    busy: testingAlerts,
+                    onPressed: testingAlerts || hookCtl.text.trim().isEmpty
+                        ? null
+                        : _testAlerts,
                   ),
                 ],
               ),

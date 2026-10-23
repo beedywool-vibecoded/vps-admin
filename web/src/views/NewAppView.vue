@@ -6,6 +6,7 @@ import M3Shape from '@/components/M3Shape.vue'
 import ShapeLoader from '@/components/ShapeLoader.vue'
 import M3Switch from '@/components/M3Switch.vue'
 import EnvEditor from '@/components/EnvEditor.vue'
+import EnvTarget from '@/components/EnvTarget.vue'
 import M3Select from '@/components/M3Select.vue'
 import BuildCommands, { type Commands } from '@/components/BuildCommands.vue'
 import AccessPicker from '@/components/AccessPicker.vue'
@@ -39,6 +40,8 @@ const autoDeploy = ref(true)
 const keep = ref(5)
 const memoryMb = ref(0)
 const env = ref<EnvVar[]>([])
+const envFile = ref(false)
+const envPath = ref('')
 
 const shown = computed(() => {
   const q = query.value.trim().toLowerCase()
@@ -152,6 +155,8 @@ async function submit() {
       memoryMb: memoryMb.value || 0,
       ...cmds.value,
       env: env.value,
+      envFile: envFile.value,
+      envPath: envPath.value,
       deploy: true,
     })
     router.push({ path: `/apps/${res.app.id}`, query: res.deployment ? { dep: String(res.deployment.id) } : {} })
@@ -316,6 +321,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
           <h3>Environment variables</h3>
           <p class="hint">Values passed to the app when it starts. Secrets stay hidden in the panel.</p>
           <EnvEditor v-model="env" />
+          <EnvTarget v-if="effectiveBuild === 'compose'" v-model:file="envFile" v-model:path="envPath" />
         </div>
 
         <div class="group">
@@ -359,7 +365,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
           <div><dt>Build</dt><dd>{{ BUILD_LABEL[effectiveBuild] ?? (detecting ? 'Detecting…' : 'Not detected') }}</dd></div>
           <div><dt>Port</dt><dd>{{ port || 'None' }}</dd></div>
           <div><dt>Memory limit</dt><dd>{{ memoryMb ? `${memoryMb} MiB` : 'No limit' }}</dd></div>
-          <div><dt>Environment</dt><dd>{{ envCount ? `${envCount} variable${envCount > 1 ? 's' : ''}` : 'None' }}</dd></div>
+          <div><dt>Environment</dt><dd>{{ envCount ? `${envCount} variable${envCount > 1 ? 's' : ''}` : 'None' }}{{ envFile ? ` · ${envPath || '.env'} file` : '' }}</dd></div>
           <div><dt>Auto-deploy</dt><dd>{{ autoDeploy ? 'On every push' : 'Off' }}</dd></div>
           <div><dt>Versions kept</dt><dd>{{ keep }}</dd></div>
         </dl>

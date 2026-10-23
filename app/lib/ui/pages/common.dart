@@ -406,6 +406,9 @@ class GroupCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
+                // The badge hangs from the top of the card: sat in the middle of a
+                // three-line title block, it read as floating next to nothing.
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   InkWell(
                     borderRadius: BorderRadius.circular(12),
@@ -439,15 +442,6 @@ class GroupCard extends StatelessWidget {
                                         fontWeight: FontWeight.w500,
                                       ),
                                       children: [
-                                        if (titled)
-                                          TextSpan(
-                                            text: ' (${g.name})',
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w400,
-                                              color: cs.onSurfaceVariant,
-                                            ),
-                                          ),
                                         if (onRename != null)
                                           WidgetSpan(
                                             alignment:
@@ -470,6 +464,11 @@ class GroupCard extends StatelessWidget {
                                       ],
                                     ),
                                   ),
+                                  // The compose project keeps a line of its own under a
+                                  // renamed group, the way an image sits under a container
+                                  // name; squeezed onto the title line it broke the name.
+                                  if (titled)
+                                    Muted(g.name, size: 13, maxLines: 1),
                                   if (g.dir != null)
                                     Muted(
                                       g.dir!,

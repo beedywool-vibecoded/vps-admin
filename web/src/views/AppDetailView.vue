@@ -7,6 +7,7 @@ import ShapeLoader from '@/components/ShapeLoader.vue'
 import M3Switch from '@/components/M3Switch.vue'
 import StatusDot from '@/components/StatusDot.vue'
 import EnvEditor from '@/components/EnvEditor.vue'
+import EnvTarget from '@/components/EnvTarget.vue'
 import M3Select from '@/components/M3Select.vue'
 import M3Checkbox from '@/components/M3Checkbox.vue'
 import BuildCommands from '@/components/BuildCommands.vue'
@@ -23,6 +24,8 @@ const router = useRouter()
 const app = ref<AppView | null>(null)
 const deployments = ref<Deployment[]>([])
 const env = ref<EnvVar[]>([])
+const envFile = ref(false)
+const envPath = ref('')
 const domains = ref(false)
 const tab = ref<'deployments' | 'env' | 'settings'>('deployments')
 const busy = ref(false)
@@ -69,6 +72,10 @@ async function load() {
     domains.value = res.domains
     if (!envDirty) env.value = res.env.map((e) => ({ ...e, keep: e.secret && e.hasValue }))
     const a = res.app
+    if (!targetDirty) {
+      envFile.value = a.envFile
+      envPath.value = a.envPath
+    }
     loadBranches(a)
     if (!formDirty) {
       form.value = { branch: a.branch, rootDir: a.rootDir, build: a.build, port: a.port, domain: a.domain, autoDeploy: a.autoDeploy, keep: a.keep, memoryMb: a.memoryMb, access: a.accessMode, allow: a.allow }
@@ -83,8 +90,10 @@ async function load() {
 }
 
 let envDirty = false
+let targetDirty = false
 let formDirty = false
 watch(env, () => (envDirty = true), { deep: true })
+watch([envFile, envPath], () => (targetDirty = true))
 watch([form, cmds], () => (formDirty = true), { deep: true })
 
 function select(id: number) {
@@ -144,8 +153,9 @@ async function rollback(d: Deployment) {
 async function saveEnv() {
   busy.value = true
   try {
-    await api.setEnv(props.id, env.value)
+    await api.setEnv(props.id, env.value, { envFile: envFile.value, envPath: envPath.value })
     envDirty = false
+    targetDirty = false
     await load()
     const ok = await confirm({ title: 'Variables saved', body: 'They apply at the next deployment. Redeploy now?', action: 'Redeploy' })
     if (ok) redeploy()
@@ -296,6 +306,7 @@ onBeforeUnmount(() => {
         <span class="muted small">Encrypted on the server · secrets are never sent back to the panel</span>
       </div>
       <EnvEditor v-model="env" />
+      <EnvTarget v-if="form.build === 'compose' || effectiveBuild === 'compose'" v-model:file="envFile" v-model:path="envPath" />
       <div class="actions">
         <button class="btn btn-filled st" type="button" :disabled="busy" @click="saveEnv">Save</button>
       </div>

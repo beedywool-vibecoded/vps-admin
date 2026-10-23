@@ -104,7 +104,9 @@ redémarrer, **logs en direct**. Arrêter SSH ou le panel lui-même est refusé.
 Une **GitHub App** se crée en un clic, en lecture seule sur les repos choisis. Dockerfile,
 Compose, Node ou site statique : le type est **détecté tout seul**, commandes d'install,
 de build et de démarrage personnalisables. Chaque push redéploie **sans coupure**, avec un
-retour arrière instantané et un domaine HTTPS via Caddy. Un dossier compose déjà en place
+retour arrière instantané et un domaine HTTPS via Caddy. Variables d'environnement
+chiffrées, passées à l'app ou **écrites dans un fichier `.env`** dont on choisit le chemin
+(certains compose n'acceptent que ça). Un dossier compose déjà en place
 se lie aussi à son repo : même mise à jour au push, bouton **Vérifier** et **Mettre à jour**,
 et ses scripts s'affichent à côté de ses conteneurs.
 
@@ -226,6 +228,7 @@ Ouvre ensuite le domaine, tape le code, crée ta passkey. Pour l'app ou un autre
 <tr><td><code>internal/deploy</code></td><td>Build et lancement des apps, contrôle HTTP, bascule Caddy, retour arrière.</td></tr>
 <tr><td><code>internal/github</code></td><td>GitHub App (manifest), jetons d'installation, webhooks signés.</td></tr>
 <tr><td><code>internal/assistant</code></td><td>Boucle de conversation, adaptateur OpenAI-compatible (Gemini, Ollama), pont MCP pour le CLI Claude Code, outils, politique d'approbation.</td></tr>
+<tr><td><code>internal/alerts</code></td><td>Surveillance des conteneurs et des disques, webhook d'alerte (réglé dans le panel et l'app).</td></tr>
 <tr><td><code>internal/update</code></td><td>Releases signées, installation, distribution de l'APK.</td></tr>
 <tr><td><code>internal/store</code></td><td>SQLite en pur Go (binaire statique), historique append-only.</td></tr>
 <tr><td><code>web/</code></td><td>Panel Vue 3 + Vite, Material 3 Expressive, palette Material You générée depuis une couleur de base.</td></tr>

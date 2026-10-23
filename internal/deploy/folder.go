@@ -116,7 +116,7 @@ func (e *Engine) CurrentCommit(ctx context.Context, app store.App) string {
 
 // updateFolder brings a linked folder to sha: fast-forward for normal pushes, a hard
 // reset for rollbacks (asked for explicitly), then compose up.
-func (e *Engine) updateFolder(ctx context.Context, l *logger, app store.App, d *store.Deployment) error {
+func (e *Engine) updateFolder(ctx context.Context, l *logger, app store.App, d *store.Deployment, env []string) error {
 	if d.SHA == "" {
 		c, err := e.GitHub.Commit(ctx, app.InstallationID, app.Repo, app.Branch)
 		if err != nil {
@@ -152,8 +152,19 @@ func (e *Engine) updateFolder(ctx context.Context, l *logger, app store.App, d *
 	if err != nil {
 		return err
 	}
+	args := []string{"up", "-d", "--build", "--remove-orphans"}
+	if app.EnvFile {
+		// A linked folder keeps its own files: the variables go where it expects them,
+		// and compose gets them from that file only.
+		rel, err := e.writeEnvFile(root, app, env)
+		if err != nil {
+			return err
+		}
+		l.Printf("Writing %d variable(s) to %s", len(env), rel)
+		args = append([]string{"--env-file", rel}, args...)
+	}
 	l.Printf("docker compose up (project %s)", e.projectName(app))
-	return e.compose(ctx, l, app, root, "up", "-d", "--build", "--remove-orphans")
+	return e.compose(ctx, l, app, root, args...)
 }
 
 // RebuildService refreshes one service of a compose stack in place: a newer image if

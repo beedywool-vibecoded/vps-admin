@@ -33,6 +33,10 @@ type App struct {
 	Access string `json:"access"`
 	Allow  string `json:"allow"`
 	TSPort int    `json:"tsPort"`
+	// EnvFile writes the variables into a file in the app's folder (compose reads it)
+	// instead of handing them to the app; EnvPath is where, relative to that folder.
+	EnvFile bool   `json:"envFile"`
+	EnvPath string `json:"envPath"`
 }
 
 type EnvVar struct {
@@ -59,7 +63,7 @@ type Deployment struct {
 
 var ErrExists = errors.New("already exists")
 
-const appCols = `id, repo, installation_id, branch, root_dir, build, port, domain, auto_deploy, keep, memory_mb, created_at, dir, install_cmd, build_cmd, start_cmd, dockerfile, compose_file, access, allow, ts_port`
+const appCols = `id, repo, installation_id, branch, root_dir, build, port, domain, auto_deploy, keep, memory_mb, created_at, dir, install_cmd, build_cmd, start_cmd, dockerfile, compose_file, access, allow, ts_port, env_file, env_path`
 
 type scanner interface{ Scan(...any) error }
 
@@ -67,7 +71,8 @@ func scanApp(r scanner) (*App, error) {
 	var a App
 	var created int64
 	if err := r.Scan(&a.ID, &a.Repo, &a.InstallationID, &a.Branch, &a.RootDir, &a.Build, &a.Port, &a.Domain, &a.AutoDeploy, &a.Keep, &a.MemoryMB, &created,
-		&a.Dir, &a.InstallCmd, &a.BuildCmd, &a.StartCmd, &a.Dockerfile, &a.ComposeFile, &a.Access, &a.Allow, &a.TSPort); err != nil {
+		&a.Dir, &a.InstallCmd, &a.BuildCmd, &a.StartCmd, &a.Dockerfile, &a.ComposeFile, &a.Access, &a.Allow, &a.TSPort,
+		&a.EnvFile, &a.EnvPath); err != nil {
 		return nil, err
 	}
 	a.CreatedAt = time.Unix(created, 0)
@@ -78,17 +83,19 @@ func (s *Store) AddApp(ctx context.Context, a *App) error {
 	if _, err := s.App(ctx, a.ID); err == nil {
 		return ErrExists
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO apps(`+appCols+`) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := s.db.ExecContext(ctx, `INSERT INTO apps(`+appCols+`) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		a.ID, a.Repo, a.InstallationID, a.Branch, a.RootDir, a.Build, a.Port, a.Domain, a.AutoDeploy, a.Keep, a.MemoryMB, now(),
-		a.Dir, a.InstallCmd, a.BuildCmd, a.StartCmd, a.Dockerfile, a.ComposeFile, a.Access, a.Allow, a.TSPort)
+		a.Dir, a.InstallCmd, a.BuildCmd, a.StartCmd, a.Dockerfile, a.ComposeFile, a.Access, a.Allow, a.TSPort, a.EnvFile, a.EnvPath)
 	return err
 }
 
 func (s *Store) UpdateApp(ctx context.Context, a *App) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE apps SET branch = ?, root_dir = ?, build = ?, port = ?, domain = ?, auto_deploy = ?, keep = ?, memory_mb = ?,
-		install_cmd = ?, build_cmd = ?, start_cmd = ?, dockerfile = ?, compose_file = ?, access = ?, allow = ?, ts_port = ? WHERE id = ?`,
+		install_cmd = ?, build_cmd = ?, start_cmd = ?, dockerfile = ?, compose_file = ?, access = ?, allow = ?, ts_port = ?,
+		env_file = ?, env_path = ? WHERE id = ?`,
 		a.Branch, a.RootDir, a.Build, a.Port, a.Domain, a.AutoDeploy, a.Keep, a.MemoryMB,
-		a.InstallCmd, a.BuildCmd, a.StartCmd, a.Dockerfile, a.ComposeFile, a.Access, a.Allow, a.TSPort, a.ID)
+		a.InstallCmd, a.BuildCmd, a.StartCmd, a.Dockerfile, a.ComposeFile, a.Access, a.Allow, a.TSPort,
+		a.EnvFile, a.EnvPath, a.ID)
 	return err
 }
 

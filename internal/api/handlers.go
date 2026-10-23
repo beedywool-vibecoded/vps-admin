@@ -305,6 +305,10 @@ func (s *Server) containerAction(w http.ResponseWriter, r *http.Request) {
 		writeErrorMsg(w, statusFor(err), "action_failed", err.Error())
 		return
 	}
+	// A stop from here is deliberate: the alert watcher must not report it as an outage.
+	if action == "stop" && s.Alerts != nil {
+		s.Alerts.StoppedFromPanel(id)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

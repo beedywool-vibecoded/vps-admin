@@ -45,6 +45,8 @@ class _NewAppPageState extends State<NewAppPage> {
       saving = false,
       autoDeploy = true;
   List<Map<String, dynamic>> env = [];
+  // The variables go to the app's environment, or to a file compose reads.
+  bool envFile = false;
   final name = TextEditingController();
   final f = <String, TextEditingController>{
     for (final k in [
@@ -59,6 +61,7 @@ class _NewAppPageState extends State<NewAppPage> {
       'startCmd',
       'dockerfile',
       'composeFile',
+      'envPath',
     ])
       k: TextEditingController(),
   };
@@ -218,6 +221,8 @@ class _NewAppPageState extends State<NewAppPage> {
         ])
           k: f[k]!.text.trim(),
         'env': env,
+        'envFile': envFile,
+        'envPath': f['envPath']!.text.trim(),
         'deploy': true,
       });
       if (!mounted) return;
@@ -431,12 +436,12 @@ class _NewAppPageState extends State<NewAppPage> {
                                             vertical: 12,
                                           ),
                                           child: Row(
-                              children: [
+                                            children: [
                                               Expanded(
                                                 child: Column(
                                                   crossAxisAlignment:
                                                       CrossAxisAlignment.start,
-                              children: [
+                                                  children: [
                                                     Text(
                                                       (r['fullName'] as String)
                                                           .split('/')
@@ -693,7 +698,43 @@ class _NewAppPageState extends State<NewAppPage> {
             context,
             'Environment variables',
             'Values passed to the app when it starts. Secrets stay hidden in the panel.',
-            [EnvEditor(vars: env, onChanged: (v) => setState(() => env = v))],
+            [
+              EnvEditor(vars: env, onChanged: (v) => setState(() => env = v)),
+              // Only a compose stack reads a file: another build gets the variables directly.
+              if (effectiveBuild == 'compose') ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Write a .env file'),
+                          Muted(
+                            envFile
+                                ? 'The variables go into a file in the deployed folder instead of the app environment.'
+                                : 'The variables are handed to the app and to compose as environment variables.',
+                          ),
+                        ],
+                      ),
+                    ),
+                    Switch(
+                      value: envFile,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      onChanged: (v) => setState(() => envFile = v),
+                    ),
+                  ],
+                ),
+                if (envFile)
+                  FilledField(
+                    label: 'Path of the file',
+                    controller: f['envPath']!,
+                    hint: '.env',
+                    mono: true,
+                    help:
+                        "Relative to the app's folder, for example .env or config/.env. It is rewritten at each deployment and never committed.",
+                  ),
+              ],
+            ],
           ),
           _group(context, 'Deploy', 'What happens after each push to the branch.', [
             Row(
@@ -770,6 +811,13 @@ class _NewAppPageState extends State<NewAppPage> {
     final envCount = env
         .where((e) => (e['key'] as String? ?? '').trim().isNotEmpty)
         .length;
+    final envTarget = f['envPath']!.text.trim().isEmpty
+        ? '.env'
+        : f['envPath']!.text.trim();
+    final envSummary = [
+      envCount == 0 ? 'None' : '$envCount variable${envCount > 1 ? 's' : ''}',
+      if (envFile) '$envTarget file',
+    ].join(' · ');
     final build =
         buildLabel[effectiveBuild] ??
         (detecting ? 'Detecting…' : 'Not detected');
@@ -828,12 +876,7 @@ class _NewAppPageState extends State<NewAppPage> {
                   'Memory limit',
                   mem.isEmpty || mem == '0' ? 'No limit' : '$mem MiB',
                 ),
-                line(
-                  'Environment',
-                  envCount == 0
-                      ? 'None'
-                      : '$envCount variable${envCount > 1 ? 's' : ''}',
-                ),
+                line('Environment', envSummary),
                 line('Auto-deploy', autoDeploy ? 'On every push' : 'Off'),
                 line('Versions kept', f['keep']!.text),
               ],

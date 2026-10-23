@@ -63,6 +63,104 @@ func TestCaddySiteVPN(t *testing.T) {
 	}
 }
 
+// A URL paused from the Proxy tab stays off: a deployment neither brings it back nor
+// stops the app.
+func TestPausedSiteIsNotRepublished(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	dir := t.TempDir()
+	e := &Engine{Store: st, SitesDir: dir, ReloadCaddy: func(context.Context) error { return nil }}
+	app := store.App{ID: "web", Domain: "web.example.com", Access: AccessPublic, Build: BuildCompose, Port: 3000}
+	ctx := context.Background()
+
+	if err := e.SetPaused(ctx, app, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.publish(ctx, testLogger(), app, 3000); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "web.caddy")); !os.IsNotExist(err) {
+		t.Fatalf("a deployment wrote the site of a paused app: %v", err)
+	}
+
+	// Turning it back on writes the snippet again, at the app's port.
+	if err := e.SetPaused(ctx, app, false); err != nil {
+		t.Fatal(err)
+	}
+	conf, err := os.ReadFile(filepath.Join(dir, "web.caddy"))
+	if err != nil || !strings.Contains(string(conf), "reverse_proxy 127.0.0.1:3000") {
+		t.Fatalf("resume: %v\n%s", err, conf)
+	}
+}
+
+// Deleting an app takes its snippet with it, and drops its paused flag.
+func TestRemoveWithdrawsTheSite(t *testing.T) {
+	root := t.TempDir()
+	st, err := store.Open(filepath.Join(root, "data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	sites := filepath.Join(root, "sites")
+	if err := os.MkdirAll(sites, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	// A linked folder skips the docker CLI, which a test machine may not have.
+	app := store.App{ID: "blog", Dir: "/tmp/blog", Domain: "blog.example.com", Access: AccessPublic}
+	if err := st.AddApp(ctx, &app); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{Store: st, DataDir: filepath.Join(root, "data"), SitesDir: sites,
+		ReloadCaddy: func(context.Context) error { return nil }}
+	file := filepath.Join(sites, "blog.caddy")
+	if err := os.WriteFile(file, []byte("# Managed by VPS Admin (app blog)\nblog.example.com {\n\treverse_proxy 127.0.0.1:8080\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SetPaused(ctx, app, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Remove(ctx, app, false); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if _, err := os.Stat(file); !os.IsNotExist(err) {
+		t.Fatalf("the Caddy snippet is still there: %v", err)
+	}
+	if e.Paused(ctx, "blog") {
+		t.Fatal("the paused flag outlived the app")
+	}
+}
+
+func TestRemoveOrphanRefusesWhatItDidNotWrite(t *testing.T) {
+	root := t.TempDir()
+	st, err := store.Open(filepath.Join(root, "data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	sites := filepath.Join(root, "sites")
+	if err := os.MkdirAll(sites, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{Store: st, SitesDir: sites, ReloadCaddy: func(context.Context) error { return nil }}
+	hand := filepath.Join(sites, "hand.caddy")
+	if err := os.WriteFile(hand, []byte("hand.example.com {\n\tfile_server\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.RemoveOrphan(context.Background(), hand); err == nil {
+		t.Fatal("a hand-written site was removed")
+	}
+	if _, err := os.Stat(hand); err != nil {
+		t.Fatal("the hand-written site is gone")
+	}
+	if err := e.RemoveOrphan(context.Background(), "/etc/passwd"); err == nil {
+		t.Fatal("a file outside the snippets was accepted")
+	}
+}
+
 func TestAllowList(t *testing.T) {
 	if _, err := AllowList("10.8.0.0/24, nope"); err == nil {
 		t.Error("bad network accepted")

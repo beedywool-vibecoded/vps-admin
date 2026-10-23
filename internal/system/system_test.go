@@ -46,3 +46,20 @@ func TestCPUPercent(t *testing.T) {
 		t.Errorf("no delta should give 0, got %v", got)
 	}
 }
+
+func TestToolVersion(t *testing.T) {
+	cases := []struct{ out, want string }{
+		// Caddy writes its warnings on the same stream as the version.
+		{"{\"level\":\"warn\",\"ts\":1792785636.9141853,\"msg\":\"unable to get instance ID\"}\nv2.10.0 h1:abc", "v2.10.0"},
+		{"v2.7.6 h1:XYZ", "v2.7.6"},
+		{"nginx version: nginx/1.24.0", "1.24.0"},
+		{"certbot 2.1.0", "2.1.0"},
+		{"", ""},
+		{"something without a version", "something without a version"},
+	}
+	for _, c := range cases {
+		if got := toolVersion(c.out); got != c.want {
+			t.Errorf("toolVersion(%q) = %q, want %q", c.out, got, c.want)
+		}
+	}
+}

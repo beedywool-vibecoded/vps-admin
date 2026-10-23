@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/beedywool/vps-admin/internal/alerts"
 	"github.com/beedywool/vps-admin/internal/assistant"
 	"github.com/beedywool/vps-admin/internal/auth"
 	"github.com/beedywool/vps-admin/internal/buildinfo"
@@ -43,6 +44,7 @@ type Server struct {
 	Deploy    *deploy.Engine
 	Assistant *assistant.Engine
 	Scripts   *scripts.Runner
+	Alerts    *alerts.Watcher
 	Host      system.Host
 	// Restart is called after an update is installed; the process exits and systemd
 	// starts the new binary.
@@ -79,6 +81,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/services/{name}/logs", full(s.serviceLogs))
 	mux.Handle("GET /api/security", full(s.securityReport))
 	mux.Handle("GET /api/proxy", full(s.proxySites))
+	mux.Handle("POST /api/proxy/pause", full(s.proxyPause))
+	mux.Handle("POST /api/proxy/order", full(s.proxyOrder))
+	mux.Handle("POST /api/proxy/orphans/remove", full(s.proxyRemoveOrphan))
 
 	mux.Handle("GET /api/docker/containers", full(s.containers))
 	mux.Handle("GET /api/docker/stats", full(s.containerStats))
@@ -103,6 +108,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/appearance/background", full(s.backgroundGet))
 	mux.Handle("PUT /api/appearance/background", full(s.backgroundPut))
 	mux.Handle("DELETE /api/appearance/background", full(s.backgroundDelete))
+
+	mux.Handle("GET /api/alerts", full(s.alertsGet))
+	mux.Handle("PUT /api/alerts", full(s.alertsPut))
+	mux.Handle("POST /api/alerts/test", full(s.alertsTest))
 
 	mux.Handle("GET /api/scripts", full(s.scriptsList))
 	mux.Handle("POST /api/scripts/{name}/run", full(s.scriptRun))
