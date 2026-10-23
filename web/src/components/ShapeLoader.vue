@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Direct port of Pelote's loading indicator (components/bundle.js): on the same 700 ms beat the
-// path takes the next shape and turns 140°, with the 650 ms spring. It pauses off screen and in a
-// hidden tab, and stays on the first shape under prefers-reduced-motion.
+// path takes the next shape and turns 140°, with the 650 ms spring. The first turn comes 20 ms
+// after it appears, so it never looks frozen at the start. It pauses off screen and in a hidden
+// tab, and stays on the first shape under prefers-reduced-motion.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { LOADER_SEQUENCE, LOADER_SHAPES, LOADER_STEP_MS, LOADER_TURN_DEG } from '@/lib/loaderShapes'
 
@@ -14,9 +15,16 @@ const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 const step = ref(0)
 const turn = ref(0)
 const host = ref<HTMLSpanElement>()
+let start: ReturnType<typeof setTimeout> | undefined
 let timer: ReturnType<typeof setInterval> | undefined
 let observer: IntersectionObserver | undefined
 let visible = true
+
+function beat() {
+  if (!visible || document.hidden) return
+  step.value = (step.value + 1) % LOADER_SEQUENCE.length
+  turn.value += LOADER_TURN_DEG
+}
 
 onMounted(() => {
   if (reduce) return
@@ -26,14 +34,15 @@ onMounted(() => {
     })
     observer.observe(host.value)
   }
-  timer = setInterval(() => {
-    if (!visible || document.hidden) return
-    step.value = (step.value + 1) % LOADER_SEQUENCE.length
-    turn.value += LOADER_TURN_DEG
-  }, LOADER_STEP_MS)
+  // First step after 20 ms, then Pelote's 700 ms beat
+  start = setTimeout(() => {
+    beat()
+    timer = setInterval(beat, LOADER_STEP_MS)
+  }, 20)
 })
 
 onBeforeUnmount(() => {
+  clearTimeout(start)
   clearInterval(timer)
   observer?.disconnect()
 })
@@ -69,6 +78,10 @@ const glyph = computed(() => (props.small ? 18 : 38))
   border-radius: 24px;
   background: var(--pc);
   color: var(--on-pc);
+}
+/* Inside a button, the indicator takes the label's colour, as in Pelote */
+.btn .shape-loader {
+  color: currentColor;
 }
 path {
   transform-origin: 50px 50px;

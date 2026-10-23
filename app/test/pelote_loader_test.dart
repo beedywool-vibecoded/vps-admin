@@ -31,12 +31,13 @@ void main() {
   testWidgets('the loader turns while it waits', (tester) async {
     await tester.pumpWidget(host());
     final before = angleOf(tester);
-    // Pelote's own beat: nothing turns during the first 700 ms.
-    await tester.pump(const Duration(milliseconds: 650));
+    // Nothing turns during the first 10 ms: the first step lands at 20 ms.
+    await tester.pump(const Duration(milliseconds: 10));
     expect(angleOf(tester), closeTo(before, 0.001));
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.pump(const Duration(milliseconds: 350));
-    expect(angleOf(tester), isNot(closeTo(before, 0.1)));
+    // It has turned well before Pelote's first 700 ms beat would have fired.
+    await tester.pump(const Duration(milliseconds: 30));
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(angleOf(tester), greaterThan(2));
     await tester.pumpWidget(const SizedBox());
   });
 

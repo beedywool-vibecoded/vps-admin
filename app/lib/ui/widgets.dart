@@ -67,7 +67,8 @@ class _ShapePainter extends CustomPainter {
 }
 
 /// Pelote's indeterminate loader: an M3 Expressive shape that changes and turns a little further
-/// every 700 ms, like the one on the web panel. Reduced motion keeps the first shape still.
+/// every 700 ms, like the one on the web panel. The first step comes 20 ms after it appears.
+/// Reduced motion keeps the first shape still.
 class PeloteLoader extends StatefulWidget {
   const PeloteLoader({
     super.key,
@@ -87,6 +88,7 @@ class _PeloteLoaderState extends State<PeloteLoader> {
   int _index = 0;
   int _turn = 0;
   bool? _reduce;
+  Timer? _start;
   Timer? _timer;
 
   void _advance() {
@@ -103,17 +105,22 @@ class _PeloteLoaderState extends State<PeloteLoader> {
     final reduce = MediaQuery.disableAnimationsOf(context);
     if (reduce == _reduce) return;
     _reduce = reduce;
+    _start?.cancel();
     _timer?.cancel();
-    _timer = reduce
-        ? null
-        : Timer.periodic(
-            const Duration(milliseconds: 700),
-            (_) => _advance(),
-          );
+    if (reduce) return;
+    // First step after 20 ms, then Pelote's 700 ms beat
+    _start = Timer(const Duration(milliseconds: 20), () {
+      _advance();
+      _timer = Timer.periodic(
+        const Duration(milliseconds: 700),
+        (_) => _advance(),
+      );
+    });
   }
 
   @override
   void dispose() {
+    _start?.cancel();
     _timer?.cancel();
     super.dispose();
   }
