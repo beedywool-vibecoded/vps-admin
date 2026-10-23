@@ -136,7 +136,13 @@ func TestNginxSites(t *testing.T) {
 	}
 }
 `)
-	// The snippet the panel writes for an app, and the certbot copy certbot adds.
+	// The snippet the panel writes for an app, the copy certbot leaves behind, and the
+	// backup a package upgrade writes: only the first is a site.
+	write(t, root, "etc/nginx/vps-admin-apps/shop.conf.bak", `server {
+	listen 80;
+	server_name old-shop.example.com;
+}
+`)
 	write(t, root, "etc/nginx/vps-admin-apps/shop.conf", `# Managed by VPS Admin (app shop), rewritten on every deploy
 server {
 	listen 80;

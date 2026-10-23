@@ -41,12 +41,14 @@ const dragTo = ref<number | null>(null)
 // A filtered list would reorder the wrong rows: no dragging while searching.
 const canDrag = computed(() => !query.value.trim())
 
+// An app's URL is paused through the app, which knows how to write it again; any other
+// file is paused by taking it out of the proxy's directory.
 async function togglePause(s: ProxySite) {
   busy.value = siteKey(s)
   const name = s.domains[0]
   try {
-    rep.value = await api.proxyPause(s.id, !s.paused)
-    toast(s.paused ? `${name} is back on` : `${name} paused, the app keeps running`)
+    rep.value = s.id ? await api.proxyPause(s.id, !s.paused) : await api.proxySite(s.file, s.paused ? 'resume' : 'pause')
+    toast(s.paused ? `${name} is back on` : `${name} paused${s.id ? ', the app keeps running' : ''}`)
   } catch (e) {
     toastError(e)
   } finally {
@@ -54,18 +56,42 @@ async function togglePause(s: ProxySite) {
   }
 }
 
-async function removeOrphan(s: ProxySite) {
+// nginx only: Caddy gets its certificates by itself. certbot edits the server block and
+// reloads nginx, which is why this works on a hand-written site too.
+async function addHTTPS(s: ProxySite) {
+  const domain = s.domains[0]
+  if (!domain) return
   const ok = await confirm({
-    title: `Remove ${s.domains[0] ?? s.file}?`,
-    body: 'The panel wrote this site for an app that no longer exists. Removing it takes the domain out of the proxy; nothing else is touched.',
-    action: 'Remove',
+    title: `Get a certificate for ${domain}?`,
+    body: `certbot asks Let's Encrypt for ${domain} and installs the certificate in this nginx site. The domain's DNS must point here and port 80 must be open.`,
+    action: 'Add HTTPS',
+  })
+  if (!ok) return
+  busy.value = siteKey(s)
+  try {
+    rep.value = await api.proxySite(s.file, 'https', domain)
+    toast(`HTTPS set up for ${domain}`)
+  } catch (e) {
+    toastError(e)
+  } finally {
+    busy.value = ''
+  }
+}
+
+// Any site in the list can go, including a block added by hand: the file is removed and
+// the proxy reloaded, so the domain stops answering right away.
+async function removeSite(s: ProxySite) {
+  const ok = await confirm({
+    title: `Delete ${s.domains[0] ?? s.file}?`,
+    body: `The file ${s.file} is removed and the proxy reloaded, so the domain stops answering. ${s.managed ? 'The app it belonged to is already gone.' : 'The panel did not write this block: it is not saved anywhere else.'} Nothing else is touched.`,
+    action: 'Delete',
     danger: true,
   })
   if (!ok) return
   busy.value = siteKey(s)
   try {
-    rep.value = await api.removeProxyOrphan(s.file)
-    toast('Left-over site removed')
+    rep.value = await api.proxySite(s.file, 'delete')
+    toast(`${s.domains[0] ?? s.file} removed`)
   } catch (e) {
     toastError(e)
   } finally {
@@ -145,8 +171,8 @@ onMounted(async () => {
       </div>
 
       <p v-if="sites.length" class="hint muted small">
-        Drag a row to set the order. Pausing a site takes its domain out of {{ engine }} and leaves the app running; the
-        row stays here so it can be turned back on.
+        Drag a row to set the order. Pausing a site takes its domain out of {{ engine }} and keeps everything else
+        running; the row stays here so it can be turned back on. Deleting one removes its file.
       </p>
 
       <section class="card">
@@ -176,9 +202,10 @@ onMounted(async () => {
           </button>
           <div class="grow">
             <div class="names">
-              <a :href="url(s)" target="_blank" rel="noopener" class="dom">
+              <a v-if="!s.paused" :href="url(s)" target="_blank" rel="noopener" class="dom">
                 {{ s.domains[0] }}<Icon name="external" :size="15" />
               </a>
+              <span v-else class="dom paused-dom">{{ s.domains[0] ?? s.file }}</span>
               <span v-for="d in s.domains.slice(1)" :key="d" class="muted small">{{ d }}</span>
             </div>
             <div class="muted small ellipsis file">{{ s.file }}</div>
@@ -187,30 +214,43 @@ onMounted(async () => {
           <span v-else class="chip chip-outline">no upstream</span>
           <span v-if="s.vpnOnly" class="chip chip-outline">VPN only</span>
           <span v-if="s.scheme === 'http'" class="chip chip-outline warn">no HTTPS</span>
-          <span v-if="s.domains.some((d) => shared.has(d))" class="chip chip-outline warn">also elsewhere</span>
+          <span
+            v-if="s.domains.some((d) => shared.has(d))"
+            class="chip chip-outline warn"
+            v-tip="'Another site in this list answers the same name: a deploy on either would fail on a domain already used'"
+          >also elsewhere</span>
           <span v-if="s.paused" class="chip chip-outline warn">paused</span>
           <RouterLink v-if="s.id" :to="`/apps/${s.id}`" class="chip">App {{ s.id }}</RouterLink>
           <span v-else-if="s.managed" class="chip chip-outline">left over</span>
           <span v-else class="chip chip-outline">by hand</span>
           <button
-            v-if="s.id"
             class="icon-btn st"
             type="button"
-            :aria-label="s.paused ? `Turn ${s.domains[0]} back on` : `Pause ${s.domains[0]}`"
-            v-tip="s.paused ? 'Turn this URL back on' : 'Pause this URL'"
+            :aria-label="s.paused ? `Turn ${s.domains[0] ?? s.file} back on` : `Pause ${s.domains[0] ?? s.file}`"
+            v-tip="s.paused ? 'Turn this URL back on' : s.id ? 'Pause this URL, the app keeps running' : 'Pause this site'",
             :disabled="busy === siteKey(s)"
             @click="togglePause(s)"
           >
             <Icon :name="s.paused ? 'play' : 'stop'" :size="18" />
           </button>
           <button
-            v-else-if="s.managed"
+            v-if="engine === 'nginx' && s.scheme === 'http' && !s.paused && s.domains.length"
             class="icon-btn st"
             type="button"
-            :aria-label="`Remove the left-over site ${s.domains[0] ?? s.file}`"
-            v-tip="'Remove this left-over site'"
+            :aria-label="`Get a certificate for ${s.domains[0]}`"
+            v-tip="'Add HTTPS with certbot'"
             :disabled="busy === siteKey(s)"
-            @click="removeOrphan(s)"
+            @click="addHTTPS(s)"
+          >
+            <Icon name="lock" :size="18" />
+          </button>
+          <button
+            class="icon-btn st"
+            type="button"
+            :aria-label="`Delete the site ${s.domains[0] ?? s.file}`"
+            v-tip="'Delete this site file'"
+            :disabled="busy === siteKey(s)"
+            @click="removeSite(s)"
           >
             <Icon name="trash" :size="18" />
           </button>
@@ -255,6 +295,12 @@ onMounted(async () => {
 }
 .dom:hover {
   text-decoration: underline;
+}
+/* A paused site answers nothing: its name is text, not a link. */
+.paused-dom,
+.paused-dom:hover {
+  text-decoration: none;
+  color: var(--on-sv);
 }
 .file {
   margin-top: 2px;

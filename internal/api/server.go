@@ -83,7 +83,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/proxy", full(s.proxySites))
 	mux.Handle("POST /api/proxy/pause", full(s.proxyPause))
 	mux.Handle("POST /api/proxy/order", full(s.proxyOrder))
-	mux.Handle("POST /api/proxy/orphans/remove", full(s.proxyRemoveOrphan))
+	mux.Handle("POST /api/proxy/site", full(s.proxySite))
 
 	mux.Handle("GET /api/docker/containers", full(s.containers))
 	mux.Handle("GET /api/docker/stats", full(s.containerStats))

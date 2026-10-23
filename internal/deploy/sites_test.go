@@ -134,7 +134,8 @@ func TestRemoveWithdrawsTheSite(t *testing.T) {
 	}
 }
 
-func TestRemoveOrphanRefusesWhatItDidNotWrite(t *testing.T) {
+// DeleteSite takes any file of the proxy's directory, but never one an app still owns.
+func TestDeleteSite(t *testing.T) {
 	root := t.TempDir()
 	st, err := store.Open(filepath.Join(root, "data"))
 	if err != nil {
@@ -145,19 +146,73 @@ func TestRemoveOrphanRefusesWhatItDidNotWrite(t *testing.T) {
 	if err := os.MkdirAll(sites, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	e := &Engine{Store: st, SitesDir: sites, ReloadCaddy: func(context.Context) error { return nil }}
+	ctx := context.Background()
+	e := &Engine{Store: st, DataDir: filepath.Join(root, "data"), SitesDir: sites,
+		ReloadCaddy: func(context.Context) error { return nil }}
 	hand := filepath.Join(sites, "hand.caddy")
 	if err := os.WriteFile(hand, []byte("hand.example.com {\n\tfile_server\n}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.RemoveOrphan(context.Background(), hand); err == nil {
-		t.Fatal("a hand-written site was removed")
+	if err := e.DeleteSite(ctx, hand); err != nil {
+		t.Fatalf("hand-written site: %v", err)
 	}
-	if _, err := os.Stat(hand); err != nil {
-		t.Fatal("the hand-written site is gone")
+	if _, err := os.Stat(hand); !os.IsNotExist(err) {
+		t.Fatalf("the hand-written site is still there: %v", err)
 	}
-	if err := e.RemoveOrphan(context.Background(), "/etc/passwd"); err == nil {
-		t.Fatal("a file outside the snippets was accepted")
+	if err := e.DeleteSite(ctx, "/etc/passwd"); err == nil {
+		t.Fatal("a file outside the site directories was accepted")
+	}
+
+	// The site of a live app is refused: the next deploy would write it again.
+	app := store.App{ID: "live", Dir: "/tmp/live", Domain: "live.example.com", Access: AccessPublic}
+	if err := st.AddApp(ctx, &app); err != nil {
+		t.Fatal(err)
+	}
+	live := filepath.Join(sites, "live.caddy")
+	if err := os.WriteFile(live, []byte("live.example.com {\n\treverse_proxy 127.0.0.1:3000\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.DeleteSite(ctx, live); err == nil {
+		t.Fatal("the site of a live app was deleted")
+	}
+	if err := e.PauseSite(ctx, live); err == nil {
+		t.Fatal("the site of a live app was paused")
+	}
+	if _, err := os.Stat(live); err != nil {
+		t.Fatal("the app's site was touched")
+	}
+}
+
+// A paused site is kept aside, so the same file can be put back exactly as it was.
+func TestPauseSiteKeepsTheFile(t *testing.T) {
+	root := t.TempDir()
+	sites := filepath.Join(root, "sites")
+	if err := os.MkdirAll(sites, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	e := &Engine{DataDir: filepath.Join(root, "data"), SitesDir: sites,
+		ReloadCaddy: func(context.Context) error { return nil }}
+	body := "hand.example.com {\n\tfile_server\n}\n"
+	path := filepath.Join(sites, "hand.caddy")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.PauseSite(ctx, path); err != nil {
+		t.Fatal(err)
+	}
+	paused := e.PausedSites()
+	if len(paused) != 1 || paused[0].File != path || paused[0].Engine != "caddy" {
+		t.Fatalf("paused = %+v", paused)
+	}
+	if err := e.ResumeSite(ctx, path); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != body {
+		t.Fatalf("after resume: %v %q", err, got)
+	}
+	if len(e.PausedSites()) != 0 {
+		t.Fatalf("still listed as paused: %+v", e.PausedSites())
 	}
 }
 
@@ -167,5 +222,51 @@ func TestAllowList(t *testing.T) {
 	}
 	if n, _ := AllowList(""); len(n) != 0 {
 		t.Error("empty list should give nothing")
+	}
+}
+
+// A certificate is asked for from the panel, on any nginx site; Caddy never needs it.
+func TestEnableHTTPS(t *testing.T) {
+	root := t.TempDir()
+	sites := filepath.Join(root, "nginx")
+	if err := os.MkdirAll(sites, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	var calls []string
+	e := &Engine{NginxDir: sites, DataDir: filepath.Join(root, "data"),
+		Helper: func(_ context.Context, args ...string) (string, error) {
+			calls = append(calls, strings.Join(args, " "))
+			return "", nil
+		}}
+	path := filepath.Join(sites, "blog.conf")
+	if err := os.WriteFile(path, []byte("server {\n\tlisten 80;\n\tserver_name blog.example.com;\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.EnableHTTPS(ctx, path, "Blog.Example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 || calls[0] != "certbot blog.example.com" {
+		t.Fatalf("calls = %v", calls)
+	}
+	// A paused site has no file in the directory certbot would edit.
+	if err := e.PauseSite(ctx, path); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.EnableHTTPS(ctx, path, "blog.example.com"); err == nil {
+		t.Fatal("a paused site accepted a certificate")
+	}
+	// Caddy issues its own.
+	caddy := filepath.Join(root, "caddy")
+	if err := os.MkdirAll(caddy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e.SitesDir = caddy
+	cfile := filepath.Join(caddy, "web.caddy")
+	if err := os.WriteFile(cfile, []byte("web.example.com {\n\tfile_server\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.EnableHTTPS(ctx, cfile, "web.example.com"); err == nil {
+		t.Fatal("Caddy asked certbot")
 	}
 }

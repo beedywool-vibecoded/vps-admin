@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -144,44 +145,178 @@ func TestProxyOrderIsKept(t *testing.T) {
 	}
 }
 
-// The left-over list: a snippet of a deleted app can be removed from the Proxy page,
-// anything else is refused.
-func TestProxyRemoveOrphan(t *testing.T) {
-	s, _, dir := proxyServer(t)
-	orphan := filepath.Join(dir, "gone.caddy")
-	write := func(path string, body string) {
+// Any site file in the proxy's directory can be paused and put back, and deleted,
+// whoever wrote it: the panel's snippet, a block added by hand, a file left by a gone app.
+func TestProxySitePauseResumeAndDelete(t *testing.T) {
+	s, eng, dir := proxyServer(t)
+	reloads := 0
+	eng.ReloadCaddy = func(context.Context) error { reloads++; return nil }
+	write := func(path, body string) {
+		t.Helper()
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	write(orphan, "# Managed by VPS Admin (app gone), rewritten on every deploy\ngone.example.com {\n\treverse_proxy 127.0.0.1:3000\n}\n")
-	write(filepath.Join(dir, "hand.caddy"), "hand.example.com {\n\tfile_server\n}\n")
+	path := filepath.Join(dir, "hand.caddy")
+	body := "hand.example.com {\n\treverse_proxy 127.0.0.1:9000\n}\n"
+	write(path, body)
+	call := func(action string) *httptest.ResponseRecorder {
+		return post(t, s.proxySite, s, "/api/proxy/site", fmt.Sprintf(`{"file":%q,"action":%q}`, path, action))
+	}
+
+	rep := sites(t, call("pause"))
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("the site file survived the pause: %v", err)
+	}
+	if len(rep.Sites) != 1 || !rep.Sites[0].Paused {
+		t.Fatalf("the paused site left the list: %+v", rep.Sites)
+	}
+	if d := rep.Sites[0].Domains; len(d) != 1 || d[0] != "hand.example.com" || rep.Sites[0].Target != "127.0.0.1:9000" {
+		t.Fatalf("the paused row lost its details: %+v", rep.Sites[0])
+	}
+	if reloads != 1 {
+		t.Fatalf("Caddy was reloaded %d times, want 1", reloads)
+	}
+
+	rep = sites(t, call("resume"))
+	if got, err := os.ReadFile(path); err != nil || string(got) != body {
+		t.Fatalf("the site came back changed: %v %q", err, got)
+	}
+	if len(rep.Sites) != 1 || rep.Sites[0].Paused {
+		t.Fatalf("resume = %+v", rep.Sites)
+	}
+
+	rep = sites(t, call("delete"))
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("the deleted site is still there: %v", err)
+	}
+	if len(rep.Sites) != 0 {
+		t.Fatalf("the deleted site is still listed: %+v", rep.Sites)
+	}
+
+	// A paused site can be deleted from the list just as well.
+	write(path, body)
+	call("pause")
+	sites(t, call("delete"))
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("deleting a paused site brought it back: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(eng.DataDir, "proxy-paused", "caddy__hand.caddy")); !os.IsNotExist(err) {
+		t.Fatalf("the kept copy survived the delete: %v", err)
+	}
+}
+
+// A file an app still owns is driven from the app: deleting or pausing it here would be
+// undone by the next deployment, or leave the app with no route and no way back.
+func TestProxySiteRefusesAnAppsSite(t *testing.T) {
+	s, _, dir := proxyServer(t)
 	addApp(t, s, store.App{ID: "live", Domain: "live.example.com", Access: deploy.AccessPublic, Build: deploy.BuildCompose, Port: 3000})
-	write(filepath.Join(dir, "live.caddy"), "# Managed by VPS Admin (app live), rewritten on every deploy\nlive.example.com {\n\treverse_proxy 127.0.0.1:3000\n}\n")
+	path := filepath.Join(dir, "live.caddy")
+	if err := os.WriteFile(path, []byte("# Managed by VPS Admin (app live), rewritten on every deploy\nlive.example.com {\n\treverse_proxy 127.0.0.1:3000\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, action := range []string{"pause", "delete"} {
+		rec := post(t, s.proxySite, s, "/api/proxy/site", fmt.Sprintf(`{"file":%q,"action":%q}`, path, action))
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "live") {
+			t.Errorf("%s: %d %s", action, rec.Code, rec.Body.String())
+		}
+	}
+	// An unknown action is refused before anything is touched.
+	if rec := post(t, s.proxySite, s, "/api/proxy/site", fmt.Sprintf(`{"file":%q,"action":"rename"}`, path)); rec.Code != http.StatusBadRequest {
+		t.Fatalf("unknown action: %d", rec.Code)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("the app's site was touched")
+	}
+}
 
-	for _, c := range []struct{ file, why string }{
-		{filepath.Join(dir, "hand.caddy"), "hand-written"},
-		{filepath.Join(dir, "live.caddy"), "still serves an app"},
-		{filepath.Join(dir, "..", "Caddyfile"), "outside the snippets"},
-		{"/etc/passwd", "outside the snippets"},
+// Nothing outside the two directories the proxy reads is reachable from the panel.
+func TestProxySiteStaysInTheSiteDirs(t *testing.T) {
+	s, _, dir := proxyServer(t)
+	for _, file := range []string{
+		filepath.Join(dir, "..", "Caddyfile"),
+		filepath.Join(dir, "sub", "deep.caddy"),
+		"/etc/passwd",
+		filepath.Join(dir, "notes.txt"),
 	} {
-		rec := post(t, s.proxyRemoveOrphan, s, "/api/proxy/orphans/remove", fmt.Sprintf(`{"file":%q}`, c.file))
+		rec := post(t, s.proxySite, s, "/api/proxy/site", fmt.Sprintf(`{"file":%q,"action":"delete"}`, file))
 		if rec.Code != http.StatusBadRequest {
-			t.Errorf("%s: status = %d, want 400", c.why, rec.Code)
+			t.Errorf("%s: status = %d, want 400", file, rec.Code)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(dir, "hand.caddy")); err != nil {
-		t.Fatal("a hand-written site was removed")
+}
+
+// The same three actions on nginx: the file moves out of the sites directory, the root
+// helper reloads nginx, and nothing else is touched.
+func TestProxySiteOnNginx(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "vps-admin-apps")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	cfg, err := config.Load("/nonexistent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.CaddySitesDir = ""
+	cfg.NginxSitesDir = dir
+	var calls []string
+	eng := &deploy.Engine{
+		Store: st, DataDir: t.TempDir(), NginxDir: dir,
+		Helper: func(_ context.Context, args ...string) (string, error) {
+			calls = append(calls, strings.Join(args, " "))
+			return "", nil
+		},
+	}
+	s := &Server{Cfg: cfg, Store: st, Deploy: eng}
+
+	path := filepath.Join(dir, "blog.conf")
+	body := "server {\n\tlisten 80;\n\tserver_name blog.example.com;\n\tlocation / { proxy_pass http://127.0.0.1:4000; }\n}\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	call := func(action string) *httptest.ResponseRecorder {
+		return post(t, s.proxySite, s, "/api/proxy/site", fmt.Sprintf(`{"file":%q,"action":%q}`, path, action))
 	}
 
-	rep := sites(t, post(t, s.proxyRemoveOrphan, s, "/api/proxy/orphans/remove", fmt.Sprintf(`{"file":%q}`, orphan)))
-	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
-		t.Fatalf("the orphan is still there: %v", err)
+	rep := sites(t, call("pause"))
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("the nginx site survived the pause: %v", err)
 	}
-	for _, x := range rep.Sites {
-		if x.File == orphan {
-			t.Fatalf("the left-over site is still listed: %+v", x)
-		}
+	if len(rep.Sites) != 1 || !rep.Sites[0].Paused || rep.Sites[0].Domains[0] != "blog.example.com" {
+		t.Fatalf("paused nginx row = %+v", rep.Sites)
+	}
+
+	sites(t, call("resume"))
+	if got, err := os.ReadFile(path); err != nil || string(got) != body {
+		t.Fatalf("nginx site after resume: %v %q", err, got)
+	}
+	if len(calls) != 2 || calls[0] != "nginx-reload" || calls[1] != "nginx-reload" {
+		t.Fatalf("helper calls = %v, want two nginx-reload", calls)
+	}
+}
+
+// A proxy that refuses the new configuration keeps the site: pause writes the file back
+// and the panel reports the refusal instead of the site disappearing.
+func TestProxySiteRestoresWhenTheProxyRefuses(t *testing.T) {
+	s, eng, dir := proxyServer(t)
+	eng.ReloadCaddy = func(context.Context) error { return errors.New("bad config") }
+	path := filepath.Join(dir, "hand.caddy")
+	body := "hand.example.com {\n\tfile_server\n}\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rec := post(t, s.proxySite, s, "/api/proxy/site", fmt.Sprintf(`{"file":%q,"action":"pause"}`, path))
+	if rec.Code == http.StatusOK {
+		t.Fatal("the pause was accepted")
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != body {
+		t.Fatalf("the site was not put back: %v %q", err, got)
 	}
 }
 

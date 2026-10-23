@@ -494,7 +494,8 @@ export const api = {
   proxy: () => request<ProxyReport>('GET', '/api/proxy'),
   proxyPause: (app: string, paused: boolean) => request<ProxyReport>('POST', '/api/proxy/pause', { app, paused }),
   proxyOrder: (order: string[]) => request<ProxyReport>('POST', '/api/proxy/order', { order }),
-  removeProxyOrphan: (file: string) => request<ProxyReport>('POST', '/api/proxy/orphans/remove', { file }),
+  proxySite: (file: string, action: 'pause' | 'resume' | 'delete' | 'https', domain?: string) =>
+    request<ProxyReport>('POST', '/api/proxy/site', { file, action, domain }),
 
   containers: () => request<{ containers: Container[] }>('GET', '/api/docker/containers'),
   containerStats: () => request<{ stats: ContainerStats[] }>('GET', '/api/docker/stats'),

@@ -50,6 +50,39 @@ func Read(caddySites, nginxSites string) Report {
 	return normalize(Report{})
 }
 
+// ReadFile parses one site file the way Read does. stored is where the bytes are (a file
+// kept aside while its site is paused), orig where it belongs: its name decides whether
+// the panel manages it, and that is the path the panel shows.
+func ReadFile(stored, orig, engine, apps string) []Site {
+	src, err := os.ReadFile(stored)
+	if err != nil {
+		return nil
+	}
+	rep := Report{}
+	switch engine {
+	case "nginx":
+		upstreams := map[string]string{}
+		for _, s := range parseNginx(string(src), orig, apps, upstreams) {
+			if len(s.site.Domains) == 0 {
+				continue
+			}
+			if target, ok := upstreams[s.site.Target]; ok && target != "" {
+				s.site.Target = target
+			}
+			s.site.Scheme = "http"
+			if s.ssl {
+				s.site.Scheme = "https"
+			}
+			s.site.VPNOnly = s.allow && s.denyAll
+			rep.Sites = append(rep.Sites, s.site)
+		}
+	default:
+		rep.Sites, _ = parseCaddy(string(src), orig, apps)
+	}
+	finish(&rep)
+	return rep.Sites
+}
+
 // normalize gives every list a value, so the JSON says "sites": [] instead of null: a
 // client that walks it has nothing to guard against.
 func normalize(r Report) Report {
@@ -483,7 +516,9 @@ func addDir(dir string, add func(string)) {
 		return
 	}
 	for _, e := range entries {
-		if e.IsDir() {
+		// certbot and the packaging leave .bak copies next to the real file: they are
+		// backups nginx never loads, not sites.
+		if e.IsDir() || strings.HasSuffix(e.Name(), ".bak") {
 			continue
 		}
 		add(filepath.Join(dir, e.Name()))

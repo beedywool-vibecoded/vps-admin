@@ -46,16 +46,22 @@ class _ProxyPageState extends State<ProxyPage> {
     }
   }
 
+  // An app's URL is paused through the app, which knows how to write it again; any other
+  // file is paused by taking it out of the proxy's directory.
   Future<void> _pause(ProxySite s) async {
     final name = s.domains.isEmpty ? s.file : s.domains.first;
     setState(() => busy = _key(s));
     try {
-      final r = await api.proxyPause(s.id, !s.paused);
+      final r = s.id.isNotEmpty
+          ? await api.proxyPause(s.id, !s.paused)
+          : await api.proxySite(s.file, s.paused ? 'resume' : 'pause');
       if (!mounted) return;
       setState(() => rep = r);
       showInfo(
         context,
-        s.paused ? '$name is back on' : '$name paused, the app keeps running',
+        s.paused
+            ? '$name is back on'
+            : '$name paused${s.id.isNotEmpty ? ', the app keeps running' : ''}',
       );
     } catch (e) {
       if (mounted) showError(context, e);
@@ -64,25 +70,56 @@ class _ProxyPageState extends State<ProxyPage> {
     }
   }
 
-  Future<void> _removeOrphan(ProxySite s) async {
+  // nginx only: certbot edits the server block and reloads nginx, so this works on a
+  // hand-written site too. Caddy gets its certificates by itself.
+  Future<void> _addHTTPS(ProxySite s) async {
+    final domain = s.domains.isEmpty ? '' : s.domains.first;
+    if (domain.isEmpty) return;
+    if (!await wConfirm(
+      context,
+      title: 'Get a certificate for $domain?',
+      body:
+          'certbot asks Let\'s Encrypt for $domain and installs the certificate in '
+          'this nginx site. The domain\'s DNS must point here and port 80 must be open.',
+      action: 'Add HTTPS',
+    )) {
+      return;
+    }
+    setState(() => busy = _key(s));
+    try {
+      final r = await api.proxySite(s.file, 'https', domain: domain);
+      if (!mounted) return;
+      setState(() => rep = r);
+      showInfo(context, 'HTTPS set up for $domain');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => busy = '');
+    }
+  }
+
+  // Any site in the list can go, including a block added by hand.
+  Future<void> _removeSite(ProxySite s) async {
     final name = s.domains.isEmpty ? s.file : s.domains.first;
     if (!await wConfirm(
       context,
-      title: 'Remove $name?',
+      title: 'Delete $name?',
       body:
-          'The panel wrote this site for an app that no longer exists. '
-          'Removing it takes the domain out of the proxy; nothing else is touched.',
-      action: 'Remove',
+          'The file ${s.file} is removed and the proxy reloaded, so the domain '
+          'stops answering. '
+          '${s.managed ? 'The app it belonged to is already gone.' : 'The panel did not write this block: it is not saved anywhere else.'} '
+          'Nothing else is touched.',
+      action: 'Delete',
       danger: true,
     )) {
       return;
     }
     setState(() => busy = _key(s));
     try {
-      final r = await api.removeProxyOrphan(s.file);
+      final r = await api.proxySite(s.file, 'delete');
       if (!mounted) return;
       setState(() => rep = r);
-      showInfo(context, 'Left-over site removed');
+      showInfo(context, '$name removed');
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
@@ -122,7 +159,13 @@ class _ProxyPageState extends State<ProxyPage> {
     ),
   );
 
-  Widget _site(ProxySite s, bool first, Set<String> shared, ColorScheme cs) {
+  Widget _site(
+    ProxySite s,
+    bool first,
+    Set<String> shared,
+    ColorScheme cs,
+    bool nginx,
+  ) {
     final warn = StatusDot.color(Tone.warn, cs);
     final warnBg = warn.withValues(alpha: .16);
     final extra = s.domains.length > 1 ? s.domains.skip(1).join(' · ') : '';
@@ -137,7 +180,9 @@ class _ProxyPageState extends State<ProxyPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 InkWell(
-                  onTap: s.url.isEmpty ? null : () => Updater.openUrl(s.url),
+                  onTap: s.url.isEmpty || s.paused
+                      ? null
+                      : () => Updater.openUrl(s.url),
                   borderRadius: BorderRadius.circular(6),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -195,20 +240,29 @@ class _ProxyPageState extends State<ProxyPage> {
               ],
             ),
           ),
-          if (s.id.isNotEmpty)
+          if (nginx && s.scheme == 'http' && !s.paused && s.domains.isNotEmpty)
             WIconButton(
-              s.paused ? 'play' : 'stop',
-              tooltip: s.paused ? 'Turn this URL back on' : 'Pause this URL',
+              'lock',
+              tooltip: 'Add HTTPS with certbot',
               size: 18,
-              onPressed: busy == _key(s) ? null : () => _pause(s),
-            )
-          else if (s.managed)
-            WIconButton(
-              'trash',
-              tooltip: 'Remove this left-over site',
-              size: 18,
-              onPressed: busy == _key(s) ? null : () => _removeOrphan(s),
+              onPressed: busy == _key(s) ? null : () => _addHTTPS(s),
             ),
+          WIconButton(
+            s.paused ? 'play' : 'stop',
+            tooltip: s.paused
+                ? 'Turn this URL back on'
+                : s.id.isNotEmpty
+                ? 'Pause this URL, the app keeps running'
+                : 'Pause this site',
+            size: 18,
+            onPressed: busy == _key(s) ? null : () => _pause(s),
+          ),
+          WIconButton(
+            'trash',
+            tooltip: 'Delete this site file',
+            size: 18,
+            onPressed: busy == _key(s) ? null : () => _removeSite(s),
+          ),
         ],
       ),
     );
@@ -246,7 +300,8 @@ class _ProxyPageState extends State<ProxyPage> {
           onChanged: (v) => setState(() => query = v),
         ),
         const Muted(
-          'Pausing a site takes its domain out of the proxy and leaves the app running; it stays in this list, ready to turn back on.',
+          'Pausing a site takes its domain out of the proxy and keeps everything else '
+          'running; it stays in this list, ready to turn back on. Deleting one removes its file.',
           size: 12,
         ),
         if (loading)
@@ -279,7 +334,7 @@ class _ProxyPageState extends State<ProxyPage> {
                     size: 15,
                   ),
                 for (var i = 0; i < shown.length; i++)
-                  _site(shown[i], i == 0, shared, cs),
+                  _site(shown[i], i == 0, shared, cs, engine == 'nginx'),
               ],
             ),
           ),

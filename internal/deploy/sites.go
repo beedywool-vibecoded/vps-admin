@@ -209,54 +209,229 @@ func (e *Engine) LivePort(ctx context.Context, app store.App) int {
 
 var snippetName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*\.(caddy|conf)$`)
 
-// RemoveOrphan deletes a snippet this panel wrote whose app no longer exists, then
-// reloads the proxy. Anything the panel did not write is refused: hand-written sites
-// belong to the administrator.
-func (e *Engine) RemoveOrphan(ctx context.Context, file string) error {
-	path := filepath.Clean(file)
-	base := filepath.Base(path)
-	if !snippetName.MatchString(base) {
-		return errors.New("this is not a proxy snippet")
+// PausedSite is a site file the panel took out of the proxy and keeps aside: its domains
+// stop answering until it is put back.
+type PausedSite struct {
+	File   string `json:"file"`   // where it belongs, and the path the panel sends back
+	Stored string `json:"stored"` // the kept copy, under the data directory
+	Engine string `json:"engine"` // caddy or nginx
+}
+
+// siteFile checks a path handed by the panel: a site name, directly inside one of the two
+// directories the proxy reads. Anything else belongs to the administrator.
+func (e *Engine) siteFile(file string) (path, engine string, err error) {
+	path = filepath.Clean(file)
+	if !snippetName.MatchString(filepath.Base(path)) {
+		return "", "", errors.New("this is not a proxy site file")
 	}
-	dir := ""
 	switch {
 	case e.SitesDir != "" && filepath.Dir(path) == filepath.Clean(e.SitesDir):
-		dir = "caddy"
+		return path, "caddy", nil
 	case e.NginxDir != "" && filepath.Dir(path) == filepath.Clean(e.NginxDir):
-		dir = "nginx"
-	default:
-		return errors.New("this file is not in the directories the panel writes")
+		return path, "nginx", nil
 	}
-	data, err := os.ReadFile(path)
+	return "", "", errors.New("this file is not in the proxy's site directories")
+}
+
+// siteOwner is the app a site file belongs to: the panel names each site after its app,
+// so a file whose app still exists is driven from the app, not from this list.
+func (e *Engine) siteOwner(ctx context.Context, path string) *store.App {
+	if e.Store == nil {
+		return nil
+	}
+	base := filepath.Base(path)
+	app, err := e.Store.App(ctx, strings.TrimSuffix(base, filepath.Ext(base)))
 	if err != nil {
-		if os.IsNotExist(err) {
-			return errors.New("this site is already gone")
+		return nil
+	}
+	return app
+}
+
+// reloadProxy applies the change to whichever proxy owns the file. Caddy refuses a bad
+// configuration and keeps the old one; nginx is reloaded through the root helper.
+func (e *Engine) reloadProxy(ctx context.Context, engine string) error {
+	if engine == "nginx" {
+		if e.Helper == nil {
+			return nil
 		}
+		if out, err := e.Helper(ctx, "nginx-reload"); err != nil {
+			return fmt.Errorf("nginx refused the change: %s", lastLine(out, err))
+		}
+		return nil
+	}
+	if e.ReloadCaddy == nil {
+		return nil
+	}
+	return e.ReloadCaddy(ctx)
+}
+
+// pausedDir holds the site files taken out of the proxy, one per site.
+func (e *Engine) pausedDir() string { return filepath.Join(e.DataDir, "proxy-paused") }
+
+// storedName keeps the engine with the file it came from, so a kept site goes back where
+// it was.
+func storedName(engine, base string) string { return engine + "__" + base }
+
+func splitStored(name string) (engine, base string, ok bool) {
+	engine, base, ok = strings.Cut(name, "__")
+	if !ok || base == "" || !snippetName.MatchString(base) {
+		return "", "", false
+	}
+	return engine, base, true
+}
+
+// PauseSite takes a site out of the proxy: its file is kept aside and the proxy reloaded,
+// so its domains stop answering. Everything else about the site is left alone.
+func (e *Engine) PauseSite(ctx context.Context, file string) error {
+	path, engine, err := e.siteFile(file)
+	if err != nil {
 		return err
 	}
-	if !strings.HasPrefix(string(data), "# Managed by VPS Admin (app ") {
-		return errors.New("this file was not written by the panel")
+	base := filepath.Base(path)
+	if app := e.siteOwner(ctx, path); app != nil {
+		return fmt.Errorf("%s is the site of app %s: pause that app instead", base, app.ID)
 	}
-	id := strings.TrimSuffix(base, filepath.Ext(base))
-	if _, err := e.Store.App(ctx, id); err == nil {
-		return errors.New("this snippet still serves an app: delete the app instead")
-	} else if !errors.Is(err, store.ErrNotFound) {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return errors.New("this site is already gone")
+	}
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(e.pausedDir(), 0o700); err != nil {
+		return err
+	}
+	stored := filepath.Join(e.pausedDir(), storedName(engine, base))
+	if err := os.WriteFile(stored, data, 0o644); err != nil {
 		return err
 	}
 	if err := os.Remove(path); err != nil {
+		os.Remove(stored)
 		return err
 	}
-	if dir == "caddy" {
-		if e.ReloadCaddy == nil {
-			return nil // no Caddy to reload (tests, or a machine without it)
-		}
-		return e.ReloadCaddy(ctx)
+	if err := e.reloadProxy(ctx, engine); err != nil {
+		// The proxy keeps serving its old configuration: put the site back where it was.
+		writeShared(path, data)
+		os.Remove(stored)
+		e.reloadProxy(context.WithoutCancel(ctx), engine)
+		return err
+	}
+	return nil
+}
+
+// ResumeSite puts a paused site back, byte for byte, and reloads the proxy.
+func (e *Engine) ResumeSite(ctx context.Context, file string) error {
+	path, engine, err := e.siteFile(file)
+	if err != nil {
+		return err
+	}
+	stored := filepath.Join(e.pausedDir(), storedName(engine, filepath.Base(path)))
+	data, err := os.ReadFile(stored)
+	if os.IsNotExist(err) {
+		return errors.New("this site is not paused")
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(path); err == nil {
+		return errors.New("a site with this name exists again: delete it first")
+	}
+	if err := writeShared(path, data); err != nil {
+		return err
+	}
+	if err := e.reloadProxy(ctx, engine); err != nil {
+		os.Remove(path)
+		e.reloadProxy(context.WithoutCancel(ctx), engine)
+		return err
+	}
+	os.Remove(stored)
+	return nil
+}
+
+// DeleteSite removes a site: the file in the proxy's directory, and the copy kept aside
+// when it is paused. A site an app still serves is refused, since the next deploy would
+// write it again.
+func (e *Engine) DeleteSite(ctx context.Context, file string) error {
+	path, engine, err := e.siteFile(file)
+	if err != nil {
+		return err
+	}
+	base := filepath.Base(path)
+	if app := e.siteOwner(ctx, path); app != nil {
+		return fmt.Errorf("%s serves app %s: delete that app, or pause its URL", base, app.ID)
+	}
+	removed := false
+	if err := os.Remove(path); err == nil {
+		removed = true
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Remove(filepath.Join(e.pausedDir(), storedName(engine, base))); err == nil {
+		removed = true
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if !removed {
+		return errors.New("this site is already gone")
+	}
+	return e.reloadProxy(ctx, engine)
+}
+
+// EnableHTTPS asks certbot for a certificate on an nginx site: certbot edits that server
+// block in place and reloads nginx. Caddy gets its certificates by itself.
+func (e *Engine) EnableHTTPS(ctx context.Context, file, domain string) error {
+	path, engine, err := e.siteFile(file)
+	if err != nil {
+		return err
+	}
+	if engine != "nginx" {
+		return errors.New("Caddy issues its own certificates")
 	}
 	if e.Helper == nil {
-		return nil
+		return errors.New("the proxy helper is not installed on this server")
 	}
-	_, err = e.Helper(ctx, "nginx-reload")
-	return err
+	if _, err := os.Stat(path); err != nil {
+		return errors.New("this site is paused: turn it back on first")
+	}
+	d := strings.ToLower(strings.TrimSpace(domain))
+	if d == "" || strings.ContainsAny(d, " \t\n/") {
+		return errors.New("a domain name is expected")
+	}
+	if out, err := e.Helper(ctx, "certbot", d); err != nil {
+		return fmt.Errorf("certbot could not get a certificate for %s: %s", d, lastLine(out, err))
+	}
+	return nil
+}
+
+// PausedSites lists the files kept aside, with the path each one belongs to.
+func (e *Engine) PausedSites() []PausedSite {
+	entries, err := os.ReadDir(e.pausedDir())
+	if err != nil {
+		return []PausedSite{}
+	}
+	out := []PausedSite{}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		engine, base, ok := splitStored(entry.Name())
+		if !ok {
+			continue
+		}
+		dir := e.SitesDir
+		if engine == "nginx" {
+			dir = e.NginxDir
+		}
+		if dir == "" {
+			continue
+		}
+		out = append(out, PausedSite{
+			File:   filepath.Join(dir, base),
+			Stored: filepath.Join(e.pausedDir(), entry.Name()),
+			Engine: engine,
+		})
+	}
+	return out
 }
 
 func (e *Engine) caddyPath(id string) string { return filepath.Join(e.SitesDir, id+".caddy") }

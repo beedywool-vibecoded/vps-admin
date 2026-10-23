@@ -136,8 +136,17 @@ class Api {
   Future<ProxyReport> proxyPause(String app, bool paused) async => ProxyReport(
     await post('/api/proxy/pause', {'app': app, 'paused': paused}),
   );
-  Future<ProxyReport> removeProxyOrphan(String file) async =>
-      ProxyReport(await post('/api/proxy/orphans/remove', {'file': file}));
+  Future<ProxyReport> proxySite(
+    String file,
+    String action, {
+    String? domain,
+  }) async => ProxyReport(
+    await post('/api/proxy/site', {
+      'file': file,
+      'action': action,
+      'domain': ?domain,
+    }),
+  );
   Future<UpdateStatus> update() async => UpdateStatus(await get('/api/update'));
   Future<UpdateStatus> checkUpdate() async =>
       UpdateStatus(await post('/api/update/check'));

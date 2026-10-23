@@ -51,6 +51,27 @@ func (s *Server) proxyView(r *http.Request) proxy.Report {
 		}
 		site.Paused = s.Deploy != nil && s.Deploy.Paused(ctx, site.ID)
 	}
+	// A site file kept aside while it is paused is gone from the proxy's directory: its
+	// row comes from the copy, parsed the same way as the files still in place.
+	if s.Deploy != nil {
+		for _, p := range s.Deploy.PausedSites() {
+			dir := s.Cfg.CaddySitesDir
+			if p.Engine == "nginx" {
+				dir = s.Cfg.NginxSitesDir
+			}
+			rows := proxy.ReadFile(p.Stored, p.File, p.Engine, dir)
+			if len(rows) == 0 {
+				rows = []proxy.Site{{File: p.File}}
+			}
+			for _, row := range rows {
+				row.Paused = true
+				if _, ok := apps[row.ID]; !ok {
+					row.ID = ""
+				}
+				rep.Sites = append(rep.Sites, row)
+			}
+		}
+	}
 	// A paused app has no snippet left, but it still belongs in the list: that is where
 	// it is turned back on.
 	if s.Deploy != nil {
@@ -193,10 +214,13 @@ func (s *Server) proxyOrder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.proxyView(r))
 }
 
-// proxyRemoveOrphan deletes a snippet the panel wrote for an app that no longer exists.
-func (s *Server) proxyRemoveOrphan(w http.ResponseWriter, r *http.Request) {
+// proxySite pauses, resumes or deletes one site file, whoever wrote it: the panel's
+// snippets, a block added by hand, a file left by an app that is gone.
+func (s *Server) proxySite(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		File string `json:"file"`
+		File   string `json:"file"`
+		Action string `json:"action"` // pause, resume, delete or https
+		Domain string `json:"domain"` // where a certificate is asked for
 	}
 	if err := readJSON(r, &body); err != nil || body.File == "" {
 		writeErrorMsg(w, http.StatusBadRequest, "invalid", "a file is expected")
@@ -206,10 +230,23 @@ func (s *Server) proxyRemoveOrphan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "no_proxy")
 		return
 	}
-	err := s.Deploy.RemoveOrphan(r.Context(), body.File)
-	s.audit(r, "proxy.remove_orphan", body.File, err)
+	var err error
+	switch body.Action {
+	case "pause":
+		err = s.Deploy.PauseSite(r.Context(), body.File)
+	case "resume":
+		err = s.Deploy.ResumeSite(r.Context(), body.File)
+	case "delete":
+		err = s.Deploy.DeleteSite(r.Context(), body.File)
+	case "https":
+		err = s.Deploy.EnableHTTPS(r.Context(), body.File, body.Domain)
+	default:
+		writeErrorMsg(w, http.StatusBadRequest, "invalid", "action must be pause, resume, delete or https")
+		return
+	}
+	s.audit(r, "proxy.site_"+body.Action, body.File, err)
 	if err != nil {
-		writeErrorMsg(w, http.StatusBadRequest, "orphan_failed", err.Error())
+		writeErrorMsg(w, http.StatusBadRequest, "site_failed", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, s.proxyView(r))
