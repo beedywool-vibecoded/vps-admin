@@ -83,18 +83,26 @@ class PeloteLoader extends StatefulWidget {
   State<PeloteLoader> createState() => _PeloteLoaderState();
 }
 
-class _PeloteLoaderState extends State<PeloteLoader> {
+class _PeloteLoaderState extends State<PeloteLoader>
+    with SingleTickerProviderStateMixin {
   int _index = 0;
-  int _turn = 0;
   bool? _reduce;
   Timer? _timer;
+  late final AnimationController _spin;
+
+  @override
+  void initState() {
+    super.initState();
+    // Always turning, like Pelote's ring (ld-turn): it never sits still between shapes.
+    _spin = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+  }
 
   void _advance() {
     if (!mounted) return;
-    setState(() {
-      _index = (_index + 1) % kLoaderSequence.length;
-      _turn++;
-    });
+    setState(() => _index = (_index + 1) % kLoaderSequence.length);
   }
 
   @override
@@ -114,11 +122,18 @@ class _PeloteLoaderState extends State<PeloteLoader> {
               (_) => _advance(),
             );
           });
+    if (reduce) {
+      _spin.stop();
+      _spin.value = 0;
+    } else if (!_spin.isAnimating) {
+      _spin.repeat();
+    }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _spin.dispose();
     super.dispose();
   }
 
@@ -131,10 +146,8 @@ class _PeloteLoaderState extends State<PeloteLoader> {
         child: SizedBox.square(
           dimension: widget.size,
           child: Center(
-            child: AnimatedRotation(
-              turns: _turn * 140 / 360,
-              duration: const Duration(milliseconds: 650),
-              curve: const Cubic(0.34, 1.56, 0.64, 1),
+            child: RotationTransition(
+              turns: _spin,
               child: CustomPaint(
                 size: Size.square(widget.size * 0.79),
                 painter: _LoaderPainter(kLoaderSequence[_index], color),

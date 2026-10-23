@@ -32,11 +32,10 @@ void main() {
     await tester.pumpWidget(host());
     final before = angleOf(tester);
     await tester.pump(const Duration(milliseconds: 250));
-    expect(angleOf(tester), closeTo(before, 0.001));
-    // The 300 ms timer fires during this pump; the rotation starts on the next frame.
-    await tester.pump(const Duration(milliseconds: 250));
-    await tester.pump(const Duration(milliseconds: 150));
-    expect(angleOf(tester), isNot(closeTo(before, 0.1)));
+    final turning = angleOf(tester);
+    expect(turning, isNot(closeTo(before, 0.1)));
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(angleOf(tester), isNot(closeTo(turning, 0.1)));
     await tester.pumpWidget(const SizedBox());
   });
 
