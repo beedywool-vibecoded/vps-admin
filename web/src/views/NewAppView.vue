@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Icon from '@/components/Icon.vue'
 import M3Shape from '@/components/M3Shape.vue'
@@ -61,6 +61,25 @@ const detected = computed(() => {
   if (detecting.value) return 'Looking for a build file…'
   const b = detection.value?.build
   return b ? `${BUILD_LABEL[b]} detected` : 'No build file found'
+})
+
+// Each step is one card that scrolls inside itself: it stops where the window does instead
+// of running past the fold and pushing the page.
+const cardEl = ref<HTMLElement | null>(null)
+const cardMax = ref(0)
+function fitCard() {
+  const el = cardEl.value
+  if (!el) return
+  // The page keeps its own bottom padding, which is what the window shows below the card.
+  const shell = el.closest('.main-col')
+  const below = shell ? parseFloat(getComputedStyle(shell).paddingBottom) || 0 : 24
+  const avail = Math.round(window.innerHeight - el.getBoundingClientRect().top - below)
+  // A scroll box too short to show a field is worse than the page scrolling: then no cap.
+  cardMax.value = avail < 240 ? 0 : avail
+}
+watch(step, async () => {
+  await nextTick()
+  fitCard()
 })
 
 function go(n: 1 | 2 | 3) {
@@ -144,6 +163,7 @@ async function submit() {
 }
 
 onMounted(async () => {
+  window.addEventListener('resize', fitCard)
   try {
     gh.value = await api.github()
     if (!gh.value.connected) return router.replace('/apps')
@@ -152,8 +172,11 @@ onMounted(async () => {
     toastError(e)
   } finally {
     loadingRepos.value = false
+    await nextTick()
+    fitCard()
   }
 })
+onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
 </script>
 
 <template>
@@ -184,8 +207,8 @@ onMounted(async () => {
       </li>
     </ol>
 
-    <Transition name="step" mode="out-in">
-    <section v-if="step === 1" class="card source">
+    <Transition name="step" mode="out-in" @after-enter="fitCard">
+    <section v-if="step === 1" ref="cardEl" class="card source" :style="{ maxHeight: cardMax ? `${cardMax}px` : undefined }">
         <h2>Pick a repository</h2>
         <label class="field search">
           <Icon name="search" :size="20" />
@@ -221,7 +244,7 @@ onMounted(async () => {
         </div>
     </section>
 
-      <section v-else-if="step === 2 && repo" class="card config">
+      <section v-else-if="step === 2 && repo" ref="cardEl" class="card config" :style="{ maxHeight: cardMax ? `${cardMax}px` : undefined }">
         <div class="cfg-head">
           <M3Shape kind="cookie" :size="44" fill="var(--pc)" />
           <div class="grow">
@@ -313,13 +336,13 @@ onMounted(async () => {
             <div class="ctl"><input v-model.number="keep" class="num" inputmode="numeric" aria-label="Versions kept" /></div>
           </div>
           <div class="actions">
-            <button class="btn btn-text st" type="button" @click="step = 1">Back</button>
+            <button class="btn btn-text btn-lg st" type="button" @click="step = 1">Back</button>
             <button class="btn btn-filled btn-lg st" type="button" :disabled="invalid" @click="step = 3">Continue</button>
           </div>
         </div>
       </section>
 
-      <section v-else-if="step === 3 && repo" class="card config review-card">
+      <section v-else-if="step === 3 && repo" ref="cardEl" class="card config review-card" :style="{ maxHeight: cardMax ? `${cardMax}px` : undefined }">
         <div class="cfg-head">
           <M3Shape kind="cookie" :size="44" fill="var(--pc)" />
           <div class="grow">
@@ -341,11 +364,13 @@ onMounted(async () => {
           <div><dt>Versions kept</dt><dd>{{ keep }}</dd></div>
         </dl>
 
-        <p v-if="detection?.reason" class="muted small">{{ detection.reason }}</p>
-        <p class="muted small">The app is created and its first deployment starts immediately.</p>
+        <div class="notes">
+          <p v-if="detection?.reason" class="muted small">{{ detection.reason }}</p>
+          <p class="muted small">The app is created and its first deployment starts immediately.</p>
+        </div>
 
         <div class="actions">
-          <button class="btn btn-text st" type="button" @click="step = 2">Back</button>
+          <button class="btn btn-text btn-lg st" type="button" @click="step = 2">Back</button>
           <button class="btn btn-filled btn-lg st" type="button" :disabled="saving || invalid" @click="submit">
             <ShapeLoader v-if="saving" small label="Creating app" />
             {{ saving ? 'Creating…' : 'Deploy' }}
@@ -460,6 +485,16 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+/* The card scrolls inside itself, so the page keeps still whatever the step holds. */
+.source,
+.config {
+  overflow: auto;
+}
+/* Blocks keep their height while the card scrolls, instead of being squashed to fit. */
+.source > *,
+.config > * {
+  flex-shrink: 0;
 }
 .source h2,
 .config h2 {
@@ -642,8 +677,19 @@ onMounted(async () => {
   font-size: 15px;
   overflow-wrap: anywhere;
 }
+/* The notes read as one block: no paragraph margin, a tight line gap. */
+.notes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.notes p {
+  margin: 0;
+}
+/* Same size on both ends of the row, centred on the same line. */
 .actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
 }
