@@ -2,7 +2,7 @@
 // Pelote's loading indicator: an M3 Expressive shape that changes and turns every 700 ms.
 // Static (first shape, no rotation) under prefers-reduced-motion; paused while the tab is hidden.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { LOADER_SEQUENCE, LOADER_SHAPES, LOADER_STEP_MS, LOADER_TURN_DEG } from '@/lib/loaderShapes'
+import { LOADER_SEQUENCE, LOADER_SHAPES, LOADER_START_MS, LOADER_STEP_MS, LOADER_TURN_DEG } from '@/lib/loaderShapes'
 
 const props = withDefaults(
   defineProps<{ size?: number; label?: string; contained?: boolean }>(),
@@ -11,15 +11,25 @@ const props = withDefaults(
 
 const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 const step = ref(0)
+let first: ReturnType<typeof setTimeout> | undefined
 let timer: ReturnType<typeof setInterval> | undefined
+
+function advance() {
+  if (!document.hidden) step.value = (step.value + 1) % LOADER_SEQUENCE.length
+}
 
 onMounted(() => {
   if (reduce) return
-  timer = setInterval(() => {
-    if (!document.hidden) step.value = (step.value + 1) % LOADER_SEQUENCE.length
-  }, LOADER_STEP_MS)
+  // The first change lands at 300 ms so a short wait already moves; then Pelote's 700 ms cadence.
+  first = setTimeout(() => {
+    advance()
+    timer = setInterval(advance, LOADER_STEP_MS)
+  }, LOADER_START_MS)
 })
-onBeforeUnmount(() => clearInterval(timer))
+onBeforeUnmount(() => {
+  clearTimeout(first)
+  clearInterval(timer)
+})
 
 const icon = computed(() => Math.round(props.size * 0.79))
 const d = computed(() => LOADER_SHAPES[LOADER_SEQUENCE[step.value] ?? 'cookie9'])

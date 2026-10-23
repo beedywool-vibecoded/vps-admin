@@ -89,6 +89,14 @@ class _PeloteLoaderState extends State<PeloteLoader> {
   bool? _reduce;
   Timer? _timer;
 
+  void _advance() {
+    if (!mounted) return;
+    setState(() {
+      _index = (_index + 1) % kLoaderSequence.length;
+      _turn++;
+    });
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -96,14 +104,15 @@ class _PeloteLoaderState extends State<PeloteLoader> {
     if (reduce == _reduce) return;
     _reduce = reduce;
     _timer?.cancel();
+    // The first change lands at 300 ms so a short wait already moves; then Pelote's 700 ms cadence.
     _timer = reduce
         ? null
-        : Timer.periodic(const Duration(milliseconds: 700), (_) {
-            if (!mounted) return;
-            setState(() {
-              _index = (_index + 1) % kLoaderSequence.length;
-              _turn++;
-            });
+        : Timer(const Duration(milliseconds: 300), () {
+            _advance();
+            _timer = Timer.periodic(
+              const Duration(milliseconds: 700),
+              (_) => _advance(),
+            );
           });
   }
 

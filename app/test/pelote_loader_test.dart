@@ -31,8 +31,11 @@ void main() {
   testWidgets('the loader turns while it waits', (tester) async {
     await tester.pumpWidget(host());
     final before = angleOf(tester);
-    await tester.pump(const Duration(milliseconds: 700));
-    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(angleOf(tester), closeTo(before, 0.001));
+    // The 300 ms timer fires during this pump; the rotation starts on the next frame.
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump(const Duration(milliseconds: 150));
     expect(angleOf(tester), isNot(closeTo(before, 0.1)));
     await tester.pumpWidget(const SizedBox());
   });
