@@ -268,7 +268,9 @@ cd app && flutter test                          # l'app Android
 Pousser un tag `vX.Y.Z` lance le workflow `release` :
 1. il compile les binaires et l'APK ;
 2. il signe `SHA256SUMS` avec le secret `RELEASE_SIGNING_KEY` ;
-3. il publie la release.
+3. il publie la release : un binaire par architecture, l'APK et son JSON, `install.sh` et
+   `vps-admin-deploy.tar.gz` (les scripts du service en une seule archive, pour garder la
+   liste des fichiers courte).
 
 Pour un fork, génère ta propre paire de clés :
 

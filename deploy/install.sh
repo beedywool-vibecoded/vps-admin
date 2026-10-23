@@ -242,20 +242,21 @@ install -o root -g root -m 440 "$TMP/sudoers" /etc/sudoers.d/vps-admin
 # 4. Service --------------------------------------------------------------------------
 say "Installing vps-admin $NEW_VERSION"
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo "")
-fetch_asset() { # name, destination
-	# Local files only with --binary: piped through bash, the "script dir" is just the cwd.
-	if [ -n "$LOCAL_BINARY" ] && [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/$1" ]; then
-		cp "$SCRIPT_DIR/$1" "$2"
-	elif [ -n "$TOKEN" ] && declare -F get >/dev/null; then
-		get "$1" "$2"
+# The service files ship as one archive, so the release page lists one asset instead of
+# four. Local files win with --binary: piped through bash, the "script dir" is the cwd.
+if [ -n "$LOCAL_BINARY" ] && [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/preflight.sh" ]; then
+	for f in preflight.sh run-script.sh proxy-helper.sh vps-admin.service; do
+		cp "$SCRIPT_DIR/$f" "$TMP/$f"
+	done
+else
+	archive=vps-admin-deploy.tar.gz
+	if [ -n "$TOKEN" ] && declare -F get >/dev/null; then
+		get "$archive" "$TMP/$archive"
 	else
-		curl -fsSL -o "$2" "${BASE:-https://github.com/$REPO/releases/latest/download}/$1"
+		curl -fsSL -o "$TMP/$archive" "${BASE:-https://github.com/$REPO/releases/latest/download}/$archive"
 	fi
-}
-fetch_asset preflight.sh "$TMP/preflight.sh"
-fetch_asset run-script.sh "$TMP/run-script.sh"
-fetch_asset proxy-helper.sh "$TMP/proxy-helper.sh"
-fetch_asset vps-admin.service "$TMP/vps-admin.service"
+	tar -xzf "$TMP/$archive" -C "$TMP" || die "cannot unpack the service files"
+fi
 install -o root -g root -m 755 "$TMP/preflight.sh" /opt/vps-admin/preflight.sh
 install -o root -g root -m 755 "$TMP/run-script.sh" /opt/vps-admin/run-script
 install -o root -g root -m 755 "$TMP/proxy-helper.sh" /opt/vps-admin/proxy-helper
