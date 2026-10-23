@@ -102,16 +102,20 @@ const options = computed(() => {
       </button>
     </div>
     <div v-if="access === 'public' || access === 'vpn'" class="grid">
-      <label class="tf">
-        <span>Domain</span>
-        <input v-model.trim="domain" placeholder="app.example.com" spellcheck="false" />
+      <div class="ffield">
+        <label class="tf">
+          <span>Domain</span>
+          <input v-model.trim="domain" placeholder="app.example.com" spellcheck="false" />
+        </label>
         <small>Point its DNS to this server; HTTPS is automatic</small>
-      </label>
-      <label v-if="access === 'vpn'" class="tf">
-        <span>Allowed networks</span>
-        <input v-model.trim="allow" placeholder="10.8.0.0/24, 192.168.1.0/24" spellcheck="false" />
+      </div>
+      <div v-if="access === 'vpn'" class="ffield">
+        <label class="tf">
+          <span>Allowed networks</span>
+          <input v-model.trim="allow" placeholder="10.8.0.0/24, 192.168.1.0/24" spellcheck="false" />
+        </label>
         <small>Your devices must reach the domain through these networks</small>
-      </label>
+      </div>
     </div>
     <div v-if="access === 'vpn' && vpnNets.length" class="nets">
       <span class="muted small">Found here:</span>
@@ -168,37 +172,56 @@ const options = computed(() => {
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+  align-items: start;
   gap: 12px;
 }
-.tf {
+/* The explanation sits under the box, so every field in a row is exactly as tall. */
+.ffield {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px 16px 8px;
+  gap: 6px;
+  min-width: 0;
+}
+.ffield small {
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--on-sv);
+}
+.tf {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  height: 56px;
+  padding: 6px 16px;
   border-radius: 12px 12px 4px 4px;
   background: var(--schh);
   border-bottom: 1px solid var(--on-sv);
+  overflow: hidden;
 }
 .tf:focus-within {
   border-bottom-color: var(--primary);
   box-shadow: inset 0 -1px 0 var(--primary);
 }
 .tf span {
+  overflow: hidden;
   font-size: 12px;
+  line-height: 16px;
   font-weight: 500;
   color: var(--primary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .tf input {
+  height: 24px;
   border: none;
   background: none;
   outline: none;
   font-size: 16px;
   color: var(--on-surface);
-  padding: 2px 0;
-}
-.tf small {
-  font-size: 11px;
-  color: var(--on-sv);
+  padding: 0;
 }
 .nets {
   display: flex;

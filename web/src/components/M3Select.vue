@@ -157,15 +157,17 @@ onBeforeUnmount(hide)
 }
 /* Same filled field as the text fields beside it, filling its grid row */
 .field-btn {
+  box-sizing: border-box;
   flex: 1;
   display: grid;
   grid-template-columns: 1fr auto;
   align-content: center;
   align-items: center;
-  gap: 4px 8px;
+  gap: 2px 8px;
   width: 100%;
-  min-height: 56px;
-  padding: 10px 12px 8px 16px;
+  height: 56px;
+  padding: 6px 12px 6px 16px;
+  overflow: hidden;
   border: none;
   border-bottom: 1px solid var(--on-sv);
   border-radius: 12px 12px 4px 4px;
@@ -183,12 +185,16 @@ onBeforeUnmount(hide)
 .lbl {
   grid-column: 1;
   font-size: 12px;
+  line-height: 16px;
   font-weight: 500;
   color: var(--primary);
 }
 .val {
   grid-column: 1;
+  overflow: hidden;
   font-size: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .chev {
   grid-column: 2;

@@ -56,6 +56,12 @@ const accessText = computed(() => {
   return 'No domain'
 })
 const envCount = computed(() => env.value.filter((v) => v.key.trim()).length)
+// What the server found, worded as a fact rather than a status line.
+const detected = computed(() => {
+  if (detecting.value) return 'Looking for a build file…'
+  const b = detection.value?.build
+  return b ? `${BUILD_LABEL[b]} detected` : 'No build file found'
+})
 
 function go(n: 1 | 2 | 3) {
   if (n > 1 && !repo.value) return
@@ -159,18 +165,21 @@ onMounted(async () => {
 
     <ol class="steps" aria-label="New app steps">
       <li :class="{ current: step === 1, done: step > 1 }">
-        <button type="button" class="step st" :aria-current="step === 1 ? 'step' : undefined" @click="go(1)">
-          <span><Icon v-if="step > 1" name="check" :size="18" /><template v-else>1</template></span>Source
+        <button type="button" class="step st" aria-label="Step 1: Source" :aria-current="step === 1 ? 'step' : undefined" @click="go(1)">
+          <span><Icon v-if="step > 1" name="check" :size="18" /><template v-else>1</template></span>
+          <span class="lbl">Source</span>
         </button>
       </li>
       <li :class="{ current: step === 2, done: step > 2, locked: !repo }">
-        <button type="button" class="step st" :aria-current="step === 2 ? 'step' : undefined" :disabled="!repo" @click="go(2)">
-          <span><Icon v-if="step > 2" name="check" :size="18" /><template v-else>2</template></span>Build and settings
+        <button type="button" class="step st" aria-label="Step 2: Build and settings" :aria-current="step === 2 ? 'step' : undefined" :disabled="!repo" @click="go(2)">
+          <span><Icon v-if="step > 2" name="check" :size="18" /><template v-else>2</template></span>
+          <span class="lbl">Build and settings</span>
         </button>
       </li>
       <li :class="{ current: step === 3, locked: !repo }">
-        <button type="button" class="step st" :aria-current="step === 3 ? 'step' : undefined" :disabled="!repo" @click="go(3)">
-          <span>3</span>Deploy
+        <button type="button" class="step st" aria-label="Step 3: Deploy" :aria-current="step === 3 ? 'step' : undefined" :disabled="!repo" @click="go(3)">
+          <span>3</span>
+          <span class="lbl">Deploy</span>
         </button>
       </li>
     </ol>
@@ -222,67 +231,87 @@ onMounted(async () => {
           <button class="btn btn-text st" type="button" @click="step = 1">Change</button>
         </div>
 
-        <div class="grid">
-          <label class="tf">
-            <span>Name</span>
-            <input :value="name" spellcheck="false" @input="name = slugify(($event.target as HTMLInputElement).value)" />
-            <small>Also the container name</small>
-          </label>
-          <M3Select v-model="branch" label="Branch" :options="branchOptions" />
-          <label class="tf">
-            <span>Root folder</span>
-            <input v-model.trim="rootDir" placeholder="/" spellcheck="false" />
-            <small>For a monorepo, the folder of this app</small>
-          </label>
+        <div class="group">
+          <h3>App</h3>
+          <p class="hint">The name it gets here, the branch to deploy and the folder to build.</p>
+          <div class="grid">
+            <div class="ffield">
+              <label class="tf">
+                <span>Name</span>
+                <input :value="name" spellcheck="false" @input="name = slugify(($event.target as HTMLInputElement).value)" />
+              </label>
+              <small>Also the container name</small>
+            </div>
+            <M3Select v-model="branch" label="Branch" :options="branchOptions" />
+            <div class="ffield">
+              <label class="tf">
+                <span>Root folder</span>
+                <input v-model.trim="rootDir" placeholder="/" spellcheck="false" />
+              </label>
+              <small>For a monorepo, the folder of this app</small>
+            </div>
+          </div>
         </div>
 
-        <div>
-          <h3 class="sub">Access</h3>
+        <div class="group">
+          <h3>Access</h3>
+          <p class="hint">How the app is reached from outside the server.</p>
           <AccessPicker v-model:access="access" v-model:domain="domain" v-model:allow="allow" />
         </div>
 
-        <div class="tile">
-          <M3Shape kind="clover" :size="36" fill="var(--secc)" />
-          <div class="grow">
-            <div class="tile-title">{{ detecting ? 'Looking at the repository…' : detection?.build ? `Detected: ${BUILD_LABEL[detection.build]}` : 'Build' }}</div>
-            <div class="muted small">{{ detection?.reason }}</div>
+        <div class="group">
+          <h3>Build</h3>
+          <p class="hint">What turns the repository into an image, and how much it may use.</p>
+          <div class="tile">
+            <M3Shape kind="clover" :size="36" fill="var(--secc)" />
+            <div class="grow">
+              <div class="tile-title">{{ detected }}</div>
+              <div v-if="detection?.reason" class="muted small">{{ detection.reason }}</div>
+            </div>
+            <M3Select v-model="build" class="build-sel" label="Build" :options="buildOptions" />
           </div>
-          <M3Select v-model="build" class="build-sel" label="Build" :options="buildOptions" />
+          <div class="grid">
+            <div class="ffield">
+              <label class="tf">
+                <span>Port</span>
+                <input v-model.number="port" inputmode="numeric" :class="{ warn: needsPort }" />
+              </label>
+              <small>{{ effectiveBuild === 'compose' ? 'The port your compose file publishes on 127.0.0.1' : needsPort ? 'Required: the Dockerfile has no EXPOSE line' : 'The port the app listens on inside the container' }}</small>
+            </div>
+            <div class="ffield">
+              <label class="tf">
+                <span>Memory limit (MiB)</span>
+                <input v-model.number="memoryMb" inputmode="numeric" placeholder="0" />
+              </label>
+              <small>0 for no limit</small>
+            </div>
+          </div>
+          <BuildCommands v-model="cmds" :build="effectiveBuild" />
         </div>
 
-        <div class="grid">
-          <label class="tf">
-            <span>{{ effectiveBuild === 'compose' ? 'Published port to route the domain to' : 'Port the app listens on' }}</span>
-            <input v-model.number="port" inputmode="numeric" :class="{ warn: needsPort }" />
-            <small>{{ effectiveBuild === 'compose' ? 'A port your compose file publishes on 127.0.0.1' : needsPort ? 'Required: the Dockerfile has no EXPOSE line' : 'Inside the container' }}</small>
-          </label>
-          <label class="tf">
-            <span>Memory limit (MiB)</span>
-            <input v-model.number="memoryMb" inputmode="numeric" placeholder="0" />
-            <small>0 for no limit</small>
-          </label>
-        </div>
-
-        <BuildCommands v-model="cmds" :build="effectiveBuild" />
-
-        <div>
-          <h3 class="sub">Environment variables</h3>
+        <div class="group">
+          <h3>Environment variables</h3>
+          <p class="hint">Values passed to the app when it starts. Secrets stay hidden in the panel.</p>
           <EnvEditor v-model="env" />
         </div>
 
-        <div class="setting">
-          <div class="grow">
-            <div>Deploy on every push</div>
-            <div class="muted small">GitHub notifies the server; the new version replaces the old one without downtime</div>
+        <div class="group">
+          <h3>Deploy</h3>
+          <p class="hint">What happens after each push to the branch.</p>
+          <div class="setting">
+            <div class="grow">
+              <div>Deploy on every push</div>
+              <div class="muted small">GitHub notifies the server; the new version replaces the old one without downtime</div>
+            </div>
+            <M3Switch v-model="autoDeploy" label="Deploy on every push" />
           </div>
-          <M3Switch v-model="autoDeploy" label="Deploy on every push" />
-        </div>
-        <div class="setting">
-          <div class="grow">
-            <div>Versions kept for rollback</div>
-            <div class="muted small">Older images are removed after each deploy</div>
+          <div class="setting">
+            <div class="grow">
+              <div>Versions kept for rollback</div>
+              <div class="muted small">Older images are removed after each deploy</div>
+            </div>
+            <input v-model.number="keep" class="num" inputmode="numeric" aria-label="Versions kept" />
           </div>
-          <input v-model.number="keep" class="num" inputmode="numeric" aria-label="Versions kept" />
         </div>
 
         <div class="actions">
@@ -353,20 +382,40 @@ onMounted(async () => {
 .step {
   display: flex;
   align-items: center;
-  gap: 10px;
   height: 44px;
-  padding: 0 18px 0 8px;
+  padding: 0 8px;
   border: none;
   border-radius: 22px;
   background: none;
   color: inherit;
   font: inherit;
   font-weight: 500;
+  transition: padding-right 0.24s var(--ease);
 }
 .step:disabled {
   cursor: default;
 }
-.steps span {
+/* Only the step being filled keeps its name: the others are just a number. */
+.lbl {
+  max-width: 0;
+  margin-left: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 0;
+  transition:
+    max-width 0.24s var(--ease),
+    margin-left 0.24s var(--ease),
+    opacity 0.16s var(--ease);
+}
+.steps li.current .lbl {
+  max-width: 240px;
+  margin-left: 10px;
+  opacity: 1;
+}
+.steps li.current .step {
+  padding-right: 18px;
+}
+.steps span:not(.lbl) {
   width: 28px;
   height: 28px;
   border-radius: 14px;
@@ -402,8 +451,8 @@ onMounted(async () => {
   background: var(--pc);
   color: var(--on-pc);
 }
-.steps li.current span,
-.steps li.done span {
+.steps li.current span:not(.lbl),
+.steps li.done span:not(.lbl) {
   background: var(--primary);
   color: var(--on-primary);
 }
@@ -463,16 +512,35 @@ onMounted(async () => {
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: start;
   gap: 12px;
 }
-.tf {
+/* A field keeps the same height whether or not it has an explanation: that one sits
+   under the box, not inside it. */
+.ffield {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px 16px 8px;
+  gap: 6px;
+  min-width: 0;
+}
+.ffield small {
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--on-sv);
+}
+.tf {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  height: 56px;
+  padding: 6px 16px;
   border-radius: 12px 12px 4px 4px;
   background: var(--schh);
   border-bottom: 1px solid var(--on-sv);
+  overflow: hidden;
 }
 .tf:focus-within {
   border-bottom-color: var(--primary);
@@ -480,23 +548,24 @@ onMounted(async () => {
 }
 .tf span {
   font-size: 12px;
+  line-height: 16px;
   font-weight: 500;
   color: var(--primary);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .tf input {
+  height: 24px;
   border: none;
   background: none;
   outline: none;
   font-size: 16px;
   color: var(--on-surface);
-  padding: 2px 0;
+  padding: 0;
 }
 .tf input.warn {
   color: var(--warn);
-}
-.tf small {
-  font-size: 11px;
-  color: var(--on-sv);
 }
 .tile {
   display: flex;
@@ -525,9 +594,19 @@ onMounted(async () => {
   width: 80px;
   text-align: center;
 }
-.sub {
+/* One readable block per idea: a title, a line that says what it is for, then its fields. */
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.group h3 {
   font-size: 16px;
-  margin-bottom: 8px;
+}
+.group .hint {
+  margin: -8px 0 0;
+  font-size: 13px;
+  color: var(--on-sv);
 }
 .setting {
   display: flex;

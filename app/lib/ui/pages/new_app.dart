@@ -105,6 +105,12 @@ class _NewAppPageState extends State<NewAppPage> {
       needsPort ||
       (effectiveBuild.isEmpty && !detecting);
 
+  String get detectedTitle {
+    if (detecting) return 'Looking for a build file…';
+    final b = detection?['build'] as String? ?? '';
+    return b.isEmpty ? 'No build file found' : '${buildLabel[b]} detected';
+  }
+
   String get accessText {
     final domain = f['domain']!.text.trim();
     final allow = f['allow']!.text.trim();
@@ -248,46 +254,61 @@ class _NewAppPageState extends State<NewAppPage> {
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: locked ? null : () => setState(() => step = n),
-            child: Container(
-              height: 44,
-              padding: const EdgeInsets.fromLTRB(8, 0, 18, 0),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AnimatedContainer(
-                    duration: motion,
-                    curve: Curves.easeOutCubic,
-                    width: 28,
-                    height: 28,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: current || done
-                          ? cs.primary
-                          : cs.surfaceContainerHigh,
-                      shape: BoxShape.circle,
-                    ),
-                    child: done
-                        ? WIcon('check', size: 18, color: cs.onPrimary)
-                        : Text(
-                            '$n',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: current
-                                  ? cs.onPrimary
-                                  : cs.onSurfaceVariant,
+            child: Semantics(
+              label: 'Step $n: $label',
+              button: true,
+              excludeSemantics: true,
+              child: Container(
+                height: 44,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AnimatedContainer(
+                      duration: motion,
+                      curve: Curves.easeOutCubic,
+                      width: 28,
+                      height: 28,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: current || done
+                            ? cs.primary
+                            : cs.surfaceContainerHigh,
+                        shape: BoxShape.circle,
+                      ),
+                      child: done
+                          ? WIcon('check', size: 18, color: cs.onPrimary)
+                          : Text(
+                              '$n',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: current
+                                    ? cs.onPrimary
+                                    : cs.onSurfaceVariant,
+                              ),
                             ),
-                          ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: current ? cs.onSurface : cs.onSurfaceVariant,
                     ),
-                  ),
-                ],
+                    // Only the step being filled keeps its name.
+                    AnimatedSize(
+                      duration: motion,
+                      curve: Curves.easeOutCubic,
+                      alignment: Alignment.centerLeft,
+                      child: current
+                          ? Padding(
+                              padding: const EdgeInsets.only(left: 10),
+                              child: Text(
+                                label,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  color: cs.onSurface,
+                                ),
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -467,6 +488,28 @@ class _NewAppPageState extends State<NewAppPage> {
     );
   }
 
+  /// One readable block per idea: a title, a line that says what it is for, then fields.
+  Widget _group(
+    BuildContext context,
+    String title,
+    String hint,
+    List<Widget> children,
+  ) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    spacing: 12,
+    children: [
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 4,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          Muted(hint, size: 13),
+        ],
+      ),
+      ...children,
+    ],
+  );
+
   Widget _config(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final r = repo!;
@@ -504,46 +547,53 @@ class _NewAppPageState extends State<NewAppPage> {
               ),
             ],
           ),
-          ResponsiveGrid(
-            minWidth: 220,
-            children: [
-              FilledField(
-                label: 'Name',
-                controller: name,
-                help: 'Also the container name',
-                onChanged: (v) {
-                  final s = slugify(v);
-                  if (s != v) {
-                    name.value = TextEditingValue(
-                      text: s,
-                      selection: TextSelection.collapsed(offset: s.length),
-                    );
-                  }
-                },
-              ),
-              SelectField<String>(
-                label: 'Branch',
-                value: branch,
-                options: branchOpts,
-                onChanged: (v) {
-                  setState(() => branch = v);
-                  _detect();
-                },
-              ),
-              FilledField(
-                label: 'Root folder',
-                controller: f['rootDir']!,
-                hint: '/',
-                help: 'For a monorepo, the folder of this app',
-                onChanged: _redetect,
+          _group(
+            context,
+            'App',
+            'The name it gets here, the branch to deploy and the folder to build.',
+            [
+              ResponsiveGrid(
+                minWidth: 220,
+                children: [
+                  FilledField(
+                    label: 'Name',
+                    controller: name,
+                    help: 'Also the container name',
+                    onChanged: (v) {
+                      final s = slugify(v);
+                      if (s != v) {
+                        name.value = TextEditingValue(
+                          text: s,
+                          selection: TextSelection.collapsed(offset: s.length),
+                        );
+                      }
+                    },
+                  ),
+                  SelectField<String>(
+                    label: 'Branch',
+                    value: branch,
+                    options: branchOpts,
+                    onChanged: (v) {
+                      setState(() => branch = v);
+                      _detect();
+                    },
+                  ),
+                  FilledField(
+                    label: 'Root folder',
+                    controller: f['rootDir']!,
+                    hint: '/',
+                    help: 'For a monorepo, the folder of this app',
+                    onChanged: _redetect,
+                  ),
+                ],
               ),
             ],
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: 8,
-            children: [
-              Text('Access', style: Theme.of(context).textTheme.titleSmall),
+          _group(
+            context,
+            'Access',
+            'How the app is reached from outside the server.',
+            [
               AccessPicker(
                 api: api,
                 access: access,
@@ -553,127 +603,130 @@ class _NewAppPageState extends State<NewAppPage> {
               ),
             ],
           ),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: cs.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Wrap(
-              spacing: 14,
-              runSpacing: 12,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                ShapeIcon(
-                  M3Shape.clover,
-                  size: 36,
-                  color: cs.secondaryContainer,
+          _group(
+            context,
+            'Build',
+            'What turns the repository into an image, and how much it may use.',
+            [
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(20),
                 ),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        detecting
-                            ? 'Looking at the repository…'
-                            : (detection?['build'] as String? ?? '').isNotEmpty
-                            ? 'Detected: ${buildLabel[detection!['build']]}'
-                            : 'Build',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      if (reason.isNotEmpty) Muted(reason),
-                    ],
-                  ),
-                ),
-                SizedBox(
-                  width: 240,
-                  child: SelectField<String>(
-                    label: 'Build',
-                    value: buildType,
-                    options: [
-                      for (final e in buildLabel.entries) (e.key, e.value),
-                    ],
-                    onChanged: (v) => setState(() => buildType = v),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          ResponsiveGrid(
-            minWidth: 220,
-            children: [
-              FilledField(
-                label: effectiveBuild == 'compose'
-                    ? 'Published port to route the domain to'
-                    : 'Port the app listens on',
-                controller: f['port']!,
-                number: true,
-                onChanged: (_) => setState(() {}),
-                help: effectiveBuild == 'compose'
-                    ? 'A port your compose file publishes on 127.0.0.1'
-                    : needsPort
-                    ? 'Required: the Dockerfile has no EXPOSE line'
-                    : 'Inside the container',
-              ),
-              FilledField(
-                label: 'Memory limit (MiB)',
-                controller: f['memoryMb']!,
-                hint: '0',
-                number: true,
-                help: '0 for no limit',
-              ),
-            ],
-          ),
-          CommandsFields(ctl: f, build: effectiveBuild),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: 8,
-            children: [
-              Text(
-                'Environment variables',
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-              EnvEditor(vars: env, onChanged: (v) => setState(() => env = v)),
-            ],
-          ),
-          Row(
-            children: [
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Wrap(
+                  spacing: 14,
+                  runSpacing: 12,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Text('Deploy on every push'),
-                    Muted(
-                      'GitHub notifies the server; the new version replaces the old one without downtime',
+                    ShapeIcon(
+                      M3Shape.clover,
+                      size: 36,
+                      color: cs.secondaryContainer,
+                    ),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 420),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            detectedTitle,
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                          if (reason.isNotEmpty) Muted(reason),
+                        ],
+                      ),
+                    ),
+                    SizedBox(
+                      width: 240,
+                      child: SelectField<String>(
+                        label: 'Build',
+                        value: buildType,
+                        options: [
+                          for (final e in buildLabel.entries) (e.key, e.value),
+                        ],
+                        onChanged: (v) => setState(() => buildType = v),
+                      ),
                     ),
                   ],
                 ),
               ),
-              Switch(
-                value: autoDeploy,
-                onChanged: (v) => setState(() => autoDeploy = v),
+              ResponsiveGrid(
+                minWidth: 220,
+                children: [
+                  FilledField(
+                    label: 'Port',
+                    controller: f['port']!,
+                    number: true,
+                    onChanged: (_) => setState(() {}),
+                    help: effectiveBuild == 'compose'
+                        ? 'The port your compose file publishes on 127.0.0.1'
+                        : needsPort
+                        ? 'Required: the Dockerfile has no EXPOSE line'
+                        : 'The port the app listens on inside the container',
+                  ),
+                  FilledField(
+                    label: 'Memory limit (MiB)',
+                    controller: f['memoryMb']!,
+                    hint: '0',
+                    number: true,
+                    help: '0 for no limit',
+                  ),
+                ],
               ),
+              CommandsFields(ctl: f, build: effectiveBuild),
             ],
           ),
-          Row(
-            children: [
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Versions kept for rollback'),
-                    Muted('Older images are removed after each deploy'),
-                  ],
-                ),
+          _group(
+            context,
+            'Environment variables',
+            'Values passed to the app when it starts. Secrets stay hidden in the panel.',
+            [EnvEditor(vars: env, onChanged: (v) => setState(() => env = v))],
+          ),
+          _group(
+            context,
+            'Deploy',
+            'What happens after each push to the branch.',
+            [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Deploy on every push'),
+                        Muted(
+                          'GitHub notifies the server; the new version replaces the old one without downtime',
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: autoDeploy,
+                    onChanged: (v) => setState(() => autoDeploy = v),
+                  ),
+                ],
               ),
-              SizedBox(
-                width: 90,
-                child: FilledField(
-                  label: 'Versions',
-                  controller: f['keep']!,
-                  number: true,
-                ),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Versions kept for rollback'),
+                        Muted('Older images are removed after each deploy'),
+                      ],
+                    ),
+                  ),
+                  SizedBox(
+                    width: 90,
+                    child: FilledField(
+                      label: 'Versions',
+                      controller: f['keep']!,
+                      number: true,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

@@ -5,6 +5,7 @@ import '../kit.dart';
 import '../widgets.dart';
 
 /// The panel's filled field (.tf): label in primary, value, hint, a bottom line.
+/// The explanation sits under the box, so a field is the same height with or without one.
 class FilledField extends StatelessWidget {
   const FilledField({
     super.key,
@@ -23,6 +24,9 @@ class FilledField extends StatelessWidget {
   final bool mono, number, enabled;
   final ValueChanged<String>? onChanged;
 
+  /// Every filled field, text or select, is exactly this tall.
+  static const double height = 56;
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -33,40 +37,79 @@ class FilledField extends StatelessWidget {
       ),
       borderSide: BorderSide(color: cs.onSurfaceVariant),
     );
-    return TextField(
-      controller: controller,
-      enabled: enabled,
-      onChanged: onChanged,
-      autocorrect: false,
-      keyboardType: number ? TextInputType.number : null,
-      style: TextStyle(
-        fontFamily: mono ? kMono : kFont,
-        fontSize: mono ? 14 : 16,
-      ),
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        helperText: help,
-        helperMaxLines: 2,
-        floatingLabelBehavior: FloatingLabelBehavior.always,
-        labelStyle: TextStyle(color: cs.primary, fontWeight: FontWeight.w500),
-        filled: true,
-        fillColor: cs.surfaceContainerHighest,
-        border: line,
-        enabledBorder: line,
-        focusedBorder: line.copyWith(
-          borderSide: BorderSide(color: cs.primary, width: 2),
+    return FieldHelp(
+      help: help,
+      child: SizedBox(
+        height: height,
+        child: TextField(
+          controller: controller,
+          enabled: enabled,
+          onChanged: onChanged,
+          autocorrect: false,
+          keyboardType: number ? TextInputType.number : null,
+          style: TextStyle(
+            fontFamily: mono ? kMono : kFont,
+            fontSize: mono ? 14 : 16,
+          ),
+          decoration: InputDecoration(
+            labelText: label,
+            hintText: hint,
+            floatingLabelBehavior: FloatingLabelBehavior.always,
+            labelStyle: TextStyle(
+              color: cs.primary,
+              fontWeight: FontWeight.w500,
+            ),
+            filled: true,
+            fillColor: cs.surfaceContainerHighest,
+            isDense: true,
+            border: line,
+            enabledBorder: line,
+            focusedBorder: line.copyWith(
+              borderSide: BorderSide(color: cs.primary, width: 2),
+            ),
+            disabledBorder: line.copyWith(
+              borderSide: BorderSide(color: cs.outlineVariant),
+            ),
+            contentPadding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+          ),
         ),
-        disabledBorder: line.copyWith(
-          borderSide: BorderSide(color: cs.outlineVariant),
-        ),
-        contentPadding: const EdgeInsets.fromLTRB(16, 22, 16, 10),
       ),
     );
   }
 }
 
-/// M3Select.vue: a filled field that opens a menu.
+/// The explanation under a field. It lives outside the box, so a row of fields lines
+/// up whatever each one has to say.
+class FieldHelp extends StatelessWidget {
+  const FieldHelp({super.key, required this.help, required this.child});
+  final String? help;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = help;
+    if (text == null || text.isEmpty) return child;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        child,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 0, 0),
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              height: 16 / 12,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// M3Select.vue: a filled field that opens a menu, as tall as the text fields.
 class SelectField<T> extends StatelessWidget {
   const SelectField({
     super.key,
@@ -74,11 +117,13 @@ class SelectField<T> extends StatelessWidget {
     required this.value,
     required this.options,
     required this.onChanged,
+    this.help,
   });
   final String label;
   final T value;
   final List<(T, String)> options;
   final ValueChanged<T> onChanged;
+  final String? help;
 
   @override
   Widget build(BuildContext context) {
@@ -102,44 +147,58 @@ class SelectField<T> extends StatelessWidget {
             child: Text(o.$2),
           ),
       ],
-      builder: (context, ctl, _) => Material(
-        color: cs.surfaceContainerHighest,
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(12),
-          bottom: Radius.circular(4),
-        ),
-        child: InkWell(
-          onTap: () => ctl.isOpen ? ctl.close() : ctl.open(),
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 60),
-            padding: const EdgeInsets.fromLTRB(16, 10, 12, 8),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: cs.onSurfaceVariant)),
+      builder: (context, ctl, _) => FieldHelp(
+        help: help,
+        child: SizedBox(
+          height: FilledField.height,
+          child: Material(
+            color: cs.surfaceContainerHighest,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(12),
+              bottom: Radius.circular(4),
             ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        label,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: cs.primary,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        current?.$2 ?? '',
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                    ],
+            child: InkWell(
+              onTap: () => ctl.isOpen ? ctl.close() : ctl.open(),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(16, 6, 12, 6),
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: cs.onSurfaceVariant),
                   ),
                 ),
-                WIcon('chevron', size: 20, color: cs.onSurfaceVariant),
-              ],
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            label,
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 16 / 12,
+                              fontWeight: FontWeight.w500,
+                              color: cs.primary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            current?.$2 ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              height: 24 / 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    WIcon('chevron', size: 20, color: cs.onSurfaceVariant),
+                  ],
+                ),
+              ),
             ),
           ),
         ),

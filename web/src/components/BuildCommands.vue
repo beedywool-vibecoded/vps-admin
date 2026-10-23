@@ -29,30 +29,40 @@ const node = computed(() => props.build === 'node' || props.build === 'static')
     </template>
     <div class="grid">
       <template v-if="node || !build">
-        <label class="tf">
-          <span>Install</span>
-          <input v-model.trim="model.installCmd" placeholder="npm ci" spellcheck="false" />
-        </label>
-        <label class="tf">
-          <span>Build</span>
-          <input v-model.trim="model.buildCmd" placeholder="npm run build" spellcheck="false" />
-        </label>
-        <label v-if="build !== 'static'" class="tf">
-          <span>Start</span>
-          <input v-model.trim="model.startCmd" placeholder="npm start" spellcheck="false" />
+        <div class="ffield">
+          <label class="tf">
+            <span>Install</span>
+            <input v-model.trim="model.installCmd" placeholder="npm ci" spellcheck="false" />
+          </label>
+        </div>
+        <div class="ffield">
+          <label class="tf">
+            <span>Build</span>
+            <input v-model.trim="model.buildCmd" placeholder="npm run build" spellcheck="false" />
+          </label>
+        </div>
+        <div v-if="build !== 'static'" class="ffield">
+          <label class="tf">
+            <span>Start</span>
+            <input v-model.trim="model.startCmd" placeholder="npm start" spellcheck="false" />
+          </label>
           <small>Runs with <code>sh -c</code>, <code>PORT=3000</code> is set</small>
-        </label>
+        </div>
       </template>
-      <label v-if="build === 'dockerfile' || !build" class="tf">
-        <span>Dockerfile</span>
-        <input v-model.trim="model.dockerfile" placeholder="Dockerfile" spellcheck="false" />
+      <div v-if="build === 'dockerfile' || !build" class="ffield">
+        <label class="tf">
+          <span>Dockerfile</span>
+          <input v-model.trim="model.dockerfile" placeholder="Dockerfile" spellcheck="false" />
+        </label>
         <small>Relative to the root folder</small>
-      </label>
-      <label v-if="build === 'compose' || !build" class="tf">
-        <span>Compose file</span>
-        <input v-model.trim="model.composeFile" placeholder="compose.yaml" spellcheck="false" />
+      </div>
+      <div v-if="build === 'compose' || !build" class="ffield">
+        <label class="tf">
+          <span>Compose file</span>
+          <input v-model.trim="model.composeFile" placeholder="compose.yaml" spellcheck="false" />
+        </label>
         <small>Relative to the root folder</small>
-      </label>
+      </div>
     </div>
   </M3Expand>
 </template>
@@ -69,38 +79,57 @@ const node = computed(() => props.build === 'node' || props.build === 'static')
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  align-items: start;
   gap: 12px;
   padding: 10px 10px 8px;
 }
-.tf {
+/* Explanations go under the box: the fields themselves keep one height. */
+.ffield {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px 16px 8px;
+  gap: 6px;
+  min-width: 0;
+}
+.ffield small {
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--on-sv);
+}
+.tf {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  height: 56px;
+  padding: 6px 16px;
   border-radius: 12px 12px 4px 4px;
   background: var(--schh);
   border-bottom: 1px solid var(--on-sv);
+  overflow: hidden;
 }
 .tf:focus-within {
   border-bottom-color: var(--primary);
   box-shadow: inset 0 -1px 0 var(--primary);
 }
 .tf span {
+  overflow: hidden;
   font-size: 12px;
+  line-height: 16px;
   font-weight: 500;
   color: var(--primary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .tf input {
+  height: 24px;
   border: none;
   background: none;
   outline: none;
-  padding: 2px 0;
+  padding: 0;
   color: var(--on-surface);
   font-family: var(--mono);
   font-size: 13px;
-}
-.tf small {
-  font-size: 11px;
-  color: var(--on-sv);
 }
 </style>

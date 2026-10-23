@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vps_admin/data/api.dart';
 import 'package:vps_admin/ui/kit.dart';
 import 'package:vps_admin/ui/live.dart';
+import 'package:vps_admin/ui/pages/app_forms.dart';
 import 'package:vps_admin/ui/pages/new_app.dart';
 
 /// Answers the New app page without a server.
@@ -81,6 +82,7 @@ void main() {
   ) async {
     final live = LiveSession(FakeApi());
     addTearDown(live.dispose);
+    final semantics = tester.ensureSemantics();
 
     await tester.pumpWidget(
       MaterialApp(
@@ -93,9 +95,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Pick a repository'), findsOneWidget);
+    // Only the step being filled keeps its name on screen.
     expect(find.text('Source'), findsOneWidget);
-    expect(find.text('Build and settings'), findsOneWidget);
-    expect(find.text('Deploy'), findsOneWidget);
+    expect(find.text('Build and settings'), findsNothing);
+    expect(find.text('Deploy'), findsNothing);
+    expect(find.bySemanticsLabel('Step 2: Build and settings'), findsOneWidget);
     expect(
       find.byWidgetPredicate((w) => w is WIcon && w.name == 'check'),
       findsNothing,
@@ -104,11 +108,47 @@ void main() {
     await tester.tap(find.text('vps-admin').first);
     await tester.pumpAndSettle();
     expect(find.text('Pick a repository'), findsNothing);
+    expect(find.text('Source'), findsNothing);
+    expect(find.text('Build and settings'), findsOneWidget);
     expect(find.text('Environment variables'), findsOneWidget);
     expect(
       find.byWidgetPredicate((w) => w is WIcon && w.name == 'check'),
       findsOneWidget,
     );
+
+    // Each idea has its own heading and a line that says what it is for.
+    expect(
+      find.text(
+        'The name it gets here, the branch to deploy and the folder to build.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        'What turns the repository into an image, and how much it may use.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text('What happens after each push to the branch.'),
+      findsOneWidget,
+    );
+
+    // The explanation sits under the box, so every field in the row is as tall.
+    final nameField = find.byType(TextField).first;
+    expect(
+      tester.getTopLeft(find.text('Also the container name')).dy,
+      greaterThanOrEqualTo(tester.getBottomLeft(nameField).dy),
+    );
+    final branchBox = tester.getSize(
+      find
+          .descendant(
+            of: find.byType(SelectField<String>),
+            matching: find.byType(Material),
+          )
+          .first,
+    );
+    expect(branchBox.height, tester.getSize(nameField).height);
 
     await tester.ensureVisible(find.text('Continue'));
     await tester.pumpAndSettle();
@@ -134,5 +174,6 @@ void main() {
       find.byWidgetPredicate((w) => w is WIcon && w.name == 'check'),
       findsNWidgets(2),
     );
+    semantics.dispose();
   });
 }
