@@ -12,6 +12,7 @@ import (
 
 	"github.com/beedywool/vps-admin/internal/auth"
 	"github.com/beedywool/vps-admin/internal/buildinfo"
+	"github.com/beedywool/vps-admin/internal/docker"
 	"github.com/beedywool/vps-admin/internal/system"
 	"github.com/beedywool/vps-admin/internal/update"
 )
@@ -319,6 +320,86 @@ func (s *Server) containerLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"logs": out})
+}
+
+// A group of containers has one switch in the panel: either all of them start with the
+// server, or none does. Docker keeps the policy in each container, which is also what
+// runs it after a reboot.
+
+func (s *Server) containerRestartPolicies(w http.ResponseWriter, r *http.Request) {
+	ids, err := cleanContainerIDs(strings.Split(r.URL.Query().Get("ids"), ","))
+	if err != nil {
+		writeErrorMsg(w, http.StatusBadRequest, "invalid_ids", err.Error())
+		return
+	}
+	policies := make(map[string]string, len(ids))
+	for _, id := range ids {
+		policy, err := s.Docker.RestartPolicy(r.Context(), id)
+		if err != nil {
+			continue // a container that went away since the list was read
+		}
+		policies[id] = policy
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"policies": policies})
+}
+
+func (s *Server) containerRestartSet(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		IDs   []string `json:"ids"`
+		Start *bool    `json:"start"`
+	}
+	if err := readJSON(r, &body); err != nil || body.Start == nil {
+		writeError(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	ids, err := cleanContainerIDs(body.IDs)
+	if err != nil {
+		writeErrorMsg(w, http.StatusBadRequest, "invalid_ids", err.Error())
+		return
+	}
+	policy := "no"
+	if *body.Start {
+		policy = "unless-stopped"
+	}
+	var first error
+	for _, id := range ids {
+		if err := s.Docker.SetRestartPolicy(r.Context(), id, policy); err != nil && first == nil {
+			first = err
+		}
+	}
+	s.audit(r, "container.restart_policy", fmt.Sprintf("%d containers", len(ids)), first)
+	if first != nil {
+		writeErrorMsg(w, statusFor(first), "action_failed", first.Error())
+		return
+	}
+	policies := make(map[string]string, len(ids))
+	for _, id := range ids {
+		policies[id] = policy
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"policies": policies})
+}
+
+func cleanContainerIDs(ids []string) ([]string, error) {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		if !docker.ValidID(id) {
+			return nil, fmt.Errorf("invalid container id %q", id)
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	if len(out) == 0 {
+		return nil, errors.New("no container id given")
+	}
+	if len(out) > 200 {
+		return nil, errors.New("too many containers at once")
+	}
+	return out, nil
 }
 
 // Update

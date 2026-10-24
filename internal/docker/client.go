@@ -4,6 +4,7 @@ package docker
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -186,6 +187,9 @@ func (c *Client) Containers(ctx context.Context) ([]Container, error) {
 
 func validID(id string) bool { return idPattern.MatchString(id) }
 
+// ValidID reports whether a container id, name or compose name is safe to put in a path.
+func ValidID(id string) bool { return validID(id) }
+
 // Action runs start, stop or restart on a container.
 func (c *Client) Action(ctx context.Context, id, action string) error {
 	if !validID(id) {
@@ -199,6 +203,46 @@ func (c *Client) Action(ctx context.Context, id, action string) error {
 		q.Set("t", "15") // seconds before SIGKILL
 	}
 	res, err := c.do(ctx, http.MethodPost, "/containers/"+id+"/"+action, q, nil)
+	if err != nil {
+		return err
+	}
+	res.Body.Close()
+	return nil
+}
+
+// RestartPolicy is what Docker does with the container when the daemon starts: no,
+// always, unless-stopped or on-failure.
+func (c *Client) RestartPolicy(ctx context.Context, id string) (string, error) {
+	if !validID(id) {
+		return "", ErrNotFound
+	}
+	var info struct {
+		HostConfig struct {
+			RestartPolicy struct {
+				Name string `json:"Name"`
+			} `json:"RestartPolicy"`
+		} `json:"HostConfig"`
+	}
+	if err := c.getJSON(ctx, "/containers/"+id+"/json", nil, &info); err != nil {
+		return "", err
+	}
+	return info.HostConfig.RestartPolicy.Name, nil
+}
+
+// SetRestartPolicy changes the policy Docker keeps in the container, which is what runs
+// it after the next boot and survives a restart.
+func (c *Client) SetRestartPolicy(ctx context.Context, id, policy string) error {
+	if !validID(id) {
+		return ErrNotFound
+	}
+	if !slices.Contains([]string{"no", "always", "unless-stopped", "on-failure"}, policy) {
+		return errors.New("restart policy must be no, always, unless-stopped or on-failure")
+	}
+	body, err := json.Marshal(map[string]any{"RestartPolicy": map[string]string{"Name": policy}})
+	if err != nil {
+		return err
+	}
+	res, err := c.do(ctx, http.MethodPost, "/containers/"+id+"/update", nil, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}

@@ -89,6 +89,8 @@ func (s *Server) Handler() http.Handler {
 
 	mux.Handle("GET /api/docker/containers", full(s.containers))
 	mux.Handle("GET /api/docker/stats", full(s.containerStats))
+	mux.Handle("GET /api/docker/restart", full(s.containerRestartPolicies))
+	mux.Handle("POST /api/docker/restart", full(s.containerRestartSet))
 	mux.Handle("POST /api/docker/containers/{id}/{action}", full(s.containerAction))
 	mux.Handle("POST /api/docker/containers/{id}/rebuild", full(s.containerRebuild))
 	mux.Handle("GET /api/docker/containers/{id}/logs", full(s.containerLogs))

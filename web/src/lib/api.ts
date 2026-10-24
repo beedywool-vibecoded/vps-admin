@@ -558,6 +558,10 @@ export const api = {
 
   containers: () => request<{ containers: Container[] }>('GET', '/api/docker/containers'),
   containerStats: () => request<{ stats: ContainerStats[] }>('GET', '/api/docker/stats'),
+  containerRestartPolicies: (ids: string[]) =>
+    request<{ policies: Record<string, string> }>('GET', `/api/docker/restart?ids=${ids.map(encodeURIComponent).join(',')}`),
+  setContainerRestart: (ids: string[], start: boolean) =>
+    request<{ policies: Record<string, string> }>('POST', '/api/docker/restart', { ids, start }),
   containerAction: (id: string, action: string) =>
     request<void>('POST', `/api/docker/containers/${encodeURIComponent(id)}/${action}`),
   containerLogs: (id: string, tail = 300) =>

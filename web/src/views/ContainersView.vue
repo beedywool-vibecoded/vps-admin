@@ -9,6 +9,7 @@ import RebuildDialog from '@/components/RebuildDialog.vue'
 import GroupBadge from '@/components/GroupBadge.vue'
 import IconPicker from '@/components/IconPicker.vue'
 import M3Dialog from '@/components/M3Dialog.vue'
+import M3Switch from '@/components/M3Switch.vue'
 import { appearance } from '@/lib/appearance'
 import { groupTitle, setGroupTitle } from '@/lib/groupIcons'
 import { openGroups, toggleGroup } from '@/lib/openGroups'
@@ -69,6 +70,41 @@ async function loadLinks() {
   if (a.status === 'fulfilled') appIds.value = new Set(a.value.apps.map((x) => x.id))
 }
 
+// Docker keeps a restart policy per container: it is what brings them back when the
+// server reboots. The panel shows one switch per group, in the open section.
+const policies = ref<Record<string, string>>({})
+const bootBusy = ref<Record<string, boolean>>({})
+const startsOnBoot = (policy?: string) => policy === 'always' || policy === 'unless-stopped'
+const bootCount = (items: Container[]) => items.filter((c) => startsOnBoot(policies.value[c.id])).length
+const bootOn = (items: Container[]) => items.length > 0 && bootCount(items) === items.length
+function bootNote(items: Container[]) {
+  const n = bootCount(items)
+  if (n === 0) return 'No container here starts on boot.'
+  if (n === items.length) return 'Every container here starts on boot.'
+  return `${n} of ${items.length} containers start on boot.`
+}
+async function loadPolicies() {
+  const ids = list.value.map((c) => c.id)
+  if (!ids.length) return
+  try {
+    policies.value = (await api.containerRestartPolicies(ids)).policies
+  } catch {
+    // The switch stays off; the list already reports Docker being unreachable.
+  }
+}
+async function setBoot(name: string, items: Container[], on: boolean) {
+  bootBusy.value[name] = true
+  try {
+    const r = await api.setContainerRestart(items.map((c) => c.id), on)
+    policies.value = { ...policies.value, ...r.policies }
+    toast(`${groupTitle(name)}: ${on ? 'starts on boot' : 'no longer starts on boot'}`)
+  } catch (e) {
+    toastError(e)
+  } finally {
+    bootBusy.value[name] = false
+  }
+}
+
 const groups = computed(() => {
   const q = query.value.trim().toLowerCase()
   const map = new Map<string, Container[]>()
@@ -96,6 +132,7 @@ async function load() {
   try {
     list.value = (await api.containers()).containers
     error.value = ''
+    await loadPolicies()
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -212,6 +249,21 @@ onBeforeUnmount(() => clearInterval(timer))
             <Icon name="logs" :size="20" />
           </button>
         </span>
+      </div>
+      <div class="row boot">
+        <div class="grow">
+          <div>Start on boot</div>
+          <div class="muted small">
+            {{ bootNote(items) }} Docker keeps this per container, so it survives a reboot; a redeploy can put the compose
+            file's policy back.
+          </div>
+        </div>
+        <M3Switch
+          :model-value="bootOn(items)"
+          :label="`Start ${groupTitle(name)} on boot`"
+          :disabled="!!bootBusy[name]"
+          @update:model-value="setBoot(name, items, $event)"
+        />
       </div>
       </div>
       </div>

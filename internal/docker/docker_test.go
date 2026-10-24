@@ -2,7 +2,12 @@ package docker
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
+	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -20,6 +25,41 @@ func TestDemux(t *testing.T) {
 	got, err := demux(&b)
 	if err != nil || got != "out line\nerr line\n" {
 		t.Fatalf("got %q, %v", got, err)
+	}
+}
+
+type roundTrip func(*http.Request) (*http.Response, error)
+
+func (f roundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestRestartPolicyReadsAndWrites(t *testing.T) {
+	var sent map[string]any
+	c := &Client{http: &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+		reply := func(code int, body string) *http.Response {
+			return &http.Response{StatusCode: code, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}
+		}
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1.41/containers/abc/json":
+			return reply(http.StatusOK, `{"HostConfig":{"RestartPolicy":{"Name":"unless-stopped"}}}`), nil
+		case r.Method == http.MethodPost && r.URL.Path == "/v1.41/containers/abc/update":
+			json.NewDecoder(r.Body).Decode(&sent)
+			return reply(http.StatusOK, `{}`), nil
+		}
+		return reply(http.StatusNotFound, `{"message":"no such container"}`), nil
+	})}}
+	policy, err := c.RestartPolicy(context.Background(), "abc")
+	if err != nil || policy != "unless-stopped" {
+		t.Fatalf("RestartPolicy = %q, %v", policy, err)
+	}
+	if err := c.SetRestartPolicy(context.Background(), "abc", "no"); err != nil {
+		t.Fatal(err)
+	}
+	inner, _ := sent["RestartPolicy"].(map[string]any)
+	if inner["Name"] != "no" {
+		t.Fatalf("sent %v", sent)
+	}
+	if err := c.SetRestartPolicy(context.Background(), "abc", "sometimes"); err == nil {
+		t.Fatal("an unknown policy must be refused")
 	}
 }
 
