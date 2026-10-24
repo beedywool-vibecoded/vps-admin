@@ -250,6 +250,107 @@ func (c *Client) SetRestartPolicy(ctx context.Context, id, policy string) error 
 	return nil
 }
 
+// VolumeUse is a named volume that holds panel data, with the running containers that
+// currently mount it. A backup pauses them so the files stay consistent.
+type VolumeUse struct {
+	Name       string   `json:"name"`
+	Containers []string `json:"containers,omitempty"` // ids of the running ones
+}
+
+// PanelVolumes lists the named volumes of the apps the panel runs: the ones their
+// containers mount, plus the volumes labelled for a vpsadmin compose project (a stack
+// that is down keeps its data). System volumes are never returned.
+func (c *Client) PanelVolumes(ctx context.Context) ([]VolumeUse, error) {
+	containers, err := c.Containers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	uses := map[string]*VolumeUse{}
+	add := func(name string) *VolumeUse {
+		if !validID(name) {
+			return nil
+		}
+		u := uses[name]
+		if u == nil {
+			u = &VolumeUse{Name: name}
+			uses[name] = u
+		}
+		return u
+	}
+	for _, ct := range containers {
+		if ct.App == "" {
+			continue
+		}
+		var info struct {
+			Mounts []struct {
+				Type string `json:"Type"`
+				Name string `json:"Name"`
+			} `json:"Mounts"`
+		}
+		if err := c.getJSON(ctx, "/containers/"+ct.ID+"/json", nil, &info); err != nil {
+			continue
+		}
+		for _, m := range info.Mounts {
+			if m.Type != "volume" {
+				continue
+			}
+			u := add(m.Name)
+			if u == nil || ct.State != "running" {
+				continue
+			}
+			if !slices.Contains(u.Containers, ct.ID) {
+				u.Containers = append(u.Containers, ct.ID)
+			}
+		}
+	}
+	// Volumes of compose stacks that are not running have no container to inspect.
+	var listed struct {
+		Volumes []struct {
+			Name   string            `json:"Name"`
+			Labels map[string]string `json:"Labels"`
+		} `json:"Volumes"`
+	}
+	if err := c.getJSON(ctx, "/volumes", nil, &listed); err == nil {
+		for _, v := range listed.Volumes {
+			if v.Labels["vpsadmin.app"] != "" || strings.HasPrefix(v.Labels["com.docker.compose.project"], "vpsadmin-") {
+				add(v.Name)
+			}
+		}
+	}
+	out := make([]VolumeUse, 0, len(uses))
+	for _, u := range uses {
+		out = append(out, *u)
+	}
+	slices.SortFunc(out, func(a, b VolumeUse) int { return strings.Compare(a.Name, b.Name) })
+	return out, nil
+}
+
+// Pause freezes a container's processes without stopping it: the filesystem stops
+// changing, and Unpause puts it back exactly where it was.
+func (c *Client) Pause(ctx context.Context, id string) error {
+	if !validID(id) {
+		return ErrNotFound
+	}
+	res, err := c.do(ctx, http.MethodPost, "/containers/"+id+"/pause", nil, nil)
+	if err != nil {
+		return err
+	}
+	res.Body.Close()
+	return nil
+}
+
+func (c *Client) Unpause(ctx context.Context, id string) error {
+	if !validID(id) {
+		return ErrNotFound
+	}
+	res, err := c.do(ctx, http.MethodPost, "/containers/"+id+"/unpause", nil, nil)
+	if err != nil {
+		return err
+	}
+	res.Body.Close()
+	return nil
+}
+
 // Logs returns the last lines of a container output, stdout and stderr merged.
 func (c *Client) Logs(ctx context.Context, id string, tail int) (string, error) {
 	if !validID(id) {
