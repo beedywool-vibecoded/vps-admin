@@ -259,6 +259,55 @@ func (s *Server) prerelease(ctx context.Context) bool {
 	return s.Store.Setting(ctx, "update.prerelease", strconv.FormatBool(s.Cfg.Update.Prerelease)) == "true"
 }
 
+// updateRepo is the repository releases are read from, owner/name. The panel can point
+// it at a fork; the compiled default applies when nothing is saved or the value is not a
+// repository.
+func (s *Server) updateRepo(ctx context.Context) string {
+	repo := buildinfo.Repo
+	if s.Store != nil {
+		repo = s.Store.Setting(ctx, "update.repo", repo)
+	}
+	if parsed, err := update.ParseRepo(repo); err == nil {
+		return parsed
+	}
+	return buildinfo.Repo
+}
+
+// LoadUpdateSource applies the repository saved in the panel, before the first check.
+func (s *Server) LoadUpdateSource(ctx context.Context) {
+	if s.Updater != nil {
+		s.Updater.SetSource(s.updateRepo(ctx))
+	}
+}
+
+// setUpdateRepo saves a new source, or restores the default for an empty value. It writes
+// the error response itself and reports whether the change went through.
+func (s *Server) setUpdateRepo(w http.ResponseWriter, r *http.Request, repo string) bool {
+	ctx := r.Context()
+	if repo != "" {
+		parsed, err := update.ParseRepo(repo)
+		if err != nil {
+			writeErrorMsg(w, http.StatusBadRequest, "invalid_repo", err.Error())
+			return false
+		}
+		repo = parsed
+	}
+	var err error
+	if repo == "" {
+		err = s.Store.DeleteSetting(ctx, "update.repo")
+	} else {
+		err = s.Store.SetSetting(ctx, "update.repo", repo)
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal")
+		return false
+	}
+	if s.Updater != nil {
+		s.Updater.SetSource(s.updateRepo(ctx))
+	}
+	return true
+}
+
 // AutoUpdateLoop checks GitHub every 6 hours and installs new releases when enabled. A
 // version that preflight.sh had to roll back is never retried automatically.
 func (s *Server) AutoUpdateLoop(ctx context.Context) {

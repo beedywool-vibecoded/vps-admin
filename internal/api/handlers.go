@@ -325,12 +325,18 @@ func (s *Server) containerLogs(w http.ResponseWriter, r *http.Request) {
 
 type updateView struct {
 	update.Status
-	Auto       bool `json:"auto"`
-	Prerelease bool `json:"prerelease"`
+	Auto bool `json:"auto"`
+	// Repo is where updates come from, owner/name; the panel can point it at a fork.
+	Repo        string `json:"repo"`
+	DefaultRepo string `json:"defaultRepo"`
+	Prerelease  bool   `json:"prerelease"`
 }
 
 func (s *Server) updateView(r *http.Request, st update.Status) updateView {
-	return updateView{Status: st, Auto: s.autoUpdate(r.Context()), Prerelease: s.prerelease(r.Context())}
+	return updateView{
+		Status: st, Auto: s.autoUpdate(r.Context()), Repo: s.updateRepo(r.Context()),
+		DefaultRepo: buildinfo.Repo, Prerelease: s.prerelease(r.Context()),
+	}
 }
 
 func (s *Server) updateStatus(w http.ResponseWriter, r *http.Request) {
@@ -370,8 +376,9 @@ func (s *Server) updateApply(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Auto       *bool `json:"auto"`
-		Prerelease *bool `json:"prerelease"`
+		Auto       *bool   `json:"auto"`
+		Prerelease *bool   `json:"prerelease"`
+		Repo       *string `json:"repo"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request")
@@ -383,6 +390,9 @@ func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Prerelease != nil {
 		s.Store.SetSetting(ctx, "update.prerelease", strconv.FormatBool(*body.Prerelease))
+	}
+	if body.Repo != nil && !s.setUpdateRepo(w, r, strings.TrimSpace(*body.Repo)) {
+		return
 	}
 	s.audit(r, "settings.update", "", nil)
 	writeJSON(w, http.StatusOK, s.updateView(r, s.Updater.Status()))

@@ -14,6 +14,8 @@ const reboot = ref<Check | null>(null)
 const checking = ref(false)
 const installing = ref(false)
 const rebootOpen = ref(false)
+const source = ref('')
+const sourceSaving = ref(false)
 
 const auto = computed({
   get: () => st.value?.auto ?? false,
@@ -39,8 +41,25 @@ async function check() {
     toast(st.value.available ? `${st.value.latest?.tag} is available` : 'The agent is up to date')
   } catch (e) {
     toastError(e)
+    // Keep showing the error the check recorded for this source.
+    st.value = await api.update().catch(() => st.value)
   } finally {
     checking.value = false
+  }
+}
+
+// Point updates at another repository: the official one, a fork, or a link copied from
+// the browser. An empty repo goes back to the repository the build was configured with.
+async function setSource(repo: string) {
+  sourceSaving.value = true
+  try {
+    st.value = await api.updateSettings({ repo })
+    source.value = st.value.repo
+    await check()
+  } catch (e) {
+    toastError(e)
+  } finally {
+    sourceSaving.value = false
   }
 }
 
@@ -81,6 +100,7 @@ async function install() {
 onMounted(async () => {
   try {
     st.value = await api.update()
+    source.value = st.value.repo
     const sec = await api.security()
     packages.value = sec.checks.find((c) => c.id === 'updates') ?? null
     reboot.value = sec.checks.find((c) => c.id === 'reboot') ?? null
@@ -130,10 +150,47 @@ onMounted(async () => {
         <pre class="notes">{{ st.latest.notes || 'No release notes.' }}</pre>
       </div>
 
+      <div class="setting source">
+        <div class="grow">
+          <div>Update source</div>
+          <div class="muted small">
+            Releases are read from this GitHub repository. Use <code>{{ st?.defaultRepo ?? '…' }}</code> for the official
+            builds, or a link to your own fork. Only builds signed with the project key are installed.
+          </div>
+        </div>
+        <form class="source-form" @submit.prevent="setSource(source.trim())">
+          <label class="field">
+            <Icon name="github" :size="20" />
+            <input
+              v-model="source"
+              placeholder="owner/name or https://github.com/owner/name"
+              aria-label="Update source repository"
+              spellcheck="false"
+              autocomplete="off"
+            />
+          </label>
+          <button
+            class="btn btn-tonal st"
+            type="submit"
+            :disabled="sourceSaving || !source.trim() || source.trim() === st?.repo"
+          >
+            {{ sourceSaving ? 'Saving…' : 'Use this source' }}
+          </button>
+          <button
+            v-if="st && st.repo !== st.defaultRepo"
+            class="btn btn-text st"
+            type="button"
+            :disabled="sourceSaving"
+            @click="setSource('')"
+          >
+            Reset to the default
+          </button>
+        </form>
+      </div>
       <div class="setting">
         <div class="grow">
           <div>Install updates automatically</div>
-          <div class="muted small">Checks GitHub every 6 hours. Only builds signed with the project key are installed.</div>
+          <div class="muted small">Checks the update source every 6 hours. Only builds signed with the project key are installed.</div>
         </div>
         <M3Switch v-model="auto" label="Install updates automatically" :disabled="!st" />
       </div>
@@ -228,5 +285,19 @@ onMounted(async () => {
   gap: 16px;
   padding-top: 14px;
   border-top: 1px solid var(--sch);
+}
+.source {
+  flex-wrap: wrap;
+}
+.source-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.source-form .field {
+  flex: 1 1 280px;
+  min-width: 220px;
 }
 </style>

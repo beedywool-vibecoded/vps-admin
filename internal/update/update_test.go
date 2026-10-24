@@ -41,6 +41,55 @@ func TestNewer(t *testing.T) {
 	}
 }
 
+func TestParseRepo(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"beedywool-vibecoded/vps-admin", "beedywool-vibecoded/vps-admin"},
+		{"https://github.com/beedywool-vibecoded/vps-admin", "beedywool-vibecoded/vps-admin"},
+		{"https://github.com/beedywool-vibecoded/vps-admin/", "beedywool-vibecoded/vps-admin"},
+		{"http://www.github.com/o/r.git", "o/r"},
+		{"github.com/o/r/releases", "o/r"},
+		{"  https://github.com/o/r.git/  ", "o/r"},
+		{"https://github.com/o/r?tab=readme#install", "o/r"},
+	}
+	for _, c := range cases {
+		got, err := ParseRepo(c.in)
+		if err != nil || got != c.want {
+			t.Errorf("ParseRepo(%q) = %q, %v; want %q", c.in, got, err, c.want)
+		}
+	}
+	bad := []string{"", "owner", "https://gitlab.com/o/r", "o//r", "../r", "owner with space/r", "-o/r"}
+	for _, in := range bad {
+		if got, err := ParseRepo(in); err == nil {
+			t.Errorf("ParseRepo(%q) accepted %q", in, got)
+		}
+	}
+}
+
+// The source saved in the panel is the repository the next check reads.
+func TestSourceChange(t *testing.T) {
+	var asked string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = r.URL.Path
+		w.Write([]byte("[]"))
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	u := &Updater{Repo: "o/r", DataDir: dir, Binary: filepath.Join(dir, "vps-admin"), HTTP: srv.Client(), API: srv.URL}
+	u.status.Available = true
+	u.status.Latest = &Release{Tag: "v1.2.3"}
+
+	u.SetSource("fork/r")
+	if st := u.Status(); st.Available || st.Latest != nil {
+		t.Fatal("a release found on the previous source was kept")
+	}
+	if _, err := u.latest(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if asked != "/repos/fork/r/releases" {
+		t.Fatalf("checked %q, want the new source", asked)
+	}
+}
+
 func TestVerifySums(t *testing.T) {
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
 	saved := PublicKey

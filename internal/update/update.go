@@ -70,6 +70,7 @@ type Status struct {
 }
 
 type Updater struct {
+	// Repo is where releases are read from, owner/name. Change it with SetSource.
 	Repo    string
 	DataDir string
 	// Binary is the path of the running executable, replaced in place.
@@ -100,6 +101,81 @@ func New(dataDir string) (*Updater, error) {
 		u.status.LastResult = strings.TrimSpace(string(b))
 	}
 	return u, nil
+}
+
+// ParseRepo accepts a repository as owner/name or as a link to it on GitHub and returns
+// owner/name. Only github.com is accepted: releases are read through its API, so a
+// pasted link can never point the agent somewhere else.
+func ParseRepo(s string) (string, error) {
+	errBad := errors.New("expected owner/name or https://github.com/owner/name")
+	s = strings.TrimSuffix(strings.TrimSpace(s), "/")
+	if i := strings.IndexAny(s, "?#"); i >= 0 {
+		s = s[:i]
+	}
+	if i := strings.Index(s, "://"); i >= 0 {
+		host, rest, ok := strings.Cut(s[i+3:], "/")
+		if !ok || !strings.EqualFold(strings.TrimPrefix(host, "www."), "github.com") {
+			return "", errBad
+		}
+		s = rest
+	} else if strings.HasPrefix(strings.ToLower(s), "github.com/") {
+		s = s[len("github.com/"):]
+	}
+	owner, rest, ok := strings.Cut(s, "/")
+	name := strings.TrimSuffix(strings.Split(rest, "/")[0], ".git")
+	if !ok || !repoOwner(owner) || !repoName(name) {
+		return "", errBad
+	}
+	return owner + "/" + name, nil
+}
+
+// repoOwner follows the GitHub rule for users and organizations: letters, digits and
+// hyphens, never starting or ending with one.
+func repoOwner(s string) bool {
+	if s == "" || s[0] == '-' || s[len(s)-1] == '-' {
+		return false
+	}
+	for _, r := range s {
+		if !('a' <= r && r <= 'z') && !('A' <= r && r <= 'Z') && !('0' <= r && r <= '9') && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+func repoName(s string) bool {
+	if s == "" || s == "." || s == ".." {
+		return false
+	}
+	for _, r := range s {
+		if !('a' <= r && r <= 'z') && !('A' <= r && r <= 'Z') && !('0' <= r && r <= '9') && r != '-' && r != '_' && r != '.' {
+			return false
+		}
+	}
+	return true
+}
+
+// Source is the repository releases are read from, owner/name.
+func (u *Updater) Source() string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.Repo
+}
+
+// SetSource changes the repository releases are read from and forgets the release found
+// in the previous one, so the panel never installs a build from a source it no longer
+// points at.
+func (u *Updater) SetSource(repo string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.Repo == repo {
+		return
+	}
+	u.Repo = repo
+	u.status.Latest = nil
+	u.status.Available = false
+	u.status.CheckedAt = nil
+	u.status.Error = ""
 }
 
 func (u *Updater) Status() Status {
@@ -133,7 +209,8 @@ func (u *Updater) latest(ctx context.Context, prerelease bool) (*Release, error)
 
 // latestWith returns the highest release accepted by keep.
 func (u *Updater) latestWith(ctx context.Context, prerelease bool, keep func(*Release) bool) (*Release, error) {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/repos/%s/releases?per_page=20", u.API, u.Repo), nil)
+	repo := u.Source()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/repos/%s/releases?per_page=20", u.API, repo), nil)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	u.auth(req)
 	res, err := u.HTTP.Do(req)
@@ -142,7 +219,7 @@ func (u *Updater) latestWith(ctx context.Context, prerelease bool, keep func(*Re
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub answered HTTP %d", res.StatusCode)
+		return nil, fmt.Errorf("GitHub answered HTTP %d for %s", res.StatusCode, repo)
 	}
 	var list []struct {
 		Tag        string    `json:"tag_name"`

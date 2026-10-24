@@ -198,6 +198,7 @@ func serve(cfgPath string) error {
 		Alerts: alertWatcher, Restart: stop,
 	}
 	srv.LoadGitHub(ctx)
+	srv.LoadUpdateSource(ctx)
 	httpSrv := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           srv.Handler(),

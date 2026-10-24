@@ -156,6 +156,10 @@ export interface UpdateStatus {
   lastResult?: string
   running: boolean
   auto: boolean
+  /** Where updates come from, owner/name. */
+  repo: string
+  /** The repository the build looks at when no custom source is set. */
+  defaultRepo: string
   prerelease: boolean
 }
 
@@ -514,7 +518,7 @@ export const api = {
   update: () => request<UpdateStatus>('GET', '/api/update'),
   checkUpdate: () => request<UpdateStatus>('POST', '/api/update/check'),
   applyUpdate: () => request<{ installed: string }>('POST', '/api/update/apply'),
-  updateSettings: (s: { auto?: boolean; prerelease?: boolean }) =>
+  updateSettings: (s: { auto?: boolean; prerelease?: boolean; repo?: string }) =>
     request<UpdateStatus>('PUT', '/api/settings/update', s),
   alerts: () => request<AlertSettings>('GET', '/api/alerts'),
   updateAlerts: (s: { enabled?: boolean; webhook?: string; disk?: number }) =>
