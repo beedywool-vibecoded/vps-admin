@@ -586,6 +586,7 @@ export const api = {
   backupTest: () => request<{ ok: boolean; detail: string }>('POST', '/api/backup/test'),
   backupMount: (mounted: boolean) => request<BackupStatus>('POST', '/api/backup/mount', { mounted }),
   backupRun: (kind: 'settings' | 'full') => request<{ started: boolean }>('POST', '/api/backup/run', { kind }),
+  backupDelete: (file: string) => request<BackupStatus>('POST', '/api/backup/delete', { file }),
   backupRestore: (file: string, passphrase: string) =>
     request<{ restarting: boolean }>('POST', '/api/backup/restore', { file, passphrase }),
 

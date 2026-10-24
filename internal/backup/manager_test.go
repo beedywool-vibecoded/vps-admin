@@ -214,6 +214,62 @@ func TestManagerPrunesOldArchives(t *testing.T) {
 	}
 }
 
+func TestManagerDeletesAnArchive(t *testing.T) {
+	dir := t.TempDir()
+	drive := fakeRclone(t)
+	ctx := context.Background()
+	m, st := newTestManager(t, dir)
+	defer st.Close()
+
+	name, _, err := m.run(ctx, settingsID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Delete(ctx, name); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(drive, DefaultPath, name)); !os.IsNotExist(err) {
+		t.Fatalf("the archive is still on the Drive: %v", err)
+	}
+	if list, err := m.Archives(ctx); err != nil || len(list) != 0 {
+		t.Fatalf("Archives after delete = %+v, %v", list, err)
+	}
+	for _, bad := range []string{"../../etc/passwd", "notes.txt", "vps-admin-settings-nope.vpb"} {
+		if err := m.Delete(ctx, bad); err == nil {
+			t.Errorf("%q should have been refused", bad)
+		}
+	}
+}
+
+func TestArchivesAreNewestFirst(t *testing.T) {
+	dir := t.TempDir()
+	drive := fakeRclone(t)
+	ctx := context.Background()
+	m, st := newTestManager(t, dir)
+	defer st.Close()
+
+	folder := filepath.Join(drive, DefaultPath)
+	if err := os.MkdirAll(folder, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{
+		"vps-admin-settings-20260101T120000.vpb",
+		"vps-admin-settings-20260301T120000.vpb",
+		"vps-admin-settings-20260201T120000.vpb",
+	} {
+		if err := os.WriteFile(filepath.Join(folder, name), []byte("archive"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	list, err := m.Archives(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 3 || list[0].Name != "vps-admin-settings-20260301T120000.vpb" || list[2].Name != "vps-admin-settings-20260101T120000.vpb" {
+		t.Fatalf("archives are not newest first: %+v", list)
+	}
+}
+
 func TestManagerRefusesBadSettings(t *testing.T) {
 	dir := t.TempDir()
 	m, st := newTestManager(t, dir)

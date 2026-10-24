@@ -107,6 +107,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/backup/test", full(s.backupTest))
 	mux.Handle("POST /api/backup/mount", full(s.backupMount))
 	mux.Handle("POST /api/backup/run", full(s.backupRun))
+	mux.Handle("POST /api/backup/delete", full(s.backupDelete))
 	mux.Handle("POST /api/backup/restore", full(s.backupRestore))
 
 	mux.Handle("GET /api/audit", full(s.auditLog))

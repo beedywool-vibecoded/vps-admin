@@ -9,7 +9,7 @@ import M3Switch from '@/components/M3Switch.vue'
 import StatusDot from '@/components/StatusDot.vue'
 import { api, type BackupStatus } from '@/lib/api'
 import { bytes, dateTime } from '@/lib/format'
-import { toast, toastError } from '@/lib/ui'
+import { confirm, toast, toastError } from '@/lib/ui'
 
 const st = ref<BackupStatus | null>(null)
 const loading = ref(true)
@@ -42,6 +42,15 @@ const tone = computed(() => {
   if (st.value.running) return 'warn' as const
   return st.value.last?.error ? 'bad' : st.value.last?.ok ? 'ok' : 'idle'
 })
+// The newest archive first, even when a status cached before the agent sorted the list
+// arrives: a restore almost always wants the last backup.
+const archives = computed(() =>
+  [...(st.value?.archives ?? [])].sort((a, b) => {
+    const ta = Date.parse(a.time) || 0
+    const tb = Date.parse(b.time) || 0
+    return tb - ta || b.name.localeCompare(a.name)
+  }),
+)
 
 async function load(withArchives = false) {
   const s = withArchives ? await api.backupArchives() : await api.backup()
@@ -143,6 +152,25 @@ function askRestore(file: string) {
   restoreOpen.value = true
 }
 
+async function remove(file: string) {
+  const ok = await confirm({
+    title: `Delete ${file}?`,
+    body: 'The archive is removed from Google Drive, and a backup cannot be restored once it is gone.',
+    action: 'Delete',
+    danger: true,
+  })
+  if (!ok) return
+  busy.value = 'delete:' + file
+  try {
+    st.value = await api.backupDelete(file)
+    toast(`${file} deleted`)
+  } catch (e) {
+    toastError(e)
+  } finally {
+    busy.value = ''
+  }
+}
+
 async function doRestore() {
   busy.value = 'restore'
   try {
@@ -176,8 +204,7 @@ function saveSchedule() {
 <template>
   <section class="card">
     <div class="card-head">
-      <h2>Backups</h2>
-      <span class="chip chip-outline"><Icon name="cloud" :size="16" /> Google Drive</span>
+      <h2>Google Drive</h2>
       <StatusDot v-if="st" :tone="tone" :label="st.running ? 'Backup running' : st.last?.ok ? 'Last backup succeeded' : 'No backup yet'" />
     </div>
 
@@ -211,52 +238,54 @@ function saveSchedule() {
       </template>
 
       <template v-else>
-        <div class="row">
-          <div class="grow">
-            <div>Google Drive</div>
-            <div class="muted small">{{ st.mounted ? `Mounted at ${st.mountPoint}` : 'Connected, not mounted' }}</div>
-          </div>
-          <button class="btn btn-text st" type="button" :disabled="busy === 'test'" @click="testDrive">Test</button>
-          <button class="btn btn-tonal st" type="button" :disabled="busy === 'mount'" @click="setMount(!st.mounted)">
-            {{ st.mounted ? 'Unmount' : 'Mount' }}
-          </button>
-        </div>
-
-        <div class="row">
-          <div class="grow">
-            <div>Daily backup</div>
-            <div class="muted small">The panel database, its key, the apps and their variables, in one encrypted archive</div>
-          </div>
-          <M3Switch v-model="enabled" label="Back up every day" />
-        </div>
-
-        <div class="row">
-          <div class="grow">
-            <div>Schedule</div>
-            <div class="muted small">Kept in <code>{{ st.path }}</code> on the Drive</div>
-          </div>
-          <label class="mini">At <input v-model.number="hour" type="number" min="0" max="23" /> :00</label>
-          <label class="mini">Keep <input v-model.number="keep" type="number" min="1" max="60" /> archives</label>
-        </div>
-
-        <div class="row">
-          <div class="grow">
-            <div>What the daily backup keeps</div>
-            <div class="muted small">
-              {{ kind === 'full'
-                ? 'The panel state plus app sources, wallpaper and Docker volumes. Containers are paused while volumes are copied.'
-                : 'The panel state: database, key, apps and their variables. Restoring it leaves the containers untouched.' }}
+        <div class="settings">
+          <div class="row">
+            <div class="grow">
+              <div>Google Drive</div>
+              <div class="muted small">{{ st.mounted ? `Mounted at ${st.mountPoint}` : 'Connected, not mounted' }}</div>
             </div>
+            <button class="btn btn-text st" type="button" :disabled="busy === 'test'" @click="testDrive">Test</button>
+            <button class="btn btn-tonal st" type="button" :disabled="busy === 'mount'" @click="setMount(!st.mounted)">
+              {{ st.mounted ? 'Unmount' : 'Mount' }}
+            </button>
           </div>
-          <M3Select v-model="kind" label="Daily archive" :options="kindOptions" />
-        </div>
 
-        <div class="row">
-          <div class="grow">
-            <div>Mount at boot</div>
-            <div class="muted small">The panel mounts the Drive again if the unit stops</div>
+          <div class="row">
+            <div class="grow">
+              <div>Daily backup</div>
+              <div class="muted small">The panel database, its key, the apps and their variables, in one encrypted archive</div>
+            </div>
+            <M3Switch v-model="enabled" label="Back up every day" />
           </div>
-          <M3Switch v-model="mountOn" label="Mount at boot" />
+
+          <div class="row">
+            <div class="grow">
+              <div>Schedule</div>
+              <div class="muted small">Kept in <code>{{ st.path }}</code> on the Drive</div>
+            </div>
+            <label class="mini">At <input v-model.number="hour" type="number" min="0" max="23" /> :00</label>
+            <label class="mini">Keep <input v-model.number="keep" type="number" min="1" max="60" /> archives</label>
+          </div>
+
+          <div class="row">
+            <div class="grow">
+              <div>What the daily backup keeps</div>
+              <div class="muted small">
+                {{ kind === 'full'
+                  ? 'The panel state plus app sources, wallpaper and Docker volumes. Containers are paused while volumes are copied.'
+                  : 'The panel state: database, key, apps and their variables. Restoring it leaves the containers untouched.' }}
+              </div>
+            </div>
+            <M3Select v-model="kind" label="Daily archive" :options="kindOptions" />
+          </div>
+
+          <div class="row">
+            <div class="grow">
+              <div>Mount at boot</div>
+              <div class="muted small">The panel mounts the Drive again if the unit stops</div>
+            </div>
+            <M3Switch v-model="mountOn" label="Mount at boot" />
+          </div>
         </div>
 
         <div class="acts">
@@ -270,7 +299,7 @@ function saveSchedule() {
           <button class="btn btn-text st" type="button" @click="editing = true">Change Drive token</button>
         </div>
 
-        <div v-if="st.last" class="row">
+        <div v-if="st.last" class="last-run">
           <StatusDot :tone="st.last.ok ? 'ok' : 'bad'" :label="st.last.ok ? 'Succeeded' : 'Failed'" />
           <div class="grow">
             <div>{{ st.last.ok ? 'Last backup succeeded' : 'Last backup failed' }}</div>
@@ -282,14 +311,24 @@ function saveSchedule() {
         </div>
 
         <div class="archives">
-          <div class="muted small">Archives on the Drive</div>
-          <p v-if="!st.archives.length" class="muted small">None yet.</p>
-          <div v-for="a in st.archives" :key="a.name" class="row archive">
+          <div class="label muted small">Archives on the Drive</div>
+          <p v-if="!archives.length" class="muted small empty">None yet.</p>
+          <div v-for="a in archives" :key="a.name" class="archive">
             <div class="grow">
               <div class="ellipsis"><code>{{ a.name }}</code></div>
               <div class="muted small">{{ dateTime(a.time) }}<template v-if="a.size"> · {{ bytes(a.size) }}</template></div>
             </div>
-            <button class="btn btn-text st" type="button" @click="askRestore(a.name)">Restore</button>
+            <div class="archive-actions">
+              <button class="btn btn-text st" type="button" :disabled="busy === 'restore'" @click="askRestore(a.name)">Restore</button>
+              <button
+                class="btn btn-text st del"
+                type="button"
+                :disabled="busy === 'delete:' + a.name || st.running"
+                @click="remove(a.name)"
+              >
+                Delete
+              </button>
+            </div>
           </div>
         </div>
       </template>
@@ -354,12 +393,30 @@ function saveSchedule() {
   font-size: 14px;
   resize: none;
 }
+.settings .row:first-child {
+  border-top: none;
+}
 .acts {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin-top: 4px;
+  margin-top: 2px;
+  padding-top: 14px;
+  border-top: 1px solid var(--sch);
+}
+.last-run {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 6px;
+  border-top: 1px solid var(--sch);
+}
+.label {
+  margin-bottom: 4px;
+}
+.empty {
+  margin: 6px 0 0;
 }
 .mini {
   display: flex;
@@ -379,12 +436,28 @@ function saveSchedule() {
   font: inherit;
 }
 .archives {
-  margin-top: 14px;
+  margin-top: 16px;
   border-top: 1px solid var(--sch);
-  padding-top: 10px;
+  padding-top: 12px;
 }
 .archive {
-  padding: 8px 4px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 6px;
+  flex-wrap: wrap;
+}
+.archive + .archive {
+  border-top: 1px solid var(--sch);
+}
+.archive-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+.del {
+  color: var(--bad);
 }
 .err {
   color: var(--bad);

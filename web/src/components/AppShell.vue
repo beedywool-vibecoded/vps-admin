@@ -26,6 +26,7 @@ const NAV: { to: string; label: string; icon: IconName; mobile: boolean }[] = [
   { to: '/assistant', label: 'Assistant', icon: 'assistant', mobile: true },
   { to: '/scripts', label: 'Scripts', icon: 'terminal', mobile: false },
   { to: '/updates', label: 'Updates', icon: 'updates', mobile: false },
+  { to: '/backups', label: 'Backups', icon: 'cloud', mobile: false },
   { to: '/settings', label: 'Settings', icon: 'settings', mobile: false },
 ]
 const MORE = NAV.filter((n) => !n.mobile)
@@ -136,7 +137,7 @@ onBeforeUnmount(() => {
   gap: 6px;
   padding: 20px 0;
   border-right: 1px solid var(--sch);
-  /* Ten sections are taller than a short window: the rail scrolls, the page does not. */
+  /* The sections are taller than a short window: the rail scrolls, the page does not. */
   overflow-y: auto;
   overscroll-behavior: contain;
 }

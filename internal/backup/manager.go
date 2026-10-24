@@ -670,8 +670,47 @@ func (m *Manager) Archives(ctx context.Context) ([]Archive, error) {
 			}
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name > out[j].Name })
+	// The tab shows the list as it comes: newest first, then by name when the Drive gives
+	// the same modification time to several files.
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].Time.Equal(out[j].Time) {
+			return out[i].Time.After(out[j].Time)
+		}
+		return out[i].Name > out[j].Name
+	})
 	return out, nil
+}
+
+// Delete removes one archive from the Drive. The panel asks for confirmation first: the
+// file no longer appears in the list, and a backup cannot be restored without it.
+func (m *Manager) Delete(ctx context.Context, name string) error {
+	if !archiveFile.MatchString(name) {
+		return errors.New("that is not a backup file name")
+	}
+	m.mu.Lock()
+	running := m.running
+	m.mu.Unlock()
+	if running {
+		return errors.New("wait for the running backup to finish")
+	}
+	return m.remove(ctx, name)
+}
+
+// remove deletes one archive through the mount when it is up, and with rclone otherwise.
+func (m *Manager) remove(ctx context.Context, name string) error {
+	if m.Mounted() {
+		err := os.Remove(filepath.Join(MountPoint, m.remotePath(ctx), name))
+		if errors.Is(err, os.ErrNotExist) {
+			return errors.New("this archive is already gone")
+		}
+		return err
+	}
+	if _, err := exec.LookPath("rclone"); err != nil {
+		return errors.New("rclone is not installed: rerun the installer")
+	}
+	_, err := m.exec(ctx, time.Minute, "rclone", "deletefile", "--drive-use-trash=false",
+		"--config", m.confPath(), RemoteName+":"+m.remotePath(ctx)+"/"+name)
+	return err
 }
 
 // prune keeps the newest archives and removes the rest, from Drive too (no trash, so
@@ -686,14 +725,7 @@ func (m *Manager) prune(ctx context.Context) error {
 		return nil
 	}
 	for _, name := range names[:len(names)-keep] {
-		if m.Mounted() {
-			if err := os.Remove(filepath.Join(MountPoint, m.remotePath(ctx), name)); err != nil {
-				return err
-			}
-			continue
-		}
-		if _, err := m.exec(ctx, time.Minute, "rclone", "deletefile", "--drive-use-trash=false",
-			"--config", m.confPath(), RemoteName+":"+m.remotePath(ctx)+"/"+name); err != nil {
+		if err := m.remove(ctx, name); err != nil {
 			return err
 		}
 	}

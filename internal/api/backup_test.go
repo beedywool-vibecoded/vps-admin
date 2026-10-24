@@ -98,6 +98,16 @@ func TestBackupRefusesBadSettings(t *testing.T) {
 	}
 }
 
+func TestBackupDeleteRefusesAnUnknownFile(t *testing.T) {
+	s := backupServer(t)
+	rec := httptest.NewRecorder()
+	s.backupDelete(rec, httptest.NewRequest("POST", "/api/backup/delete",
+		bytes.NewReader([]byte(`{"file":"../../etc/passwd"}`))))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", rec.Code)
+	}
+}
+
 func TestBackupRestoreRefusesAnUnknownFile(t *testing.T) {
 	s := backupServer(t)
 	rec := httptest.NewRecorder()

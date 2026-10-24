@@ -99,6 +99,28 @@ func (s *Server) backupRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]bool{"started": true})
 }
 
+// backupDelete removes one archive from the Drive, then answers with the refreshed
+// status so the list drops it without another round trip.
+func (s *Server) backupDelete(w http.ResponseWriter, r *http.Request) {
+	if !s.backupReady(w) {
+		return
+	}
+	var body struct {
+		File string `json:"file"`
+	}
+	if err := readJSON(r, &body); err != nil || body.File == "" {
+		writeError(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	err := s.Backup.Delete(r.Context(), body.File)
+	s.audit(r, "backup.delete", body.File, err)
+	if err != nil {
+		writeErrorMsg(w, http.StatusBadRequest, "delete_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, s.Backup.Status(r.Context(), true))
+}
+
 // backupRestore stages an archive's database and restarts the agent, which swaps the
 // files in before opening the store. The panel is unreachable for a few seconds.
 func (s *Server) backupRestore(w http.ResponseWriter, r *http.Request) {
