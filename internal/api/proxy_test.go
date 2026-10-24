@@ -234,7 +234,7 @@ func TestProxySiteRefusesAnAppsSite(t *testing.T) {
 func TestProxySiteStaysInTheSiteDirs(t *testing.T) {
 	s, _, dir := proxyServer(t)
 	for _, file := range []string{
-		filepath.Join(dir, "..", "Caddyfile"),
+		filepath.Join(dir, "..", "notes.txt"),
 		filepath.Join(dir, "sub", "deep.caddy"),
 		"/etc/passwd",
 		filepath.Join(dir, "notes.txt"),
@@ -243,6 +243,65 @@ func TestProxySiteStaysInTheSiteDirs(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("%s: status = %d, want 400", file, rec.Code)
 		}
+	}
+}
+
+// A site written by hand in the main Caddyfile is edited block by block: pausing,
+// resuming and deleting it leave the other sites and the global options alone.
+func TestProxySiteEditsTheCaddyfile(t *testing.T) {
+	s, _, dir := proxyServer(t)
+	caddyfile := filepath.Join(filepath.Dir(dir), "Caddyfile")
+	body := "{\n\temail admin@example.com\n}\n\n# The blog\nblog.example.com {\n\treverse_proxy 127.0.0.1:8080\n}\n\nshop.example.com {\n\treverse_proxy 127.0.0.1:9090\n}\n"
+	if err := os.WriteFile(caddyfile, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	call := func(action, domain string) *httptest.ResponseRecorder {
+		return post(t, s.proxySite, s, "/api/proxy/site",
+			fmt.Sprintf(`{"file":%q,"action":%q,"domain":%q}`, caddyfile, action, domain))
+	}
+	row := func(rep proxy.Report, domain string) proxy.Site {
+		t.Helper()
+		for _, site := range rep.Sites {
+			for _, d := range site.Domains {
+				if d == domain {
+					return site
+				}
+			}
+		}
+		t.Fatalf("no row for %s in %+v", domain, rep.Sites)
+		return proxy.Site{}
+	}
+
+	rep := sites(t, call("pause", "blog.example.com"))
+	if blog := row(rep, "blog.example.com"); !blog.Paused || blog.File != caddyfile || blog.Target != "127.0.0.1:8080" {
+		t.Fatalf("paused row = %+v", blog)
+	}
+	if shop := row(rep, "shop.example.com"); shop.Paused {
+		t.Fatalf("the other site was paused: %+v", shop)
+	}
+	if got, _ := os.ReadFile(caddyfile); strings.Contains(string(got), "\nblog.example.com {") {
+		t.Fatalf("the blog block is still active:\n%s", got)
+	}
+
+	rep = sites(t, call("resume", "blog.example.com"))
+	if blog := row(rep, "blog.example.com"); blog.Paused {
+		t.Fatalf("resume = %+v", blog)
+	}
+	if got, _ := os.ReadFile(caddyfile); string(got) != body {
+		t.Fatalf("resume did not put the file back:\n%s", got)
+	}
+
+	rep = sites(t, call("delete", "shop.example.com"))
+	if len(rep.Sites) != 1 || rep.Sites[0].Domains[0] != "blog.example.com" {
+		t.Fatalf("delete took another site: %+v", rep.Sites)
+	}
+	if got, _ := os.ReadFile(caddyfile); strings.Contains(string(got), "shop.example.com") || !strings.Contains(string(got), "blog.example.com") {
+		t.Fatalf("delete edited another block:\n%s", got)
+	}
+
+	// Without a domain the panel cannot know which block of the file was meant.
+	if rec := call("delete", ""); rec.Code != http.StatusBadRequest {
+		t.Fatalf("an empty domain was accepted: %d", rec.Code)
 	}
 }
 
@@ -298,6 +357,30 @@ func TestProxySiteOnNginx(t *testing.T) {
 	}
 	if len(calls) != 2 || calls[0] != "nginx-reload" || calls[1] != "nginx-reload" {
 		t.Fatalf("helper calls = %v, want two nginx-reload", calls)
+	}
+
+	// nginx loads neither a hand-written backup nor the copy an older version may have
+	// kept aside when pausing one: the tab must not show either.
+	body = "server {\n\tlisten 80;\n\tserver_name old.example.com;\n}\n"
+	stored := filepath.Join(eng.DataDir, "proxy-paused", "nginx__legacy.bak.conf")
+	for _, f := range []string{stored, filepath.Join(dir, "legacy.bak.conf")} {
+		if err := os.MkdirAll(filepath.Dir(f), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(f, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec := httptest.NewRecorder()
+	s.proxySites(rec, httptest.NewRequest(http.MethodGet, "/api/proxy", nil))
+	rep = sites(t, rec)
+	if len(rep.Sites) != 1 || rep.Sites[0].Domains[0] != "blog.example.com" {
+		t.Fatalf("a .bak file reached the proxy tab: %+v", rep.Sites)
+	}
+	for _, site := range rep.Sites {
+		if strings.Contains(strings.ToLower(site.File), ".bak") {
+			t.Fatalf("a .bak file reached the proxy tab: %+v", site)
+		}
 	}
 }
 

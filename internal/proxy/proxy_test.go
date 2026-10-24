@@ -3,6 +3,7 @@ package proxy
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -143,6 +144,17 @@ func TestNginxSites(t *testing.T) {
 	server_name old-shop.example.com;
 }
 `)
+	// The marker is not always at the end of the name, and not always lower case.
+	write(t, root, "etc/nginx/vps-admin-apps/legacy.bak.conf", `server {
+	listen 80;
+	server_name legacy-shop.example.com;
+}
+`)
+	write(t, root, "etc/nginx/conf.d/archive.conf.BAK", `server {
+	listen 80;
+	server_name archived.example.com;
+}
+`)
 	write(t, root, "etc/nginx/vps-admin-apps/shop.conf", `# Managed by VPS Admin (app shop), rewritten on every deploy
 server {
 	listen 80;
@@ -173,7 +185,12 @@ server {
 		t.Fatalf("engine = %q, want nginx", rep.Engine)
 	}
 	if len(rep.Sites) != 3 {
-		t.Fatalf("got %d sites, want 3 (the catch-all drops out): %+v", len(rep.Sites), rep.Sites)
+		t.Fatalf("got %d sites, want 3 (the catch-all and the .bak copies drop out): %+v", len(rep.Sites), rep.Sites)
+	}
+	for _, s := range rep.Sites {
+		if strings.Contains(strings.ToLower(s.File), ".bak") {
+			t.Fatalf("a backup file is listed as a site: %+v", s)
+		}
 	}
 
 	shop := find(t, rep, "shop.example.com")

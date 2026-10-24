@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -180,9 +181,30 @@ func serve(cfgPath string) error {
 	if v := os.Getenv("VPS_ADMIN_GITHUB_API"); v != "" {
 		gh.API = v
 	}
+	// One staged Caddy file at a time: two proxy actions must not overwrite each
+	// other's bytes between writing the stage and asking the helper to install it.
+	var caddyWrite sync.Mutex
 	engine := &deploy.Engine{
 		Store: st, Box: box, GitHub: gh, DataDir: cfg.DataDir, SitesDir: cfg.CaddySitesDir, NginxDir: cfg.NginxSitesDir,
 		ReloadCaddy: func(ctx context.Context) error { return reloadCaddy(ctx, runner) },
+		// The main Caddyfile and its imports are root-owned: the helper swaps them in
+		// with the same validation and rollback as the installer.
+		WriteCaddy: func(ctx context.Context, path string, data []byte) error {
+			caddyWrite.Lock()
+			defer caddyWrite.Unlock()
+			if _, err := os.Stat("/opt/vps-admin/proxy-helper"); err != nil {
+				return fmt.Errorf("the proxy helper is missing: rerun the installer to edit %s", path)
+			}
+			stage := "/var/lib/vps-admin/caddy-edit.new"
+			if err := os.WriteFile(stage, data, 0o600); err != nil {
+				return err
+			}
+			defer os.Remove(stage)
+			if _, err := runner.Sudo(ctx, time.Minute, "/opt/vps-admin/proxy-helper", "caddy-write", path); err != nil {
+				return fmt.Errorf("the proxy helper could not write %s (rerun the installer if it is out of date): %w", path, err)
+			}
+			return nil
+		},
 		TailscaleName: func(ctx context.Context) string {
 			if ts := runner.DetectEnvironment(ctx).Tailscale; ts != nil && ts.Running {
 				return ts.Name

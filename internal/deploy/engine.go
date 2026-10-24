@@ -64,6 +64,10 @@ type Engine struct {
 	TailscaleName func(ctx context.Context) string
 	// ReloadCaddy applies the snippets; Caddy refuses a bad config and keeps the old one.
 	ReloadCaddy func(context.Context) error
+	// WriteCaddy replaces a Caddy configuration file through the root helper, for the
+	// main Caddyfile and the files Caddy imports: the agent cannot write those itself.
+	// Tests leave it nil to write the file directly.
+	WriteCaddy func(ctx context.Context, path string, data []byte) error
 	// gitRemote replaces the GitHub clone URL of linked folders in tests.
 	gitRemote func(repo, token string) string
 

@@ -127,6 +127,7 @@ func readCaddyFile(path, root, apps string, depth int, seen map[string]bool, rep
 	}
 	sites, imports := parseCaddy(string(src), path, apps)
 	rep.Sites = append(rep.Sites, sites...)
+	rep.Sites = append(rep.Sites, pausedBlockSites(string(src), path, apps)...)
 	for _, pattern := range imports {
 		files, _ := filepath.Glob(filepath.Join(root, pattern))
 		for _, f := range files {
@@ -242,6 +243,11 @@ func readNginx(root, apps string) Report {
 	var servers []*nginxServer
 
 	add := func(path string) {
+		// nginx never loads a backup copy: certbot and package upgrades leave them next
+		// to the real file, and naming tools write whatever variant they like.
+		if backupFile(filepath.Base(path)) {
+			return
+		}
 		st, err := os.Stat(path)
 		if err != nil || st.IsDir() || seen[path] {
 			return
@@ -506,6 +512,13 @@ func isFile(p string) bool {
 	return p != "" && err == nil && !st.IsDir()
 }
 
+// backupFile reports a name that only marks a copy of a configuration file. The marker
+// is looked for anywhere in the name, not just at its end: shop.conf.bak, shop.conf.bak.1
+// and shop.bak.conf are all copies no proxy reads.
+func backupFile(name string) bool {
+	return strings.Contains(strings.ToLower(name), ".bak")
+}
+
 // addDir calls add on every file of a directory, following symlinks (sites-enabled).
 func addDir(dir string, add func(string)) {
 	if dir == "" {
@@ -518,7 +531,7 @@ func addDir(dir string, add func(string)) {
 	for _, e := range entries {
 		// certbot and the packaging leave .bak copies next to the real file: they are
 		// backups nginx never loads, not sites.
-		if e.IsDir() || strings.HasSuffix(e.Name(), ".bak") {
+		if e.IsDir() || backupFile(e.Name()) {
 			continue
 		}
 		add(filepath.Join(dir, e.Name()))

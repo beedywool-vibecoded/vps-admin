@@ -41,13 +41,16 @@ const dragTo = ref<number | null>(null)
 // A filtered list would reorder the wrong rows: no dragging while searching.
 const canDrag = computed(() => !query.value.trim())
 
-// An app's URL is paused through the app, which knows how to write it again; any other
-// file is paused by taking it out of the proxy's directory.
+// An app's URL is paused through the app, which knows how to write it again. Any other
+// site is paused in its file: a snippet is moved aside, a Caddyfile block is commented
+// out so the other sites sharing that file keep answering.
 async function togglePause(s: ProxySite) {
   busy.value = siteKey(s)
   const name = s.domains[0]
   try {
-    rep.value = s.id ? await api.proxyPause(s.id, !s.paused) : await api.proxySite(s.file, s.paused ? 'resume' : 'pause')
+    rep.value = s.id
+      ? await api.proxyPause(s.id, !s.paused)
+      : await api.proxySite(s.file, s.paused ? 'resume' : 'pause', s.domains[0])
     toast(s.paused ? `${name} is back on` : `${name} paused${s.id ? ', the app keeps running' : ''}`)
   } catch (e) {
     toastError(e)
@@ -78,19 +81,19 @@ async function addHTTPS(s: ProxySite) {
   }
 }
 
-// Any site in the list can go, including a block added by hand: the file is removed and
-// the proxy reloaded, so the domain stops answering right away.
+// Any site in the list can go, including a block added by hand: only that site is removed
+// from its file, then the proxy is reloaded, so the domain stops answering.
 async function removeSite(s: ProxySite) {
   const ok = await confirm({
     title: `Delete ${s.domains[0] ?? s.file}?`,
-    body: `The file ${s.file} is removed and the proxy reloaded, so the domain stops answering. ${s.managed ? 'The app it belonged to is already gone.' : 'The panel did not write this block: it is not saved anywhere else.'} Nothing else is touched.`,
+    body: `The site is removed from ${s.file} and the proxy reloaded, so the domain stops answering. ${s.managed ? 'The app it belonged to is already gone.' : 'The panel did not write this block: it is not saved anywhere else.'} Nothing else in the file is touched.`,
     action: 'Delete',
     danger: true,
   })
   if (!ok) return
   busy.value = siteKey(s)
   try {
-    rep.value = await api.proxySite(s.file, 'delete')
+    rep.value = await api.proxySite(s.file, 'delete', s.domains[0])
     toast(`${s.domains[0] ?? s.file} removed`)
   } catch (e) {
     toastError(e)
@@ -172,7 +175,7 @@ onMounted(async () => {
 
       <p v-if="sites.length" class="hint muted small">
         Drag a row to set the order. Pausing a site takes its domain out of {{ engine }} and keeps everything else
-        running; the row stays here so it can be turned back on. Deleting one removes its file.
+        running; the row stays here so it can be turned back on. Deleting one removes it from the proxy configuration.
       </p>
 
       <section class="card">

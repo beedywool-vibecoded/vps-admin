@@ -46,15 +46,20 @@ class _ProxyPageState extends State<ProxyPage> {
     }
   }
 
-  // An app's URL is paused through the app, which knows how to write it again; any other
-  // file is paused by taking it out of the proxy's directory.
+  // An app's URL is paused through the app, which knows how to write it again. Any other
+  // site is paused in its file: a snippet is moved aside, a Caddyfile block is commented
+  // out so the other sites sharing that file keep answering.
   Future<void> _pause(ProxySite s) async {
     final name = s.domains.isEmpty ? s.file : s.domains.first;
     setState(() => busy = _key(s));
     try {
       final r = s.id.isNotEmpty
           ? await api.proxyPause(s.id, !s.paused)
-          : await api.proxySite(s.file, s.paused ? 'resume' : 'pause');
+          : await api.proxySite(
+              s.file,
+              s.paused ? 'resume' : 'pause',
+              domain: s.domains.isEmpty ? null : s.domains.first,
+            );
       if (!mounted) return;
       setState(() => rep = r);
       showInfo(
@@ -105,10 +110,10 @@ class _ProxyPageState extends State<ProxyPage> {
       context,
       title: 'Delete $name?',
       body:
-          'The file ${s.file} is removed and the proxy reloaded, so the domain '
+          'The site is removed from ${s.file} and the proxy reloaded, so the domain '
           'stops answering. '
           '${s.managed ? 'The app it belonged to is already gone.' : 'The panel did not write this block: it is not saved anywhere else.'} '
-          'Nothing else is touched.',
+          'Nothing else in the file is touched.',
       action: 'Delete',
       danger: true,
     )) {
@@ -116,7 +121,11 @@ class _ProxyPageState extends State<ProxyPage> {
     }
     setState(() => busy = _key(s));
     try {
-      final r = await api.proxySite(s.file, 'delete');
+      final r = await api.proxySite(
+        s.file,
+        'delete',
+        domain: s.domains.isEmpty ? null : s.domains.first,
+      );
       if (!mounted) return;
       setState(() => rep = r);
       showInfo(context, '$name removed');
@@ -301,7 +310,7 @@ class _ProxyPageState extends State<ProxyPage> {
         ),
         const Muted(
           'Pausing a site takes its domain out of the proxy and keeps everything else '
-          'running; it stays in this list, ready to turn back on. Deleting one removes its file.',
+          'running; it stays in this list, ready to turn back on. Deleting one removes it from the proxy configuration.',
           size: 12,
         ),
         if (loading)

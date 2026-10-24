@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/beedywool/vps-admin/internal/deploy"
 	"github.com/beedywool/vps-admin/internal/proxy"
@@ -96,6 +97,14 @@ func (s *Server) proxyView(r *http.Request) proxy.Report {
 				Paused:  true,
 			})
 		}
+	}
+	// nginx never loads a .bak copy, and the tab must not offer one either. The reads
+	// above already skip those files; this also drops a row from a paused copy kept by
+	// an older version, whose name the page would otherwise show.
+	if rep.Engine == "nginx" {
+		rep.Sites = slices.DeleteFunc(rep.Sites, func(site proxy.Site) bool {
+			return strings.Contains(strings.ToLower(filepath.Base(site.File)), ".bak")
+		})
 	}
 	s.orderSites(ctx, rep.Sites)
 	return rep
@@ -214,13 +223,14 @@ func (s *Server) proxyOrder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.proxyView(r))
 }
 
-// proxySite pauses, resumes or deletes one site file, whoever wrote it: the panel's
-// snippets, a block added by hand, a file left by an app that is gone.
+// proxySite pauses, resumes or deletes one site, whoever wrote it: the panel's snippet,
+// a block added by hand in a shared Caddyfile, a file left by an app that is gone. A
+// domain says which block of a shared file is meant.
 func (s *Server) proxySite(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		File   string `json:"file"`
 		Action string `json:"action"` // pause, resume, delete or https
-		Domain string `json:"domain"` // where a certificate is asked for
+		Domain string `json:"domain"` // which site in a shared Caddyfile, or where a certificate is asked for
 	}
 	if err := readJSON(r, &body); err != nil || body.File == "" {
 		writeErrorMsg(w, http.StatusBadRequest, "invalid", "a file is expected")
@@ -233,18 +243,22 @@ func (s *Server) proxySite(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch body.Action {
 	case "pause":
-		err = s.Deploy.PauseSite(r.Context(), body.File)
+		err = s.Deploy.PauseSite(r.Context(), body.File, body.Domain)
 	case "resume":
-		err = s.Deploy.ResumeSite(r.Context(), body.File)
+		err = s.Deploy.ResumeSite(r.Context(), body.File, body.Domain)
 	case "delete":
-		err = s.Deploy.DeleteSite(r.Context(), body.File)
+		err = s.Deploy.DeleteSite(r.Context(), body.File, body.Domain)
 	case "https":
 		err = s.Deploy.EnableHTTPS(r.Context(), body.File, body.Domain)
 	default:
 		writeErrorMsg(w, http.StatusBadRequest, "invalid", "action must be pause, resume, delete or https")
 		return
 	}
-	s.audit(r, "proxy.site_"+body.Action, body.File, err)
+	target := body.File
+	if body.Domain != "" {
+		target += " " + body.Domain
+	}
+	s.audit(r, "proxy.site_"+body.Action, target, err)
 	if err != nil {
 		writeErrorMsg(w, http.StatusBadRequest, "site_failed", err.Error())
 		return

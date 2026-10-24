@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -153,13 +154,13 @@ func TestDeleteSite(t *testing.T) {
 	if err := os.WriteFile(hand, []byte("hand.example.com {\n\tfile_server\n}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.DeleteSite(ctx, hand); err != nil {
+	if err := e.DeleteSite(ctx, hand, ""); err != nil {
 		t.Fatalf("hand-written site: %v", err)
 	}
 	if _, err := os.Stat(hand); !os.IsNotExist(err) {
 		t.Fatalf("the hand-written site is still there: %v", err)
 	}
-	if err := e.DeleteSite(ctx, "/etc/passwd"); err == nil {
+	if err := e.DeleteSite(ctx, "/etc/passwd", ""); err == nil {
 		t.Fatal("a file outside the site directories was accepted")
 	}
 
@@ -172,10 +173,10 @@ func TestDeleteSite(t *testing.T) {
 	if err := os.WriteFile(live, []byte("live.example.com {\n\treverse_proxy 127.0.0.1:3000\n}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.DeleteSite(ctx, live); err == nil {
+	if err := e.DeleteSite(ctx, live, ""); err == nil {
 		t.Fatal("the site of a live app was deleted")
 	}
-	if err := e.PauseSite(ctx, live); err == nil {
+	if err := e.PauseSite(ctx, live, ""); err == nil {
 		t.Fatal("the site of a live app was paused")
 	}
 	if _, err := os.Stat(live); err != nil {
@@ -198,14 +199,14 @@ func TestPauseSiteKeepsTheFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.PauseSite(ctx, path); err != nil {
+	if err := e.PauseSite(ctx, path, ""); err != nil {
 		t.Fatal(err)
 	}
 	paused := e.PausedSites()
 	if len(paused) != 1 || paused[0].File != path || paused[0].Engine != "caddy" {
 		t.Fatalf("paused = %+v", paused)
 	}
-	if err := e.ResumeSite(ctx, path); err != nil {
+	if err := e.ResumeSite(ctx, path, ""); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := os.ReadFile(path); err != nil || string(got) != body {
@@ -213,6 +214,102 @@ func TestPauseSiteKeepsTheFile(t *testing.T) {
 	}
 	if len(e.PausedSites()) != 0 {
 		t.Fatalf("still listed as paused: %+v", e.PausedSites())
+	}
+}
+
+// A site written in the main Caddyfile is paused, resumed and deleted block by block:
+// the other sites and the global options stay exactly as they were.
+func TestCaddyfileBlocksPauseResumeAndDelete(t *testing.T) {
+	root := t.TempDir()
+	sites := filepath.Join(root, "vps-admin-apps")
+	if err := os.MkdirAll(sites, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	caddyfile := filepath.Join(root, "Caddyfile")
+	body := `{
+	email admin@example.com
+}
+
+import vps-admin-apps/*.caddy
+
+# The blog
+blog.example.com {
+	reverse_proxy 127.0.0.1:8080
+}
+
+shop.example.com {
+	reverse_proxy 127.0.0.1:9090
+}
+`
+	if err := os.WriteFile(caddyfile, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reloads := 0
+	e := &Engine{DataDir: filepath.Join(root, "data"), SitesDir: sites,
+		ReloadCaddy: func(context.Context) error { reloads++; return nil }}
+	ctx := context.Background()
+
+	if err := e.PauseSite(ctx, caddyfile, "blog.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(caddyfile)
+	if strings.Contains(string(got), "\nblog.example.com {") || !strings.Contains(string(got), "\nshop.example.com {") {
+		t.Fatalf("pause edited the wrong block:\n%s", got)
+	}
+	if !strings.Contains(string(got), "# The blog") || !strings.Contains(string(got), "# vps-admin: paused site") {
+		t.Fatalf("pause lost the block or its comment:\n%s", got)
+	}
+
+	if err := e.ResumeSite(ctx, caddyfile, "blog.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = os.ReadFile(caddyfile); string(got) != body {
+		t.Fatalf("resume did not put the file back byte for byte:\n%s", got)
+	}
+
+	if err := e.DeleteSite(ctx, caddyfile, "shop.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = os.ReadFile(caddyfile); strings.Contains(string(got), "shop.example.com") || !strings.Contains(string(got), "blog.example.com") {
+		t.Fatalf("delete took the wrong block:\n%s", got)
+	}
+	if reloads != 3 {
+		t.Fatalf("Caddy was reloaded %d times, want 3", reloads)
+	}
+
+	// A shared file needs to know which of its sites is meant.
+	before, _ := os.ReadFile(caddyfile)
+	if err := e.PauseSite(ctx, caddyfile, ""); err == nil {
+		t.Fatal("an empty domain was accepted")
+	}
+	if err := e.DeleteSite(ctx, caddyfile, "nope.example.com"); err == nil {
+		t.Fatal("an unknown domain was deleted")
+	}
+	if after, _ := os.ReadFile(caddyfile); string(after) != string(before) {
+		t.Fatal("a refused action changed the Caddyfile")
+	}
+}
+
+// Caddy keeps its old configuration when the new one is refused: the file must match it
+// again, or the next restart would load the broken version.
+func TestCaddyfilePauseRollsBack(t *testing.T) {
+	root := t.TempDir()
+	sites := filepath.Join(root, "vps-admin-apps")
+	if err := os.MkdirAll(sites, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	caddyfile := filepath.Join(root, "Caddyfile")
+	body := "blog.example.com {\n\treverse_proxy 127.0.0.1:8080\n}\n"
+	if err := os.WriteFile(caddyfile, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{DataDir: filepath.Join(root, "data"), SitesDir: sites,
+		ReloadCaddy: func(context.Context) error { return errors.New("Caddy said no") }}
+	if err := e.PauseSite(context.Background(), caddyfile, "blog.example.com"); err == nil {
+		t.Fatal("the refused pause was reported as done")
+	}
+	if got, _ := os.ReadFile(caddyfile); string(got) != body {
+		t.Fatalf("the Caddyfile was not put back:\n%s", got)
 	}
 }
 
@@ -250,7 +347,7 @@ func TestEnableHTTPS(t *testing.T) {
 		t.Fatalf("calls = %v", calls)
 	}
 	// A paused site has no file in the directory certbot would edit.
-	if err := e.PauseSite(ctx, path); err != nil {
+	if err := e.PauseSite(ctx, path, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.EnableHTTPS(ctx, path, "blog.example.com"); err == nil {

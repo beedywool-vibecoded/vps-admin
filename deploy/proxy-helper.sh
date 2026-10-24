@@ -6,6 +6,7 @@
 #
 #   proxy-helper nginx-reload          test the nginx config, then reload it
 #   proxy-helper certbot DOMAIN        certificate for DOMAIN, installed in its nginx site
+#   proxy-helper caddy-write FILE      replace a root-owned Caddy file with the staged one
 #   proxy-helper ts-serve PORT TARGET  https://<tailscale name>:PORT -> 127.0.0.1:TARGET
 #   proxy-helper ts-off PORT           stop serving PORT on the tailnet
 set -eu
@@ -32,6 +33,35 @@ certbot)
 	fi
 	exec certbot "$@"
 	;;
+caddy-write)
+	target=${2:-}
+	case "$target" in
+	/etc/caddy/Caddyfile) ;;
+	/etc/caddy/*.caddy) ;;
+	*) echo "invalid Caddy file: $target" >&2; exit 64 ;;
+	esac
+	case "$target" in *..*) echo "invalid Caddy file: $target" >&2; exit 64 ;; esac
+	command -v caddy >/dev/null 2>&1 || { echo "caddy is not installed" >&2; exit 69; }
+	stage=/var/lib/vps-admin/caddy-edit.new
+	[ -f "$stage" ] || { echo "no staged Caddy configuration" >&2; exit 66; }
+	[ -f "$target" ] || { echo "no such Caddy file: $target" >&2; exit 66; }
+	# Same directory, so the replacement is a rename: Caddy never reads half a file.
+	tmp=$(mktemp "/etc/caddy/.vps-admin.XXXXXX") || exit 69
+	trap 'rm -f "$tmp"' EXIT
+	cp "$stage" "$tmp"
+	chown root:root "$tmp"
+	chmod 644 "$tmp"
+	backup=/var/lib/vps-admin/caddy-edit.prev
+	cp -a "$target" "$backup"
+	mv -f "$tmp" "$target"
+	if ! caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
+		cp -a "$backup" "$target"
+		rm -f "$backup"
+		echo "Caddy refused this configuration, the previous file was put back" >&2
+		exit 65
+	fi
+	rm -f "$backup"
+	;;
 ts-serve)
 	port "${2:-}"
 	port "${3:-}"
@@ -42,7 +72,7 @@ ts-off)
 	exec tailscale serve --https="$2" off
 	;;
 *)
-	echo "usage: proxy-helper nginx-reload | certbot DOMAIN | ts-serve PORT TARGET | ts-off PORT" >&2
+	echo "usage: proxy-helper nginx-reload | certbot DOMAIN | caddy-write FILE | ts-serve PORT TARGET | ts-off PORT" >&2
 	exit 64
 	;;
 esac

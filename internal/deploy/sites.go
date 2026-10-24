@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/beedywool/vps-admin/internal/proxy"
 	"github.com/beedywool/vps-admin/internal/store"
 )
 
@@ -217,26 +218,58 @@ type PausedSite struct {
 	Engine string `json:"engine"` // caddy or nginx
 }
 
-// siteFile checks a path handed by the panel: a site name, directly inside one of the two
-// directories the proxy reads. Anything else belongs to the administrator.
+// siteFile checks a path handed by the panel: a site name directly inside one of the two
+// directories the proxy reads, or a Caddy file the proxy imports (the main Caddyfile,
+// conf.d/*.caddy). Anything else belongs to the administrator.
 func (e *Engine) siteFile(file string) (path, engine string, err error) {
 	path = filepath.Clean(file)
-	if !snippetName.MatchString(filepath.Base(path)) {
-		return "", "", errors.New("this is not a proxy site file")
-	}
+	base := filepath.Base(path)
 	switch {
-	case e.SitesDir != "" && filepath.Dir(path) == filepath.Clean(e.SitesDir):
+	case e.SitesDir != "" && snippetName.MatchString(base) && filepath.Dir(path) == filepath.Clean(e.SitesDir):
 		return path, "caddy", nil
-	case e.NginxDir != "" && filepath.Dir(path) == filepath.Clean(e.NginxDir):
+	case e.NginxDir != "" && snippetName.MatchString(base) && filepath.Dir(path) == filepath.Clean(e.NginxDir):
 		return path, "nginx", nil
+	case e.SitesDir != "" && sharedCaddyFile(path, filepath.Dir(filepath.Clean(e.SitesDir))):
+		return path, "caddy", nil
 	}
-	return "", "", errors.New("this file is not in the proxy's site directories")
+	return "", "", errors.New("this is not a proxy site file")
+}
+
+// sharedCaddyFile reports a file Caddy reads besides the panel's own snippets: the main
+// Caddyfile, and the .caddy files it imports. Several sites can share one, so the panel
+// edits a block selected by domain instead of moving the whole file.
+func sharedCaddyFile(path, root string) bool {
+	if root == "" || strings.Contains(strings.ToLower(filepath.Base(path)), ".bak") {
+		return false
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false
+	}
+	if path == filepath.Join(root, "Caddyfile") {
+		return true
+	}
+	return strings.HasSuffix(filepath.Base(path), ".caddy")
+}
+
+// sharedCaddy tells whether a site lives in a file several sites can share. The panel's
+// own snippets are one site per file and keep working the way they always did.
+func (e *Engine) sharedCaddy(path string) bool {
+	return e.SitesDir != "" && filepath.Dir(filepath.Clean(path)) != filepath.Clean(e.SitesDir)
 }
 
 // siteOwner is the app a site file belongs to: the panel names each site after its app,
 // so a file whose app still exists is driven from the app, not from this list.
 func (e *Engine) siteOwner(ctx context.Context, path string) *store.App {
+	// Only the panel's snippets are named after an app. A file Caddy imports is the
+	// administrator's, even when its name happens to match an app id.
 	if e.Store == nil {
+		return nil
+	}
+	dir := filepath.Dir(filepath.Clean(path))
+	inSites := e.SitesDir != "" && dir == filepath.Clean(e.SitesDir)
+	inNginx := e.NginxDir != "" && dir == filepath.Clean(e.NginxDir)
+	if !inSites && !inNginx {
 		return nil
 	}
 	base := filepath.Base(path)
@@ -282,10 +315,13 @@ func splitStored(name string) (engine, base string, ok bool) {
 
 // PauseSite takes a site out of the proxy: its file is kept aside and the proxy reloaded,
 // so its domains stop answering. Everything else about the site is left alone.
-func (e *Engine) PauseSite(ctx context.Context, file string) error {
+func (e *Engine) PauseSite(ctx context.Context, file, domain string) error {
 	path, engine, err := e.siteFile(file)
 	if err != nil {
 		return err
+	}
+	if engine == "caddy" && e.sharedCaddy(path) {
+		return e.pauseSharedSite(ctx, path, domain)
 	}
 	base := filepath.Base(path)
 	if app := e.siteOwner(ctx, path); app != nil {
@@ -320,10 +356,13 @@ func (e *Engine) PauseSite(ctx context.Context, file string) error {
 }
 
 // ResumeSite puts a paused site back, byte for byte, and reloads the proxy.
-func (e *Engine) ResumeSite(ctx context.Context, file string) error {
+func (e *Engine) ResumeSite(ctx context.Context, file, domain string) error {
 	path, engine, err := e.siteFile(file)
 	if err != nil {
 		return err
+	}
+	if engine == "caddy" && e.sharedCaddy(path) {
+		return e.resumeSharedSite(ctx, path, domain)
 	}
 	stored := filepath.Join(e.pausedDir(), storedName(engine, filepath.Base(path)))
 	data, err := os.ReadFile(stored)
@@ -351,10 +390,13 @@ func (e *Engine) ResumeSite(ctx context.Context, file string) error {
 // DeleteSite removes a site: the file in the proxy's directory, and the copy kept aside
 // when it is paused. A site an app still serves is refused, since the next deploy would
 // write it again.
-func (e *Engine) DeleteSite(ctx context.Context, file string) error {
+func (e *Engine) DeleteSite(ctx context.Context, file, domain string) error {
 	path, engine, err := e.siteFile(file)
 	if err != nil {
 		return err
+	}
+	if engine == "caddy" && e.sharedCaddy(path) {
+		return e.deleteSharedSite(ctx, path, domain)
 	}
 	base := filepath.Base(path)
 	if app := e.siteOwner(ctx, path); app != nil {
@@ -375,6 +417,83 @@ func (e *Engine) DeleteSite(ctx context.Context, file string) error {
 		return errors.New("this site is already gone")
 	}
 	return e.reloadProxy(ctx, engine)
+}
+
+// pauseSharedSite comments out one site block in a Caddyfile: the other sites in the
+// same file keep answering, and the block itself stays where it was for a resume.
+func (e *Engine) pauseSharedSite(ctx context.Context, path, domain string) error {
+	if strings.TrimSpace(domain) == "" {
+		return errors.New("this file holds several sites: say which domain to pause")
+	}
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return errors.New("this site is already gone")
+	}
+	if err != nil {
+		return err
+	}
+	next, ok := proxy.CommentBlock(string(data), domain)
+	if !ok {
+		return fmt.Errorf("no site for %s in %s: it may already be paused, or written elsewhere", domain, filepath.Base(path))
+	}
+	return e.applySharedSite(ctx, path, data, []byte(next))
+}
+
+// resumeSharedSite takes one block back out of its comment markers.
+func (e *Engine) resumeSharedSite(ctx context.Context, path, domain string) error {
+	if strings.TrimSpace(domain) == "" {
+		return errors.New("this file holds several sites: say which domain to resume")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	next, ok := proxy.RestoreBlock(string(data), domain)
+	if !ok {
+		return errors.New("this site is not paused")
+	}
+	return e.applySharedSite(ctx, path, data, []byte(next))
+}
+
+// deleteSharedSite removes one block and leaves every other site in the file alone.
+func (e *Engine) deleteSharedSite(ctx context.Context, path, domain string) error {
+	if strings.TrimSpace(domain) == "" {
+		return errors.New("this file holds several sites: say which domain to delete")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	next, ok := proxy.RemoveBlock(string(data), domain)
+	if !ok {
+		return errors.New("this site is already gone")
+	}
+	return e.applySharedSite(ctx, path, data, []byte(next))
+}
+
+// applySharedSite writes a Caddyfile and reloads Caddy. A refused configuration puts the
+// previous file back, so a restart does not bring the broken version up.
+func (e *Engine) applySharedSite(ctx context.Context, path string, prev, next []byte) error {
+	if err := e.writeCaddy(ctx, path, next); err != nil {
+		return err
+	}
+	if err := e.reloadProxy(ctx, "caddy"); err != nil {
+		if werr := e.writeCaddy(context.WithoutCancel(ctx), path, prev); werr != nil {
+			slog.Error("cannot put the Caddy configuration back", "file", path, "err", werr)
+		}
+		e.reloadProxy(context.WithoutCancel(ctx), "caddy")
+		return err
+	}
+	return nil
+}
+
+// writeCaddy replaces a Caddy file. The main Caddyfile and the imported files belong to
+// root, so production goes through the helper; tests write them directly.
+func (e *Engine) writeCaddy(ctx context.Context, path string, data []byte) error {
+	if e.WriteCaddy != nil {
+		return e.WriteCaddy(ctx, path, data)
+	}
+	return writeShared(path, data)
 }
 
 // EnableHTTPS asks certbot for a certificate on an nginx site: certbot edits that server
