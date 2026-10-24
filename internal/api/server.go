@@ -18,6 +18,7 @@ import (
 	"github.com/beedywool/vps-admin/internal/alerts"
 	"github.com/beedywool/vps-admin/internal/assistant"
 	"github.com/beedywool/vps-admin/internal/auth"
+	"github.com/beedywool/vps-admin/internal/backup"
 	"github.com/beedywool/vps-admin/internal/buildinfo"
 	"github.com/beedywool/vps-admin/internal/config"
 	"github.com/beedywool/vps-admin/internal/deploy"
@@ -45,6 +46,7 @@ type Server struct {
 	Assistant *assistant.Engine
 	Scripts   *scripts.Runner
 	Alerts    *alerts.Watcher
+	Backup    *backup.Manager
 	Host      system.Host
 	// Restart is called after an update is installed; the process exits and systemd
 	// starts the new binary.
@@ -97,6 +99,13 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PUT /api/settings/update", full(s.updateSettings))
 	mux.Handle("GET /api/app/latest", full(s.appLatest))
 	mux.Handle("GET /api/app/apk", full(s.appAPK))
+
+	mux.Handle("GET /api/backup", full(s.backupStatus))
+	mux.Handle("PUT /api/backup", full(s.backupUpdate))
+	mux.Handle("POST /api/backup/test", full(s.backupTest))
+	mux.Handle("POST /api/backup/mount", full(s.backupMount))
+	mux.Handle("POST /api/backup/run", full(s.backupRun))
+	mux.Handle("POST /api/backup/restore", full(s.backupRestore))
 
 	mux.Handle("GET /api/audit", full(s.auditLog))
 	mux.Handle("POST /api/system/reboot", full(s.reboot))

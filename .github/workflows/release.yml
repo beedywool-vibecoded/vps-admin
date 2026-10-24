@@ -48,7 +48,7 @@ jobs:
           # The service files travel as one archive: a short asset list is easier to read
           # than six files nobody downloads by hand.
           tar -czf dist/vps-admin-deploy.tar.gz -C deploy \
-            preflight.sh run-script.sh proxy-helper.sh vps-admin.service
+            preflight.sh run-script.sh proxy-helper.sh storage-helper.sh vps-admin.service
           cd dist && sha256sum vps-admin_linux_* > SHA256SUMS
 
       - uses: actions/setup-java@v5

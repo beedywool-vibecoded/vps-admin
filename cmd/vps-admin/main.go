@@ -19,6 +19,7 @@ import (
 	"github.com/beedywool/vps-admin/internal/api"
 	"github.com/beedywool/vps-admin/internal/assistant"
 	"github.com/beedywool/vps-admin/internal/auth"
+	"github.com/beedywool/vps-admin/internal/backup"
 	"github.com/beedywool/vps-admin/internal/buildinfo"
 	"github.com/beedywool/vps-admin/internal/config"
 	"github.com/beedywool/vps-admin/internal/deploy"
@@ -119,6 +120,11 @@ func serve(cfgPath string) error {
 	if err != nil {
 		return err
 	}
+	// A staged restore is installed before the store opens: the database and the key that
+	// decrypts it are swapped together.
+	if err := backup.ApplyPending(cfg.DataDir); err != nil {
+		slog.Error("cannot apply the staged restore", "err", err)
+	}
 	st, err := store.Open(cfg.DataDir)
 	if err != nil {
 		return err
@@ -146,6 +152,10 @@ func serve(cfgPath string) error {
 	go collector.Run(ctx)
 
 	runner := system.NewRunner()
+	backupMgr := &backup.Manager{Store: st, Box: box, Runner: runner, Cfg: cfg, Version: buildinfo.Version}
+	if _, err := os.Stat(backup.HelperPath); err == nil {
+		backupMgr.Helper = backup.HelperPath
+	}
 	gh := github.New()
 	// For tests against a fake GitHub; never set in production.
 	if v := os.Getenv("VPS_ADMIN_GITHUB_API"); v != "" {
@@ -195,7 +205,7 @@ func serve(cfgPath string) error {
 		Cfg: cfg, Store: st, Auth: a, Collector: collector, Runner: runner,
 		Docker: dockerClient, Updater: up, Host: host,
 		Box: box, GitHub: gh, Deploy: engine, Assistant: asst, Scripts: scriptRunner,
-		Alerts: alertWatcher, Restart: stop,
+		Alerts: alertWatcher, Backup: backupMgr, Restart: stop,
 	}
 	srv.LoadGitHub(ctx)
 	srv.LoadUpdateSource(ctx)
@@ -212,6 +222,7 @@ func serve(cfgPath string) error {
 	slog.Info("vps-admin started", "version", buildinfo.Version, "listen", cfg.Listen, "public_url", cfg.PublicURL)
 
 	go srv.AutoUpdateLoop(ctx)
+	go backupMgr.Loop(ctx)
 	go housekeeping(ctx, st, up)
 
 	select {

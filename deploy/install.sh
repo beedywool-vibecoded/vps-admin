@@ -153,6 +153,28 @@ install -d -o vps-admin -g vps-admin -m 700 /var/lib/vps-admin
 install -d -o root -g vps-admin -m 750 /etc/vps-admin
 # Scripts linked with `sudo vps-admin link`: root-owned, so the agent cannot add any.
 install -d -o root -g root -m 755 /etc/vps-admin/scripts
+# Google Drive backups mount their remote here, as the service user.
+install -d -o vps-admin -g vps-admin -m 755 /srv/storage
+
+# Google Drive backups need rclone and FUSE. The panel installs without them; the
+# storage card then explains what is missing instead of failing every backup.
+have_fuse=1
+command -v fusermount3 >/dev/null 2>&1 || command -v fusermount >/dev/null 2>&1 || have_fuse=0
+if ! command -v rclone >/dev/null 2>&1 || [ "$have_fuse" = 0 ]; then
+	say "Installing rclone and fuse3 for Google Drive backups"
+	if command -v apt-get >/dev/null 2>&1; then
+		apt-get update -qq >/dev/null 2>&1 || true
+		DEBIAN_FRONTEND=noninteractive apt-get install -y -qq rclone fuse3 >/dev/null 2>&1 || true
+	elif command -v dnf >/dev/null 2>&1; then
+		dnf install -y -q rclone fuse3 >/dev/null 2>&1 || true
+	elif command -v yum >/dev/null 2>&1; then
+		yum install -y -q rclone fuse3 >/dev/null 2>&1 || true
+	elif command -v apk >/dev/null 2>&1; then
+		apk add --no-cache rclone fuse3 >/dev/null 2>&1 || true
+	fi
+	command -v rclone >/dev/null 2>&1 || say "warning: rclone is not available, so Google Drive backups stay disabled"
+fi
+[ -e /dev/fuse ] || say "warning: /dev/fuse is missing, so this VPS cannot mount the Drive"
 
 # Private panel through Tailscale: its MagicDNS name with a certificate from the tailnet.
 if [ "$TAILSCALE" != no ] && command -v tailscale >/dev/null && tailscale status >/dev/null 2>&1; then
@@ -235,6 +257,8 @@ allow systemctl "start *" "stop *" "restart *" "reload *" "reboot"
 rules+="vps-admin ALL=(root) NOPASSWD: /opt/vps-admin/run-script *"$'\n'
 # Publishing through nginx, certbot or tailscale serve, with checked arguments.
 rules+="vps-admin ALL=(root) NOPASSWD: /opt/vps-admin/proxy-helper *"$'\n'
+# Mounting the backup Drive as a fixed systemd unit.
+rules+="vps-admin ALL=(root) NOPASSWD: /opt/vps-admin/storage-helper *"$'\n'
 printf '# Managed by the VPS Admin installer, rewritten on every run.\nDefaults:vps-admin !requiretty\n%s' "$rules" > "$TMP/sudoers"
 visudo -cf "$TMP/sudoers" >/dev/null || die "generated sudoers file is invalid"
 install -o root -g root -m 440 "$TMP/sudoers" /etc/sudoers.d/vps-admin
@@ -245,7 +269,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo 
 # The service files ship as one archive, so the release page lists one asset instead of
 # four. Local files win with --binary: piped through bash, the "script dir" is the cwd.
 if [ -n "$LOCAL_BINARY" ] && [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/preflight.sh" ]; then
-	for f in preflight.sh run-script.sh proxy-helper.sh vps-admin.service; do
+	for f in preflight.sh run-script.sh proxy-helper.sh storage-helper.sh vps-admin.service; do
 		cp "$SCRIPT_DIR/$f" "$TMP/$f"
 	done
 else
@@ -260,6 +284,7 @@ fi
 install -o root -g root -m 755 "$TMP/preflight.sh" /opt/vps-admin/preflight.sh
 install -o root -g root -m 755 "$TMP/run-script.sh" /opt/vps-admin/run-script
 install -o root -g root -m 755 "$TMP/proxy-helper.sh" /opt/vps-admin/proxy-helper
+install -o root -g root -m 755 "$TMP/storage-helper.sh" /opt/vps-admin/storage-helper
 install -o root -g root -m 644 "$TMP/vps-admin.service" /etc/systemd/system/vps-admin.service
 
 systemctl stop vps-admin 2>/dev/null || true

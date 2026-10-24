@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -237,5 +238,17 @@ func (s *Store) SetSetting(ctx context.Context, key, value string) error {
 // DeleteSetting removes key so Setting returns its default again.
 func (s *Store) DeleteSetting(ctx context.Context, key string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM settings WHERE key = ?`, key)
+	return err
+}
+
+// Snapshot writes a consistent copy of the database to path, for backups. VACUUM INTO
+// reads under its own transaction, so the panel can keep serving while it runs.
+func (s *Store) Snapshot(ctx context.Context, path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	// VACUUM INTO takes an expression: quote the literal rather than bind it.
+	q := `VACUUM INTO '` + strings.ReplaceAll(path, "'", "''") + `'`
+	_, err := s.db.ExecContext(ctx, q)
 	return err
 }

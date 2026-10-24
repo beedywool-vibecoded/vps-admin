@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import BackupCard from '@/components/BackupCard.vue'
 import Icon from '@/components/Icon.vue'
 import M3Slider from '@/components/M3Slider.vue'
 import M3Switch from '@/components/M3Switch.vue'
@@ -450,6 +451,8 @@ onMounted(async () => {
         <span>Last delivery failed: {{ alertSet.error }}{{ alertSet.errorAt ? ` (${ago(new Date(alertSet.errorAt * 1000).toISOString())})` : '' }}</span>
       </p>
     </section>
+
+    <BackupCard />
 
     <section class="card">
       <div class="card-head">

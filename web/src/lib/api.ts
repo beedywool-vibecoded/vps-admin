@@ -484,6 +484,54 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   return data as T
 }
 
+/** One encrypted archive on the Drive. */
+export interface BackupArchive {
+  name: string
+  size: number
+  time: string
+}
+
+export interface BackupLast {
+  at: string
+  kind: string
+  file: string
+  size: number
+  ok: boolean
+  error?: string
+}
+
+export interface BackupStatus {
+  configured: boolean
+  enabled: boolean
+  hasToken: boolean
+  hasPassphrase: boolean
+  path: string
+  hour: number
+  keep: number
+  mount: boolean
+  mountPoint: string
+  mounted: boolean
+  helper: boolean
+  /** rclone's version line, empty when it is not installed. */
+  rclone: string
+  running: boolean
+  progress: string
+  restoreStaged: boolean
+  last?: BackupLast
+  archives: BackupArchive[]
+  warning?: string
+}
+
+export interface BackupOptions {
+  enabled?: boolean
+  path?: string
+  hour?: number
+  keep?: number
+  mount?: boolean
+  token?: string
+  passphrase?: string
+}
+
 export const api = {
   authState: () => request<AuthState>('GET', '/api/auth/state'),
   pair: (code: string, name: string, owner: string) =>
@@ -524,6 +572,15 @@ export const api = {
   updateAlerts: (s: { enabled?: boolean; webhook?: string; disk?: number }) =>
     request<AlertSettings>('PUT', '/api/alerts', s),
   testAlerts: (webhook: string) => request<{ sent: boolean }>('POST', '/api/alerts/test', { webhook }),
+
+  backup: () => request<BackupStatus>('GET', '/api/backup'),
+  backupArchives: () => request<BackupStatus>('GET', '/api/backup?archives=1'),
+  backupSave: (o: BackupOptions) => request<BackupStatus>('PUT', '/api/backup', o),
+  backupTest: () => request<{ ok: boolean; detail: string }>('POST', '/api/backup/test'),
+  backupMount: (mounted: boolean) => request<BackupStatus>('POST', '/api/backup/mount', { mounted }),
+  backupRun: (kind: 'settings' | 'full') => request<{ started: boolean }>('POST', '/api/backup/run', { kind }),
+  backupRestore: (file: string, passphrase: string) =>
+    request<{ restarting: boolean }>('POST', '/api/backup/restore', { file, passphrase }),
 
   devices: () => request<{ devices: Device[]; current: string }>('GET', '/api/devices'),
   revokeDevice: (id: string) => request<void>('DELETE', `/api/devices/${encodeURIComponent(id)}`),
