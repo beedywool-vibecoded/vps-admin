@@ -90,6 +90,64 @@ func TestSourceChange(t *testing.T) {
 	}
 }
 
+// A token saved for the previous update source answers 403 on another repository. A
+// public one must still be read: the request is retried without the token.
+func TestCheckRetriesWithoutAStaleToken(t *testing.T) {
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Header.Get("Authorization"))
+		if r.Header.Get("Authorization") != "" {
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"message":"Resource not accessible by personal access token"}`))
+			return
+		}
+		w.Write([]byte("[]"))
+	}))
+	defer srv.Close()
+	u := &Updater{Repo: "o/r", DataDir: t.TempDir(), HTTP: srv.Client(), API: srv.URL, Token: "stale"}
+	if _, err := u.latest(context.Background(), false); err != nil {
+		t.Fatalf("a public repository must still be read with a stale token: %v", err)
+	}
+	if len(seen) != 2 || seen[0] == "" || seen[1] != "" {
+		t.Fatalf("requests carried %q, want the token then no token", seen)
+	}
+}
+
+func TestCheckKeepsTheTokenForAPrivateRepository(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer good" {
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"message":"Not Found"}`))
+			return
+		}
+		w.Write([]byte("[]"))
+	}))
+	defer srv.Close()
+	u := &Updater{Repo: "o/r", DataDir: t.TempDir(), HTTP: srv.Client(), API: srv.URL, Token: "good"}
+	if _, err := u.latest(context.Background(), false); err != nil {
+		t.Fatalf("a valid token must be enough: %v", err)
+	}
+}
+
+func TestCheckReportsWhatGitHubSaid(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`{"message":"API rate limit exceeded for 192.0.2.1"}`))
+	}))
+	defer srv.Close()
+	u := &Updater{Repo: "o/r", DataDir: t.TempDir(), HTTP: srv.Client(), API: srv.URL}
+	_, err := u.latest(context.Background(), false)
+	if err == nil {
+		t.Fatal("a 403 must be reported")
+	}
+	for _, want := range []string{"403", "API rate limit exceeded", "rate limit for this server"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q should mention %q", err, want)
+		}
+	}
+}
+
 func TestVerifySums(t *testing.T) {
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
 	saved := PublicKey

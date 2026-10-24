@@ -13,6 +13,7 @@
 package update
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
@@ -210,16 +211,13 @@ func (u *Updater) latest(ctx context.Context, prerelease bool) (*Release, error)
 // latestWith returns the highest release accepted by keep.
 func (u *Updater) latestWith(ctx context.Context, prerelease bool, keep func(*Release) bool) (*Release, error) {
 	repo := u.Source()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/repos/%s/releases?per_page=20", u.API, repo), nil)
-	req.Header.Set("Accept", "application/vnd.github+json")
-	u.auth(req)
-	res, err := u.HTTP.Do(req)
+	res, err := u.get(ctx, fmt.Sprintf("%s/repos/%s/releases?per_page=20", u.API, repo))
 	if err != nil {
 		return nil, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub answered HTTP %d for %s", res.StatusCode, repo)
+		return nil, githubError(res, "the GitHub releases of "+repo)
 	}
 	var list []struct {
 		Tag        string    `json:"tag_name"`
@@ -330,43 +328,101 @@ func (u *Updater) Apply(ctx context.Context, rel *Release) error {
 	return nil
 }
 
-// auth sets the user agent and, for private repositories, the token. Asset requests
-// through the API need Accept: application/octet-stream to get the file itself.
-func (u *Updater) auth(req *http.Request) {
+// headers sets the user agent and, when asked, the token. Asset requests through the
+// API need Accept: application/octet-stream to get the file itself.
+func (u *Updater) headers(req *http.Request, withToken bool) {
 	req.Header.Set("User-Agent", "vps-admin/"+buildinfo.Version)
-	if u.Token == "" {
-		return
-	}
-	req.Header.Set("Authorization", "Bearer "+u.Token)
+	req.Header.Set("Accept", "application/vnd.github+json")
 	if strings.Contains(req.URL.Path, "/releases/assets/") {
 		req.Header.Set("Accept", "application/octet-stream")
 	}
+	if withToken && u.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+u.Token)
+	}
+}
+
+func (u *Updater) send(ctx context.Context, url string, withToken bool) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	u.headers(req, withToken)
+	return u.HTTP.Do(req)
+}
+
+// get reads the release API and its assets. The panel can point the updates at another
+// repository, and the token saved for the old one then answers 403 (a fine-grained token
+// without access) or 401 (expired). A public repository must keep working, so such an
+// answer is retried once without the token; a private one still reports the token error.
+func (u *Updater) get(ctx context.Context, url string) (*http.Response, error) {
+	res, err := u.send(ctx, url, true)
+	if err != nil || u.Token == "" || (res.StatusCode != http.StatusUnauthorized && res.StatusCode != http.StatusForbidden) {
+		return res, err
+	}
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 4<<10))
+	res.Body.Close()
+	plain, perr := u.send(ctx, url, false)
+	if perr != nil {
+		return nil, perr
+	}
+	if plain.StatusCode == http.StatusOK {
+		return plain, nil
+	}
+	// Keep the answer that names the token problem rather than the anonymous 404.
+	plain.Body.Close()
+	res.Body = io.NopCloser(bytes.NewReader(body))
+	return res, nil
+}
+
+// githubError turns a failed GitHub answer into something the panel can show: the API
+// message ("API rate limit exceeded", "Resource not accessible by personal access
+// token") is what tells the administrator what to change.
+func githubError(res *http.Response, what string) error {
+	defer res.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 4<<10))
+	var api struct {
+		Message string `json:"message"`
+	}
+	message := ""
+	if json.Unmarshal(body, &api) == nil {
+		message = strings.TrimSpace(api.Message)
+	}
+	if message == "" {
+		message = strings.TrimSpace(string(body))
+		if len(message) > 200 {
+			message = message[:200] + "..."
+		}
+	}
+	suffix := ""
+	if res.StatusCode == http.StatusForbidden && res.Header.Get("X-RateLimit-Remaining") == "0" {
+		suffix = " (the GitHub API rate limit for this server is exhausted; try again later)"
+	}
+	if message == "" {
+		return fmt.Errorf("%s: HTTP %d%s", what, res.StatusCode, suffix)
+	}
+	return fmt.Errorf("%s: HTTP %d: %s%s", what, res.StatusCode, message, suffix)
 }
 
 func (u *Updater) fetch(ctx context.Context, url string, limit int64) ([]byte, error) {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	u.auth(req)
-	res, err := u.HTTP.Do(req)
+	res, err := u.get(ctx, url)
 	if err != nil {
 		return nil, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("download %s: HTTP %d", filepath.Base(url), res.StatusCode)
+		return nil, githubError(res, "download of "+filepath.Base(url))
 	}
 	return io.ReadAll(io.LimitReader(res.Body, limit))
 }
 
 func (u *Updater) download(ctx context.Context, url, dst string, wantSum []byte) error {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	u.auth(req)
-	res, err := u.HTTP.Do(req)
+	res, err := u.get(ctx, url)
 	if err != nil {
 		return err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("download binary: HTTP %d", res.StatusCode)
+		return githubError(res, "download of the binary")
 	}
 	f, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
 	if err != nil {
@@ -544,15 +600,12 @@ func (u *Updater) AppLatest(ctx context.Context) ([]byte, *Release, error) {
 
 // AppAPK opens the APK of rel for streaming. The caller closes the body.
 func (u *Updater) AppAPK(ctx context.Context, rel *Release) (*http.Response, error) {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, rel.assets[apkAsset], nil)
-	u.auth(req)
-	res, err := u.HTTP.Do(req)
+	res, err := u.get(ctx, rel.assets[apkAsset])
 	if err != nil {
 		return nil, err
 	}
 	if res.StatusCode != http.StatusOK {
-		res.Body.Close()
-		return nil, fmt.Errorf("download app: HTTP %d", res.StatusCode)
+		return nil, githubError(res, "download of the app")
 	}
 	return res, nil
 }
