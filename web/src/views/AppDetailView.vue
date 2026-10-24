@@ -60,6 +60,8 @@ const buildOptions = (Object.keys(BUILD_LABEL) as BuildType[]).map((k) => ({ val
 
 const running = computed(() => deployments.value.some((d) => ['queued', 'building', 'starting'].includes(d.status)))
 const selectedDep = computed(() => deployments.value.find((d) => d.id === selected.value))
+// A public repository entered by URL has no push webhook behind it.
+const external = computed(() => app.value?.installationId === 0)
 
 // The list shows the latest deployments; older ones are one click away.
 const DEPLOY_LIMIT = 5
@@ -197,7 +199,7 @@ async function saveSettings() {
 
 // The source alone changes, with the settings the app already has: unsaved edits in the
 // form stay in the form and are not silently written.
-async function changeSource(src: { repo: string; branch: string }) {
+async function changeSource(src: { repo: string; branch: string; external: boolean }) {
   const a = app.value
   if (!a) return
   const hadEdits = formDirty
@@ -206,6 +208,7 @@ async function changeSource(src: { repo: string; branch: string }) {
     await api.updateApp(props.id, {
       repo: src.repo,
       branch: src.branch,
+      external: src.external,
       rootDir: a.rootDir,
       build: a.build,
       port: a.port,
@@ -227,7 +230,7 @@ async function changeSource(src: { repo: string; branch: string }) {
     form.value.branch = src.branch
     checkResult.value = null
     sourceOpen.value = false
-    toast(`Source changed to ${src.repo}@${src.branch}. Redeploy to build from it.`)
+    toast(`Source changed to ${src.repo}@${src.branch}. ${src.external ? 'Automatic deploys are off for a public repository. ' : ''}Redeploy to build from it.`)
     await load()
     // load() may have skipped the clean refresh while the branch watcher was running.
     if (!hadEdits) formDirty = false
@@ -366,7 +369,9 @@ onBeforeUnmount(() => {
           <Icon name="github" :size="20" />
           <div class="grow">
             <div class="src-name">{{ app.repo }}</div>
-            <div class="muted small">Moved to another account or organization? Point the app at its new source.</div>
+            <div class="muted small">
+              {{ external ? 'Public repository · no push webhook, redeploy by hand' : 'Moved to another account or organization? Point the app at its new source.' }}
+            </div>
           </div>
           <button class="btn btn-text st" type="button" :disabled="busy" @click="sourceOpen = true">Change source</button>
         </div>
@@ -388,9 +393,9 @@ onBeforeUnmount(() => {
         <div class="setting">
           <div class="grow">
             <div>{{ app.dir ? 'Update the folder on every push' : 'Deploy on every push' }}</div>
-            <div class="muted small">On {{ form.branch }}</div>
+            <div class="muted small">{{ external ? 'Public repositories cannot notify the server: use Redeploy after a push' : 'On ' + form.branch }}</div>
           </div>
-          <M3Switch v-model="form.autoDeploy" label="Deploy on every push" />
+          <M3Switch v-model="form.autoDeploy" label="Deploy on every push" :disabled="external" />
         </div>
         <div class="actions">
           <button class="btn btn-filled st" type="button" :disabled="busy" @click="saveSettings">Save</button>
@@ -410,7 +415,7 @@ onBeforeUnmount(() => {
       </section>
     </template>
 
-    <ChangeSourceDialog v-model="sourceOpen" :repo="app.repo" :branch="app.branch" @change="changeSource" />
+    <ChangeSourceDialog v-model="sourceOpen" :repo="app.repo" :branch="app.branch" :external="external" @change="changeSource" />
   </div>
   <div v-else class="loading-block"><ShapeLoader label="Loading app" /></div>
 </template>

@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,8 +48,10 @@ type Creds struct {
 }
 
 type Client struct {
-	API  string // https://api.github.com, changed by tests
-	HTTP *http.Client
+	API string // https://api.github.com, changed by tests
+	// Archive serves public repository tarballs without using the API quota.
+	Archive string // https://codeload.github.com, changed by tests
+	HTTP    *http.Client
 
 	mu     sync.Mutex
 	creds  *Creds
@@ -62,7 +65,74 @@ type cachedToken struct {
 }
 
 func New() *Client {
-	return &Client{API: "https://api.github.com", HTTP: &http.Client{Timeout: 60 * time.Second}, tokens: map[int64]cachedToken{}}
+	return &Client{API: "https://api.github.com", Archive: "https://codeload.github.com",
+		HTTP: &http.Client{Timeout: 60 * time.Second}, tokens: map[int64]cachedToken{}}
+}
+
+var (
+	githubOwner = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$`)
+	githubRepo  = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
+)
+
+// ParseRepoURL accepts the ways a public repository is usually copied: a full GitHub
+// URL, github.com/owner/repo, owner/repo, or the SSH clone URL. It returns owner/repo.
+func ParseRepoURL(raw string) (string, error) {
+	s := strings.TrimRight(strings.TrimSpace(raw), "/")
+	if s == "" {
+		return "", errors.New("enter a GitHub repository URL")
+	}
+	if strings.HasPrefix(strings.ToLower(s), "git@github.com:") {
+		s = "https://github.com/" + s[len("git@github.com:"):]
+	}
+	if !strings.Contains(s, "://") {
+		lower := strings.ToLower(s)
+		if strings.HasPrefix(lower, "github.com/") || strings.HasPrefix(lower, "www.github.com/") {
+			s = "https://" + s
+		} else if strings.Count(s, "/") != 1 {
+			return "", errors.New("use a GitHub repository URL like https://github.com/owner/repo")
+		}
+	}
+	if !strings.Contains(s, "://") {
+		parts := strings.Split(s, "/")
+		return repoName(parts[0], parts[1])
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return "", errors.New("use a GitHub repository URL like https://github.com/owner/repo")
+	}
+	if host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www."); host != "github.com" {
+		return "", errors.New("only github.com repositories are supported")
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) != 2 {
+		return "", errors.New("the URL must point to a repository, not a file or folder")
+	}
+	return repoName(parts[0], parts[1])
+}
+
+func repoName(owner, name string) (string, error) {
+	name = strings.TrimSuffix(name, ".git")
+	if !githubOwner.MatchString(owner) || !githubRepo.MatchString(name) || name == "." || name == ".." {
+		return "", errors.New("invalid GitHub repository name")
+	}
+	return owner + "/" + name, nil
+}
+
+// PublicRepo checks a public repository without App credentials and returns its current
+// name, default branch and language. A private repository answers 404 here.
+func (c *Client) PublicRepo(ctx context.Context, name string) (*Repo, error) {
+	var raw struct {
+		FullName      string    `json:"full_name"`
+		Private       bool      `json:"private"`
+		DefaultBranch string    `json:"default_branch"`
+		Language      string    `json:"language"`
+		PushedAt      time.Time `json:"pushed_at"`
+	}
+	if err := c.asInstallation(ctx, 0, "/repos/"+name, &raw); err != nil {
+		return nil, err
+	}
+	return &Repo{FullName: raw.FullName, Private: raw.Private, DefaultBranch: raw.DefaultBranch,
+		Language: raw.Language, PushedAt: raw.PushedAt, InstallationID: 0}, nil
 }
 
 // SetCreds installs (or with nil, removes) the App credentials.
@@ -252,12 +322,18 @@ func (c *Client) call(ctx context.Context, method, path, auth string, body any) 
 	return io.ReadAll(io.LimitReader(res.Body, 16<<20))
 }
 
+// asInstallation reads an endpoint as the App installation. Installation 0 means a
+// repository used through its public URL: the same endpoints answer without a token.
 func (c *Client) asInstallation(ctx context.Context, installation int64, path string, v any) error {
-	tok, err := c.Token(ctx, installation)
-	if err != nil {
-		return err
+	auth := ""
+	if installation != 0 {
+		tok, err := c.Token(ctx, installation)
+		if err != nil {
+			return err
+		}
+		auth = "token " + tok
 	}
-	body, err := c.call(ctx, http.MethodGet, path, "token "+tok, nil)
+	body, err := c.call(ctx, http.MethodGet, path, auth, nil)
 	if err != nil {
 		return err
 	}
@@ -416,8 +492,21 @@ func (c *Client) Branches(ctx context.Context, installation int64, repo string) 
 	return out, nil
 }
 
-// Tarball streams the gzipped source of repo at sha. The caller closes it.
+// Tarball streams the gzipped source of repo at sha. The caller closes it. A public
+// repository (installation 0) is downloaded from codeload, which does not count against
+// the API rate limit.
 func (c *Client) Tarball(ctx context.Context, installation int64, repo, sha string) (io.ReadCloser, error) {
+	if installation == 0 {
+		archive := c.Archive
+		if archive == "" {
+			archive = "https://codeload.github.com"
+		}
+		res, err := c.request(ctx, http.MethodGet, strings.TrimSuffix(archive, "/")+"/"+repo+"/tar.gz/"+url.PathEscape(sha), "", nil)
+		if err != nil {
+			return nil, err
+		}
+		return res.Body, nil
+	}
 	tok, err := c.Token(ctx, installation)
 	if err != nil {
 		return nil, err

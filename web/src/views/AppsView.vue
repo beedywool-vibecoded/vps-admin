@@ -82,7 +82,7 @@ onBeforeUnmount(() => clearInterval(timer))
   <div class="page">
     <div class="page-title">
       <h1>Apps</h1>
-      <RouterLink v-if="gh?.connected" to="/apps/new" class="btn btn-filled btn-lg st"><Icon name="plus" :size="20" /> New app</RouterLink>
+      <RouterLink to="/apps/new" class="btn btn-filled btn-lg st"><Icon name="plus" :size="20" /> New app</RouterLink>
     </div>
 
     <section v-if="gh && !gh.connected" class="card connect">
@@ -93,6 +93,10 @@ onBeforeUnmount(() => clearInterval(timer))
           Creates a private GitHub App for this server in one click: it can only read the repositories you
           choose, and tells the server when you push so it redeploys by itself. GitHub then lets
           you pick your account or any of your organizations.
+        </p>
+        <p class="muted small">
+          You can also deploy any public repository from its URL without connecting GitHub, using
+          <RouterLink to="/apps/new">New app</RouterLink>.
         </p>
       </div>
       <button class="btn btn-filled btn-lg st" type="button" :disabled="connecting" @click="connect">

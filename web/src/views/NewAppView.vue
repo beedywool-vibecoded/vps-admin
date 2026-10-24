@@ -30,6 +30,10 @@ const accountOptions = computed(() => [
   })),
 ])
 const repo = ref<Repo | null>(null)
+const mode = ref<'github' | 'public'>('github')
+const publicUrl = ref('')
+const publicError = ref('')
+const resolving = ref(false)
 const detection = ref<Detection | null>(null)
 const detecting = ref(false)
 const saving = ref(false)
@@ -60,6 +64,8 @@ const shown = computed(() => {
 })
 const effectiveBuild = computed(() => (build.value === 'auto' ? detection.value?.build || '' : build.value))
 const needsPort = computed(() => effectiveBuild.value === 'dockerfile' && !port.value)
+// A public repository has no push webhook, so automatic deploys cannot happen.
+const isExternal = computed(() => repo.value?.installationId === 0)
 const step = ref<1 | 2 | 3>(1)
 const buildOptions = (Object.keys(BUILD_LABEL) as BuildType[]).map((k) => ({ value: k, label: BUILD_LABEL[k]! }))
 const invalid = computed(() => !name.value || !branch.value || needsPort.value || (!effectiveBuild.value && !detecting.value))
@@ -119,8 +125,26 @@ function pick(r: Repo) {
   rootDir.value = ''
   build.value = 'auto'
   port.value = 0
+  autoDeploy.value = r.installationId !== 0
   domain.value = gh.value?.domains ? suggestDomain(gh.value.publicUrl, name.value) : ''
   detect()
+}
+
+// Public URLs are read without the GitHub App, so they work on a panel that has no
+// connection. The app is rebuilt from its branch when the user deploys it by hand.
+async function usePublic() {
+  if (!publicUrl.value.trim()) return
+  resolving.value = true
+  publicError.value = ''
+  try {
+    const res = await api.publicRepo(publicUrl.value)
+    publicUrl.value = ''
+    pick(res.repo)
+  } catch (e) {
+    publicError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    resolving.value = false
+  }
 }
 
 let detectTimer: ReturnType<typeof setTimeout> | undefined
@@ -169,6 +193,7 @@ async function submit() {
       envFile: envFile.value,
       envPath: envPath.value,
       deploy: true,
+      external: isExternal.value,
     })
     router.push({ path: `/apps/${res.app.id}`, query: res.deployment ? { dep: String(res.deployment.id) } : {} })
   } catch (e) {
@@ -182,9 +207,10 @@ onMounted(async () => {
   window.addEventListener('resize', fitCard)
   try {
     gh.value = await api.github()
-    if (!gh.value.connected) return router.replace('/apps')
-    repos.value = (await api.repos()).repos
+    if (gh.value.connected) repos.value = (await api.repos()).repos
+    else mode.value = 'public'
   } catch (e) {
+    mode.value = 'public'
     toastError(e)
   } finally {
     loadingRepos.value = false
@@ -225,45 +251,86 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
 
     <Transition name="step" mode="out-in" @after-enter="fitCard">
     <section v-if="step === 1" ref="cardEl" class="card source" :style="{ maxHeight: cardMax ? `${cardMax}px` : undefined }">
-        <h2>Pick a repository</h2>
-        <div class="filters">
-          <label class="field search">
-            <Icon name="search" :size="20" />
-            <input v-model="query" placeholder="Search repositories" aria-label="Search repositories" />
-          </label>
-          <M3Select v-if="accountOptions.length > 2" v-model="account" class="account" label="Account" :options="accountOptions" />
-        </div>
-        <p v-if="gh?.app?.installUrl" class="muted small install">
-          Missing a repository? <a :href="gh.app.installUrl" target="_blank" rel="noopener">Choose repositories and organizations on GitHub</a>, then reload.
-        </p>
-        <div v-if="loadingRepos" class="loading-block"><ShapeLoader label="Loading repositories" /></div>
-        <p v-else-if="!repos.length" class="muted small">
-          The GitHub App cannot read any repository yet.
-          <a :href="gh?.app?.installUrl" target="_blank" rel="noopener">Choose repositories on GitHub</a>, then reload.
-        </p>
-        <div class="repos" role="listbox" aria-label="Repositories">
-          <button
-            v-for="r in shown"
-            :key="r.fullName"
-            type="button"
-            role="option"
-            class="repo st"
-            :class="{ sel: repo?.fullName === r.fullName }"
-            :aria-selected="repo?.fullName === r.fullName"
-            @click="pick(r)"
-          >
-            <span class="grow">
-              <span class="rname">{{ r.fullName.split('/')[1] }}</span>
-              <span class="muted small">
-                {{ r.fullName.split('/')[0] }}<template v-if="r.language"> · {{ r.language }}</template> · pushed {{ ago(r.pushedAt) }}
-              </span>
-            </span>
-            <Icon v-if="r.private" name="lock" :size="16" />
+        <h2>{{ mode === 'github' ? 'Pick a repository' : 'Public repository' }}</h2>
+        <div class="modes" role="tablist" aria-label="Repository source">
+          <button type="button" role="tab" class="mode st" :class="{ on: mode === 'github' }" :aria-selected="mode === 'github'" :disabled="!gh?.connected" @click="mode = 'github'">
+            <Icon name="github" :size="18" /> GitHub App
+          </button>
+          <button type="button" role="tab" class="mode st" :class="{ on: mode === 'public' }" :aria-selected="mode === 'public'" @click="mode = 'public'">
+            Public URL
           </button>
         </div>
-        <div v-if="repo" class="actions">
-          <button class="btn btn-filled btn-lg st" type="button" @click="step = 2">Continue</button>
-        </div>
+
+        <template v-if="mode === 'github'">
+          <div class="filters">
+            <label class="field search">
+              <Icon name="search" :size="20" />
+              <input v-model="query" placeholder="Search repositories" aria-label="Search repositories" />
+            </label>
+            <M3Select v-if="accountOptions.length > 2" v-model="account" class="account" label="Account" :options="accountOptions" />
+          </div>
+          <p v-if="gh?.app?.installUrl" class="muted small install">
+            Missing a repository? <a :href="gh.app.installUrl" target="_blank" rel="noopener">Choose repositories and organizations on GitHub</a>, then reload.
+          </p>
+          <div v-if="loadingRepos" class="loading-block"><ShapeLoader label="Loading repositories" /></div>
+          <p v-else-if="!repos.length" class="muted small">
+            The GitHub App cannot read any repository yet.
+            <a :href="gh?.app?.installUrl" target="_blank" rel="noopener">Choose repositories on GitHub</a>, then reload.
+          </p>
+          <div class="repos" role="listbox" aria-label="Repositories">
+            <button
+              v-for="r in shown"
+              :key="r.fullName"
+              type="button"
+              role="option"
+              class="repo st"
+              :class="{ sel: repo?.fullName === r.fullName }"
+              :aria-selected="repo?.fullName === r.fullName"
+              @click="pick(r)"
+            >
+              <span class="grow">
+                <span class="rname">{{ r.fullName.split('/')[1] }}</span>
+                <span class="muted small">
+                  {{ r.fullName.split('/')[0] }}<template v-if="r.language"> · {{ r.language }}</template> · pushed {{ ago(r.pushedAt) }}
+                </span>
+              </span>
+              <Icon v-if="r.private" name="lock" :size="16" />
+            </button>
+          </div>
+          <div v-if="repo" class="actions">
+            <button class="btn btn-filled btn-lg st" type="button" @click="step = 2">Continue</button>
+          </div>
+        </template>
+
+        <template v-else>
+          <p class="muted small url-hint">
+            Paste the URL of any public GitHub repository, like <code>https://github.com/navidrome/navidrome</code>. Nothing has to be installed on GitHub.
+          </p>
+          <label class="field public-url">
+            <Icon name="github" :size="20" />
+            <input
+              v-model="publicUrl"
+              placeholder="https://github.com/owner/repository"
+              aria-label="Public GitHub repository URL"
+              spellcheck="false"
+              autocomplete="off"
+              @keyup.enter="usePublic"
+            />
+          </label>
+          <p v-if="publicError" class="err small">{{ publicError }}</p>
+          <p v-else class="muted small">
+            A public repository cannot notify this server when you push, so automatic deploys stay off. Use Redeploy on the app after a push.
+          </p>
+          <div class="actions">
+            <button v-if="repo && isExternal" class="btn btn-text btn-lg st" type="button" @click="step = 2">
+              Keep {{ repo.fullName }}
+            </button>
+            <button class="btn btn-filled btn-lg st" type="button" :disabled="resolving || !publicUrl.trim()" @click="usePublic">
+              <ShapeLoader v-if="resolving" small label="Checking repository" />
+              {{ resolving ? 'Checking…' : 'Continue' }}
+            </button>
+          </div>
+        </template>
     </section>
 
       <section v-else-if="step === 2 && repo" ref="cardEl" class="card config" :style="{ maxHeight: cardMax ? `${cardMax}px` : undefined }">
@@ -271,7 +338,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
           <M3Shape kind="cookie" :size="44" fill="var(--pc)" />
           <div class="grow">
             <h2>{{ repo.fullName.split('/')[1] }}</h2>
-            <div class="muted small">{{ repo.fullName }}{{ repo.private ? ' · private' : '' }}</div>
+            <div class="muted small">{{ repo.fullName }}{{ isExternal ? ' · public repository' : repo.private ? ' · private' : '' }}</div>
           </div>
           <button class="btn btn-text st" type="button" @click="step = 1">Change</button>
         </div>
@@ -347,9 +414,11 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
           <div class="setting">
             <div class="grow">
               <div>Deploy on every push</div>
-              <div class="muted small">GitHub notifies the server; the new version replaces the old one without downtime</div>
+              <div class="muted small">
+                {{ isExternal ? 'Public repositories cannot notify the server: use Redeploy after a push' : 'GitHub notifies the server; the new version replaces the old one without downtime' }}
+              </div>
             </div>
-            <div class="ctl"><M3Switch v-model="autoDeploy" label="Deploy on every push" /></div>
+            <div class="ctl"><M3Switch v-model="autoDeploy" label="Deploy on every push" :disabled="isExternal" /></div>
           </div>
           <div class="setting">
             <div class="grow">
@@ -370,7 +439,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
           <M3Shape kind="cookie" :size="44" fill="var(--pc)" />
           <div class="grow">
             <h2>Ready to deploy</h2>
-            <div class="muted small">{{ repo.fullName }}{{ repo.private ? ' · private' : '' }}</div>
+            <div class="muted small">{{ repo.fullName }}{{ isExternal ? ' · public repository' : repo.private ? ' · private' : '' }}</div>
           </div>
         </div>
 
@@ -383,7 +452,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
           <div><dt>Port</dt><dd>{{ port || 'None' }}</dd></div>
           <div><dt>Memory limit</dt><dd>{{ memoryMb ? `${memoryMb} MiB` : 'No limit' }}</dd></div>
           <div><dt>Environment</dt><dd>{{ envCount ? `${envCount} variable${envCount > 1 ? 's' : ''}` : 'None' }}{{ envFile ? ` · ${envPath || '.env'} file` : '' }}</dd></div>
-          <div><dt>Auto-deploy</dt><dd>{{ autoDeploy ? 'On every push' : 'Off' }}</dd></div>
+          <div><dt>Auto-deploy</dt><dd>{{ isExternal ? 'Off (public repository)' : autoDeploy ? 'On every push' : 'Off' }}</dd></div>
           <div><dt>Versions kept</dt><dd>{{ keep }}</dd></div>
         </dl>
 
@@ -522,6 +591,38 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
 .source h2,
 .config h2 {
   font-size: 20px;
+}
+.modes {
+  display: flex;
+  gap: 6px;
+}
+.mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--outline);
+  border-radius: 20px;
+  background: transparent;
+  color: var(--on-surface);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+}
+.mode.on {
+  border-color: var(--primary);
+  background: var(--pc);
+  color: var(--on-pc);
+}
+.mode:disabled {
+  opacity: 0.45;
+}
+.public-url {
+  width: 100%;
+}
+.url-hint {
+  margin: 0;
 }
 .filters {
   display: flex;

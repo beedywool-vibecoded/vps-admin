@@ -166,6 +166,34 @@ func githubStatusCode(err error) int {
 	return http.StatusBadGateway
 }
 
+// githubPublicRepo resolves a repository URL the user pasted, without requiring the
+// GitHub App. Only public repositories answer: private ones need the App connection.
+func (s *Server) githubPublicRepo(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		URL string `json:"url"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	name, err := github.ParseRepoURL(body.URL)
+	if err != nil {
+		writeErrorMsg(w, http.StatusBadRequest, "invalid", err.Error())
+		return
+	}
+	rp, err := s.GitHub.PublicRepo(r.Context(), name)
+	if err != nil {
+		var ae *github.APIError
+		if errors.As(err, &ae) && ae.Status == http.StatusNotFound {
+			writeErrorMsg(w, http.StatusBadRequest, "invalid", name+" is not public: check the URL, or connect GitHub to deploy a private repository")
+			return
+		}
+		writeErrorMsg(w, githubStatusCode(err), "github_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"repo": rp})
+}
+
 func (s *Server) githubDetect(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	inst, _ := strconv.ParseInt(q.Get("installation"), 10, 64)
@@ -326,6 +354,10 @@ type appInput struct {
 	Allow       string  `json:"allow"`
 	Env         []envIn `json:"env"`
 	Deploy      bool    `json:"deploy"`
+	// External marks a public repository entered by URL instead of one the GitHub App
+	// can read. It has no push webhook, so automatic deploys stay off. A pointer tells
+	// an update that leaves the source alone apart from an explicit switch.
+	External *bool `json:"external"`
 	// Optional: the variables can be written to a file in the app's folder instead of
 	// being handed to the app. Pointers so an older panel cannot wipe the setting.
 	EnvFile *bool   `json:"envFile"`
@@ -424,6 +456,51 @@ func (s *Server) accessError(ctx context.Context, in *appInput) string {
 	return ""
 }
 
+// publicSource checks a repository entered by URL. It is always read without the App
+// credentials, so a public repository works even when GitHub is not connected.
+func (s *Server) publicSource(ctx context.Context, name string) (string, error) {
+	rp, err := s.GitHub.PublicRepo(ctx, name)
+	if err != nil {
+		return "", err
+	}
+	if rp.Private {
+		return "", fmt.Errorf("%s is private: connect GitHub to deploy it", name)
+	}
+	return rp.FullName, nil
+}
+
+// resolveSource turns the repository field into a stored source. external reads it as a
+// public URL; otherwise the GitHub App must be able to see it.
+func (s *Server) resolveSource(ctx context.Context, raw string, external bool) (string, int64, error) {
+	name, err := github.ParseRepoURL(raw)
+	if err != nil {
+		return "", 0, err
+	}
+	if external {
+		repo, err := s.publicSource(ctx, name)
+		return repo, 0, err
+	}
+	repo, inst, err := s.readRepo(ctx, name)
+	if err != nil {
+		return "", 0, err
+	}
+	if inst == 0 {
+		return "", 0, fmt.Errorf("the GitHub App has no access to %s", name)
+	}
+	return repo, inst, nil
+}
+
+func sourceStatus(err error) int {
+	var ae *github.APIError
+	if errors.Is(err, github.ErrNotConnected) {
+		return http.StatusPreconditionFailed
+	}
+	if errors.As(err, &ae) {
+		return githubStatusCode(err)
+	}
+	return http.StatusBadRequest
+}
+
 // sealEnv validates and encrypts variables, keeping existing secrets marked keep.
 func (s *Server) sealEnv(ctx context.Context, appID string, in []envIn) ([]store.EnvVar, string) {
 	old := map[string]store.EnvVar{}
@@ -468,6 +545,10 @@ func (s *Server) appCreate(w http.ResponseWriter, r *http.Request) {
 		writeErrorMsg(w, http.StatusBadRequest, "invalid", "the name must be 2 to 40 lowercase letters, digits or dashes")
 		return
 	}
+	if strings.TrimSpace(in.Repo) == "" {
+		writeErrorMsg(w, http.StatusBadRequest, "invalid", "repository is required")
+		return
+	}
 	if msg := in.validate(); msg != "" {
 		writeErrorMsg(w, http.StatusBadRequest, "invalid", msg)
 		return
@@ -476,17 +557,21 @@ func (s *Server) appCreate(w http.ResponseWriter, r *http.Request) {
 		writeErrorMsg(w, http.StatusBadRequest, "invalid", msg)
 		return
 	}
-	// The repository must be one the App can read; that also gives its installation.
-	repo, inst, err := s.readRepo(r.Context(), in.Repo)
+	external := in.External != nil && *in.External
+	repo, inst, err := s.resolveSource(r.Context(), in.Repo, external)
 	if err != nil {
-		writeErrorMsg(w, githubStatusCode(err), "github_failed", err.Error())
-		return
-	}
-	if inst == 0 {
-		writeErrorMsg(w, http.StatusBadRequest, "invalid", "the GitHub App has no access to "+in.Repo)
+		var ae *github.APIError
+		if errors.As(err, &ae) && ae.Status == http.StatusNotFound && external {
+			writeErrorMsg(w, http.StatusBadRequest, "invalid", in.Repo+" is not public: check the URL, or connect GitHub to deploy a private repository")
+			return
+		}
+		writeErrorMsg(w, sourceStatus(err), "invalid", err.Error())
 		return
 	}
 	in.Repo = repo
+	if inst == 0 {
+		in.AutoDeploy = false
+	}
 	env, msg := s.sealEnv(r.Context(), "", in.Env)
 	if msg != "" {
 		writeErrorMsg(w, http.StatusBadRequest, "invalid", msg)
@@ -564,15 +649,19 @@ func (s *Server) appUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	// A repository can be renamed or moved to another account (for example from a user to
 	// an organization). Follow its new installation when the source changes, so pushes and
-	// deployments read the right repository.
-	if in.Repo != "" && !strings.EqualFold(in.Repo, a.Repo) {
-		repo, inst, err := s.readRepo(r.Context(), in.Repo)
+	// deployments read the right repository. An external source is a public URL entered by
+	// the user, with no App installation behind it.
+	external := a.InstallationID == 0
+	requestedExternal := in.External != nil && *in.External
+	if in.Repo != "" && (!strings.EqualFold(in.Repo, a.Repo) || (in.External != nil && requestedExternal != external)) {
+		repo, inst, err := s.resolveSource(r.Context(), in.Repo, requestedExternal)
 		if err != nil {
-			writeErrorMsg(w, githubStatusCode(err), "github_failed", err.Error())
-			return
-		}
-		if inst == 0 {
-			writeErrorMsg(w, http.StatusBadRequest, "invalid", "the GitHub App has no access to "+in.Repo)
+			var ae *github.APIError
+			if errors.As(err, &ae) && ae.Status == http.StatusNotFound && requestedExternal {
+				writeErrorMsg(w, http.StatusBadRequest, "invalid", in.Repo+" is not public: check the URL, or connect GitHub to deploy a private repository")
+				return
+			}
+			writeErrorMsg(w, sourceStatus(err), "invalid", err.Error())
 			return
 		}
 		a.Repo, a.InstallationID = repo, inst
@@ -587,6 +676,9 @@ func (s *Server) appUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	a.Branch, a.RootDir, a.Build, a.Port, a.Domain = in.Branch, in.RootDir, in.Build, in.Port, in.Domain
 	a.AutoDeploy, a.Keep, a.MemoryMB = in.AutoDeploy, in.Keep, in.MemoryMB
+	if a.InstallationID == 0 {
+		a.AutoDeploy = false
+	}
 	a.InstallCmd, a.BuildCmd, a.StartCmd = strings.TrimSpace(in.InstallCmd), strings.TrimSpace(in.BuildCmd), strings.TrimSpace(in.StartCmd)
 	a.Dockerfile, a.ComposeFile = strings.TrimSpace(in.Dockerfile), strings.TrimSpace(in.ComposeFile)
 	a.Access, a.Allow = in.Access, strings.TrimSpace(in.Allow)

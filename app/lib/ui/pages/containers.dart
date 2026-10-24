@@ -27,6 +27,8 @@ class _ContainersPageState extends State<ContainersPage> {
   bool loading = true;
   String error = '', query = '';
   final busy = <String>{};
+  Map<String, String> policies = {};
+  final bootBusy = <String>{};
   Timer? _timer;
 
   Api get api => Live.read(context).api;
@@ -59,11 +61,57 @@ class _ContainersPageState extends State<ContainersPage> {
           list = l;
           error = '';
         });
+        await _loadPolicies(l);
       }
     } catch (e) {
       if (mounted) setState(() => error = errText(e));
     } finally {
       if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> _loadPolicies(List<DockerContainer> items) async {
+    final ids = items.map((c) => c.id).toList();
+    if (ids.isEmpty) return;
+    try {
+      final p = await api.containerRestartPolicies(ids);
+      if (mounted) setState(() => policies = p);
+    } catch (_) {
+      // The switch stays off; the list still works without Docker's answer.
+    }
+  }
+
+  bool _startsOnBoot(String? policy) =>
+      policy == 'always' || policy == 'unless-stopped';
+  int _bootCount(List<DockerContainer> items) =>
+      items.where((c) => _startsOnBoot(policies[c.id])).length;
+  bool _bootOn(List<DockerContainer> items) =>
+      items.isNotEmpty && _bootCount(items) == items.length;
+  String _bootNote(List<DockerContainer> items) {
+    final n = _bootCount(items);
+    if (n == 0) return 'No container here starts on boot.';
+    if (n == items.length) return 'Every container here starts on boot.';
+    return '$n of ${items.length} containers start on boot.';
+  }
+
+  Future<void> _setBoot(ContainerGroup g, bool on) async {
+    setState(() => bootBusy.add(g.name));
+    try {
+      final p = await api.setContainerRestart(
+        g.items.map((c) => c.id).toList(),
+        on,
+      );
+      if (!mounted) return;
+      setState(() => policies = {...policies, ...p});
+      showInfo(
+        context,
+        '${Live.read(context).groupTitle(g.name)}: '
+        '${on ? 'starts on boot' : 'no longer starts on boot'}',
+      );
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => bootBusy.remove(g.name));
     }
   }
 
@@ -299,6 +347,32 @@ class _ContainersPageState extends State<ContainersPage> {
           ),
         for (var i = 0; i < g.items.length; i++)
           _row(g.items[i], first: i == 0 && folderScripts.isEmpty),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(6, 12, 0, 2),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Start on boot'),
+                    Muted(
+                      '${_bootNote(g.items)} Docker keeps this per container, '
+                      "so it survives a reboot; a redeploy can put the compose file's "
+                      'policy back.',
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: _bootOn(g.items),
+                onChanged: bootBusy.contains(g.name)
+                    ? null
+                    : (v) => _setBoot(g, v),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }

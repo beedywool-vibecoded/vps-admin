@@ -126,7 +126,7 @@ func (s *Store) Apps(ctx context.Context) ([]App, error) {
 
 // AppsForPush lists the apps that deploy automatically from this repo and branch.
 func (s *Store) AppsForPush(ctx context.Context, repo, branch string) ([]App, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+appCols+` FROM apps WHERE repo = ? COLLATE NOCASE AND branch = ? AND auto_deploy = 1`, repo, branch)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+appCols+` FROM apps WHERE repo = ? COLLATE NOCASE AND branch = ? AND auto_deploy = 1 AND installation_id != 0`, repo, branch)
 	if err != nil {
 		return nil, err
 	}

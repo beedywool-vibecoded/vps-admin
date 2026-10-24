@@ -138,6 +138,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/github/webhook", s.githubWebhook)
 	mux.Handle("DELETE /api/github", full(s.githubDisconnect))
 	mux.Handle("GET /api/github/repos", full(s.githubRepos))
+	mux.Handle("POST /api/github/public", full(s.githubPublicRepo))
 	mux.Handle("GET /api/github/detect", full(s.githubDetect))
 	mux.Handle("GET /api/github/branches", full(s.githubBranches))
 

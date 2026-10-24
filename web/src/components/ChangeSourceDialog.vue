@@ -10,8 +10,8 @@ import { api, type Installation, type Repo } from '@/lib/api'
 import { ago } from '@/lib/format'
 
 const open = defineModel<boolean>({ required: true })
-const props = defineProps<{ repo: string; branch: string }>()
-const emit = defineEmits<{ change: [source: { repo: string; branch: string }] }>()
+const props = defineProps<{ repo: string; branch: string; external?: boolean }>()
+const emit = defineEmits<{ change: [source: { repo: string; branch: string; external: boolean }] }>()
 
 const repos = ref<Repo[]>([])
 const installations = ref<Installation[]>([])
@@ -22,6 +22,9 @@ const branch = ref('')
 const branches = ref<string[]>([])
 const loading = ref(false)
 const problem = ref('')
+const publicUrl = ref('')
+const publicError = ref('')
+const resolving = ref(false)
 
 const accountOptions = computed(() => [
   { value: 'all', label: 'All accounts' },
@@ -40,7 +43,9 @@ const shown = computed(() => {
 const branchOptions = computed(() => [...new Set([branch.value, ...branches.value].filter(Boolean))].map((b) => ({ value: b, label: b })))
 // A transferred repository keeps its commits but changes owner: the stored name then
 // no longer appears in what the App can read.
-const missing = computed(() => !!props.repo && !repos.value.some((r) => r.fullName.toLowerCase() === props.repo.toLowerCase()))
+const missing = computed(
+  () => !props.external && !!props.repo && !repos.value.some((r) => r.fullName.toLowerCase() === props.repo.toLowerCase()),
+)
 
 function loadBranches(r: Repo, keep: string) {
   branches.value = []
@@ -69,6 +74,8 @@ watch(open, async (v) => {
   account.value = 'all'
   picked.value = null
   branches.value = []
+  publicUrl.value = ''
+  publicError.value = ''
   try {
     const [gh, list] = await Promise.all([api.github(), api.repos()])
     installations.value = gh.installations ?? []
@@ -88,9 +95,24 @@ watch(open, async (v) => {
   }
 })
 
+async function usePublic() {
+  if (!publicUrl.value.trim()) return
+  resolving.value = true
+  publicError.value = ''
+  try {
+    const res = await api.publicRepo(publicUrl.value)
+    publicUrl.value = ''
+    pick(res.repo)
+  } catch (e) {
+    publicError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    resolving.value = false
+  }
+}
+
 function change() {
   if (!picked.value || !branch.value.trim()) return
-  emit('change', { repo: picked.value.fullName, branch: branch.value.trim() })
+  emit('change', { repo: picked.value.fullName, branch: branch.value.trim(), external: picked.value.installationId === 0 })
 }
 </script>
 
@@ -99,8 +121,28 @@ function change() {
     <div class="src-body">
       <p class="muted small note">
         The app keeps its settings and deployment history. Pushes and deployments follow the repository picked here,
-        including when it was moved to another account or organization.
+        including when it was moved to another account or organization. A public repository entered by URL has no
+        push webhook: automatic deploys stay off.
       </p>
+      <div class="public">
+        <div class="muted small">Use a public repository instead</div>
+        <div class="filters">
+          <label class="field search">
+            <Icon name="github" :size="20" />
+            <input
+              v-model="publicUrl"
+              placeholder="https://github.com/owner/repository"
+              aria-label="Public GitHub repository URL"
+              spellcheck="false"
+              @keyup.enter="usePublic"
+            />
+          </label>
+          <button class="btn btn-outlined st" type="button" :disabled="resolving || !publicUrl.trim()" @click="usePublic">
+            {{ resolving ? 'Checking…' : 'Use URL' }}
+          </button>
+        </div>
+        <p v-if="publicError" class="note small">{{ publicError }}</p>
+      </div>
       <div v-if="loading" class="loading-block"><ShapeLoader label="Loading repositories" /></div>
       <template v-else>
         <div v-if="problem" class="note small">{{ problem }}</div>
@@ -136,6 +178,9 @@ function change() {
           </button>
         </div>
         <p v-if="!shown.length" class="muted small empty">No repository matches.</p>
+        <p v-if="picked?.installationId === 0" class="muted small">
+          Using public repository <code>{{ picked.fullName }}</code>. Automatic deploys stay off.
+        </p>
         <M3Select v-if="picked" v-model="branch" label="Branch" :options="branchOptions" />
       </template>
     </div>
@@ -159,6 +204,14 @@ function change() {
 }
 .note code {
   overflow-wrap: anywhere;
+}
+.public {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--sch);
 }
 .filters {
   display: flex;

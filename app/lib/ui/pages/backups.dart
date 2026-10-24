@@ -156,7 +156,9 @@ class _BackupsPageState extends State<BackupsPage> {
     setState(() => busy = 'test');
     try {
       final r = await api.testBackup();
-      if (mounted) showInfo(context, r['detail'] as String? ?? 'Google Drive answers');
+      if (mounted) {
+        showInfo(context, r['detail'] as String? ?? 'Google Drive answers');
+      }
     } catch (e) {
       if (mounted) showError(context, e);
     } finally {
@@ -585,7 +587,7 @@ class _BackupsPageState extends State<BackupsPage> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: WButton(
-                    'Save',
+                    'Save settings',
                     icon: 'check',
                     kind: BtnKind.outlined,
                     busy: busy == 'save',
@@ -681,6 +683,7 @@ class _BackupsPageState extends State<BackupsPage> {
                     WIconButton(
                       'refresh',
                       tooltip: 'Refresh',
+                      color: cs.primary,
                       onPressed: () => _load(archives: true),
                     ),
                   ],

@@ -339,6 +339,8 @@ export interface AppInput {
   envFile?: boolean
   envPath?: string
   deploy?: boolean
+  // A public repository entered by URL: no GitHub App installation and no webhook.
+  external?: boolean
 }
 
 export interface UpdateCheck {
@@ -605,6 +607,7 @@ export const api = {
   githubManifest: (org = '') => request<{ url: string; manifest: string }>('POST', '/api/github/manifest', { org }),
   githubDisconnect: () => request<void>('DELETE', '/api/github'),
   repos: () => request<{ repos: Repo[] }>('GET', '/api/github/repos'),
+  publicRepo: (url: string) => request<{ repo: Repo }>('POST', '/api/github/public', { url }),
   branches: (installationId: number, repo: string) =>
     request<{ branches: string[] }>('GET', `/api/github/branches?installation=${installationId}&repo=${encodeURIComponent(repo)}`),
   detect: (r: Repo, ref: string, root: string) =>

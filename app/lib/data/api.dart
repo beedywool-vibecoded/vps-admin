@@ -127,6 +127,23 @@ class Api {
           .toList();
   Future<void> containerAction(String id, String action) =>
       post('/api/docker/containers/$id/$action');
+  Future<Map<String, String>> containerRestartPolicies(
+    List<String> ids,
+  ) async => _policies(
+    await get(
+      '/api/docker/restart?ids=${ids.map(Uri.encodeQueryComponent).join(',')}',
+    ),
+  );
+  Future<Map<String, String>> setContainerRestart(
+    List<String> ids,
+    bool start,
+  ) async => _policies(
+    await post('/api/docker/restart', {'ids': ids, 'start': start}),
+  );
+  Map<String, String> _policies(Map<String, dynamic> j) => {
+    for (final e in (j['policies'] as Map).entries)
+      e.key as String: e.value as String,
+  };
   Future<String> containerLogs(String id) async =>
       (await get('/api/docker/containers/$id/logs?tail=300'))['logs'] as String;
 
@@ -350,6 +367,8 @@ class Api {
   Future<List<Map<String, dynamic>>> repos() async =>
       ((await get('/api/github/repos'))['repos'] as List)
           .cast<Map<String, dynamic>>();
+  Future<Map<String, dynamic>> publicRepo(String url) =>
+      post('/api/github/public', {'url': url});
   Future<Map<String, dynamic>> detect(
     Map<String, dynamic> repo,
     String ref,

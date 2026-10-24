@@ -146,8 +146,7 @@ class _AppsPageState extends State<AppsPage> {
         PageTitle(
           'Apps',
           actions: [
-            if (connected)
-              WButton('New app', icon: 'plus', large: true, onPressed: _newApp),
+            WButton('New app', icon: 'plus', large: true, onPressed: _newApp),
           ],
         ),
         if (gh != null && !connected)
@@ -167,6 +166,9 @@ class _AppsPageState extends State<AppsPage> {
                 ),
                 const Muted(
                   'GitHub needs a browser for this step: it opens the panel, where you press Connect GitHub.',
+                ),
+                const Muted(
+                  'You can also deploy any public repository from its URL without connecting GitHub, using New app.',
                 ),
                 WButton(
                   'Connect in the browser',
@@ -1044,6 +1046,7 @@ class _AppDetailPageState extends State<AppDetailPage> {
   List<Widget> _settings(BuildContext context, Map<String, dynamic> a) {
     final cs = Theme.of(context).colorScheme;
     final linked = (a['dir'] as String? ?? '').isNotEmpty;
+    final external = (a['installationId'] as num?)?.toInt() == 0;
     final live = a['live'] as Map<String, dynamic>?;
     final effective = buildType == 'auto'
         ? (live?['build'] as String? ?? '')
@@ -1134,16 +1137,22 @@ class _AppDetailPageState extends State<AppDetailPage> {
                             ? 'Update the folder on every push'
                             : 'Deploy on every push',
                       ),
-                      Muted('On $branch'),
+                      Muted(
+                        external
+                            ? 'Public repositories cannot notify the server: use Redeploy after a push'
+                            : 'On $branch',
+                      ),
                     ],
                   ),
                 ),
                 Switch(
                   value: autoDeploy,
-                  onChanged: (v) => setState(() {
-                    autoDeploy = v;
-                    dirty();
-                  }),
+                  onChanged: external
+                      ? null
+                      : (v) => setState(() {
+                          autoDeploy = v;
+                          dirty();
+                        }),
                 ),
               ],
             ),

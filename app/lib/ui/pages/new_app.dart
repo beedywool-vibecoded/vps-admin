@@ -43,11 +43,14 @@ class _NewAppPageState extends State<NewAppPage> {
   bool loadingRepos = true,
       detecting = false,
       saving = false,
+      resolvingPublic = false,
       autoDeploy = true;
+  String publicError = '';
   List<Map<String, dynamic>> env = [];
   // The variables go to the app's environment, or to a file compose reads.
   bool envFile = false;
   final name = TextEditingController();
+  final _publicUrl = TextEditingController();
   final f = <String, TextEditingController>{
     for (final k in [
       'rootDir',
@@ -76,13 +79,19 @@ class _NewAppPageState extends State<NewAppPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
         final g = await api.github();
-        final r = await api.repos();
         if (!mounted) return;
         setState(() {
           gh = g;
-          repos = r;
           access = g['domains'] == true ? 'public' : 'local';
         });
+        // A public URL needs no GitHub App: the repository list is only offered when
+        // the App is connected.
+        if (g['connected'] == true) {
+          try {
+            final r = await api.repos();
+            if (mounted) setState(() => repos = r);
+          } catch (_) {}
+        }
       } catch (e) {
         if (mounted) showError(context, e);
       } finally {
@@ -94,6 +103,7 @@ class _NewAppPageState extends State<NewAppPage> {
   @override
   void dispose() {
     _detectTimer?.cancel();
+    _publicUrl.dispose();
     super.dispose();
   }
 
@@ -141,6 +151,7 @@ class _NewAppPageState extends State<NewAppPage> {
       f['rootDir']!.text = '';
       buildType = 'auto';
       f['port']!.text = '';
+      autoDeploy = r['installationId'] != 0;
       f['domain']!.text = gh?['domains'] == true
           ? suggestDomain(gh?['publicUrl'] as String? ?? '', n)
           : '';
@@ -158,6 +169,28 @@ class _NewAppPageState extends State<NewAppPage> {
         )
         .catchError((_) => null);
     _detect();
+  }
+
+  // Reads a public repository without the GitHub App. It works on a panel that has no
+  // connection, and keeps automatic deploys off because there is no push webhook.
+  Future<void> _usePublic() async {
+    final url = _publicUrl.text.trim();
+    if (url.isEmpty || resolvingPublic) return;
+    setState(() {
+      resolvingPublic = true;
+      publicError = '';
+    });
+    try {
+      final res = await api.publicRepo(url);
+      if (!mounted) return;
+      final r = res['repo'] as Map<String, dynamic>;
+      _publicUrl.clear();
+      _pick(r);
+    } catch (e) {
+      if (mounted) setState(() => publicError = errText(e));
+    } finally {
+      if (mounted) setState(() => resolvingPublic = false);
+    }
   }
 
   Future<void> _detect() async {
@@ -224,6 +257,7 @@ class _NewAppPageState extends State<NewAppPage> {
         'envFile': envFile,
         'envPath': f['envPath']!.text.trim(),
         'deploy': true,
+        'external': r['installationId'] == 0,
       });
       if (!mounted) return;
       final id = (res['app'] as Map)['id'] as String;
@@ -392,95 +426,167 @@ class _NewAppPageState extends State<NewAppPage> {
                               'Pick a repository',
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
-                            SearchField(
-                              hint: 'Search repositories',
-                              onChanged: (v) => setState(() => query = v),
-                            ),
-                            if (loadingRepos)
-                              const LoadingBlock(label: 'Loading repositories')
-                            else if (repos.isEmpty)
-                              const Muted(
-                                'The GitHub App cannot read any repository yet. Choose repositories on GitHub (Apps page), then come back.',
+                            Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: cs.surfaceContainerHigh,
+                                borderRadius: BorderRadius.circular(18),
                               ),
-                            ListView(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              padding: EdgeInsets.zero,
-                              children: [
-                                for (final r in shown)
-                                  Padding(
-                                    padding: const EdgeInsets.only(bottom: 6),
-                                    child: Material(
-                                      color: repo?['fullName'] == r['fullName']
-                                          ? cs.primaryContainer
-                                          : Colors.transparent,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                        side: BorderSide(
-                                          color:
-                                              repo?['fullName'] == r['fullName']
-                                              ? cs.primary
-                                              : Colors.transparent,
-                                          width: 2,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                spacing: 10,
+                                children: [
+                                  const Text(
+                                    'Public repository',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  const Muted(
+                                    'Paste any public GitHub URL. Nothing has to be installed on GitHub.',
+                                  ),
+                                  FilledField(
+                                    label: 'GitHub URL',
+                                    controller: _publicUrl,
+                                    hint:
+                                        'https://github.com/navidrome/navidrome',
+                                    mono: true,
+                                  ),
+                                  if (publicError.isNotEmpty)
+                                    Muted(publicError),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    spacing: 8,
+                                    children: [
+                                      if (repo?['installationId'] == 0)
+                                        WButton(
+                                          'Continue',
+                                          kind: BtnKind.text,
+                                          onPressed: () =>
+                                              setState(() => step = 2),
                                         ),
+                                      WButton(
+                                        resolvingPublic
+                                            ? 'Checking…'
+                                            : 'Use this URL',
+                                        kind: BtnKind.tonal,
+                                        onPressed: resolvingPublic
+                                            ? null
+                                            : _usePublic,
                                       ),
-                                      child: InkWell(
-                                        borderRadius: BorderRadius.circular(16),
-                                        onTap: () => _pick(r),
-                                        child: Container(
-                                          constraints: const BoxConstraints(
-                                            minHeight: 64,
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (gh?['connected'] == true) ...[
+                              Text(
+                                'GitHub repositories',
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                              SearchField(
+                                hint: 'Search repositories',
+                                onChanged: (v) => setState(() => query = v),
+                              ),
+                              if (loadingRepos)
+                                const LoadingBlock(
+                                  label: 'Loading repositories',
+                                )
+                              else if (repos.isEmpty)
+                                const Muted(
+                                  'The GitHub App cannot read any repository yet. Choose repositories on GitHub (Apps page), then come back.',
+                                ),
+                              ListView(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                padding: EdgeInsets.zero,
+                                children: [
+                                  for (final r in shown)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 6),
+                                      child: Material(
+                                        color:
+                                            repo?['fullName'] == r['fullName']
+                                            ? cs.primaryContainer
+                                            : Colors.transparent,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            16,
                                           ),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 16,
-                                            vertical: 12,
+                                          side: BorderSide(
+                                            color:
+                                                repo?['fullName'] ==
+                                                    r['fullName']
+                                                ? cs.primary
+                                                : Colors.transparent,
+                                            width: 2,
                                           ),
-                                          child: Row(
-                                            children: [
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      (r['fullName'] as String)
-                                                          .split('/')
-                                                          .last,
-                                                      style: const TextStyle(
-                                                        fontSize: 15,
-                                                        fontWeight:
-                                                            FontWeight.w500,
+                                        ),
+                                        child: InkWell(
+                                          borderRadius: BorderRadius.circular(
+                                            16,
+                                          ),
+                                          onTap: () => _pick(r),
+                                          child: Container(
+                                            constraints: const BoxConstraints(
+                                              minHeight: 64,
+                                            ),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 16,
+                                              vertical: 12,
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        (r['fullName']
+                                                                as String)
+                                                            .split('/')
+                                                            .last,
+                                                        style: const TextStyle(
+                                                          fontSize: 15,
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                        ),
                                                       ),
-                                                    ),
-                                                    Muted(
-                                                      '${(r['fullName'] as String).split('/').first}${(r['language'] as String? ?? '').isNotEmpty ? ' · ${r['language']}' : ''} · pushed ${agoIso(r['pushedAt'] as String?)}',
-                                                      maxLines: 1,
-                                                    ),
-                                                  ],
+                                                      Muted(
+                                                        '${(r['fullName'] as String).split('/').first}${(r['language'] as String? ?? '').isNotEmpty ? ' · ${r['language']}' : ''} · pushed ${agoIso(r['pushedAt'] as String?)}',
+                                                        maxLines: 1,
+                                                      ),
+                                                    ],
+                                                  ),
                                                 ),
-                                              ),
-                                              if (r['private'] == true)
-                                                WIcon(
-                                                  'lock',
-                                                  size: 16,
-                                                  color: cs.onSurfaceVariant,
-                                                ),
-                                            ],
+                                                if (r['private'] == true)
+                                                  WIcon(
+                                                    'lock',
+                                                    size: 16,
+                                                    color: cs.onSurfaceVariant,
+                                                  ),
+                                              ],
+                                            ),
                                           ),
                                         ),
                                       ),
                                     ),
+                                ],
+                              ),
+                              if (repo != null)
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: WButton(
+                                    'Continue',
+                                    large: true,
+                                    onPressed: () => setState(() => step = 2),
                                   ),
-                              ],
-                            ),
-                            if (repo != null)
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: WButton(
-                                  'Continue',
-                                  large: true,
-                                  onPressed: () => setState(() => step = 2),
                                 ),
+                            ] else
+                              const Muted(
+                                'GitHub is not connected. Connect it from the Apps page to pick a repository, or use a public URL above.',
                               ),
                           ],
                         ),
@@ -530,6 +636,7 @@ class _NewAppPageState extends State<NewAppPage> {
   Widget _config(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final r = repo!;
+    final external = r['installationId'] == 0;
     final branchOpts = {
       ...[branch, ...branches].where((b) => b.isNotEmpty),
     }.map((b) => (b, b)).toList();
@@ -552,7 +659,11 @@ class _NewAppPageState extends State<NewAppPage> {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     Muted(
-                      '${r['fullName']}${r['private'] == true ? ' · private' : ''}',
+                      '${r['fullName']}${external
+                          ? ' · public repository'
+                          : r['private'] == true
+                          ? ' · private'
+                          : ''}',
                     ),
                   ],
                 ),
@@ -739,13 +850,15 @@ class _NewAppPageState extends State<NewAppPage> {
           _group(context, 'Deploy', 'What happens after each push to the branch.', [
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Deploy on every push'),
+                      const Text('Deploy on every push'),
                       Muted(
-                        'GitHub notifies the server; the new version replaces the old one without downtime',
+                        external
+                            ? 'Public repositories cannot notify the server: use Redeploy after a push'
+                            : 'GitHub notifies the server; the new version replaces the old one without downtime',
                       ),
                     ],
                   ),
@@ -755,7 +868,9 @@ class _NewAppPageState extends State<NewAppPage> {
                     value: autoDeploy,
                     // The painted track reaches the edge, like the fields beside it.
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    onChanged: (v) => setState(() => autoDeploy = v),
+                    onChanged: external
+                        ? null
+                        : (v) => setState(() => autoDeploy = v),
                   ),
                 ),
               ],
@@ -805,6 +920,7 @@ class _NewAppPageState extends State<NewAppPage> {
   Widget _review(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final r = repo!;
+    final external = r['installationId'] == 0;
     final root = f['rootDir']!.text.trim();
     final port = f['port']!.text.trim();
     final mem = f['memoryMb']!.text.trim();
@@ -851,7 +967,11 @@ class _NewAppPageState extends State<NewAppPage> {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     Muted(
-                      '${r['fullName']}${r['private'] == true ? ' · private' : ''}',
+                      '${r['fullName']}${external
+                          ? ' · public repository'
+                          : r['private'] == true
+                          ? ' · private'
+                          : ''}',
                     ),
                   ],
                 ),
@@ -877,7 +997,14 @@ class _NewAppPageState extends State<NewAppPage> {
                   mem.isEmpty || mem == '0' ? 'No limit' : '$mem MiB',
                 ),
                 line('Environment', envSummary),
-                line('Auto-deploy', autoDeploy ? 'On every push' : 'Off'),
+                line(
+                  'Auto-deploy',
+                  external
+                      ? 'Off (public repository)'
+                      : autoDeploy
+                      ? 'On every push'
+                      : 'Off',
+                ),
                 line('Versions kept', f['keep']!.text),
               ],
             ),
