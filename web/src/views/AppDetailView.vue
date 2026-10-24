@@ -12,6 +12,7 @@ import M3Select from '@/components/M3Select.vue'
 import M3Checkbox from '@/components/M3Checkbox.vue'
 import BuildCommands from '@/components/BuildCommands.vue'
 import AccessPicker from '@/components/AccessPicker.vue'
+import ChangeSourceDialog from '@/components/ChangeSourceDialog.vue'
 import { api, streamDeployment, type AccessMode, type AppView, type BuildType, type Deployment, type EnvVar, type UpdateCheck } from '@/lib/api'
 import { BUILD_LABEL, STATUS_LABEL, appTone, depTone } from '@/lib/deploys'
 import { ago, dateTime } from '@/lib/format'
@@ -54,6 +55,7 @@ function loadBranches(a: AppView) {
 const checking = ref(false)
 const effectiveBuild = computed(() => (form.value.build === 'auto' ? app.value?.live?.build || app.value?.latest?.build || '' : form.value.build))
 const deleteVolumes = ref(false)
+const sourceOpen = ref(false)
 const buildOptions = (Object.keys(BUILD_LABEL) as BuildType[]).map((k) => ({ value: k, label: BUILD_LABEL[k]! }))
 
 const running = computed(() => deployments.value.some((d) => ['queued', 'building', 'starting'].includes(d.status)))
@@ -191,6 +193,49 @@ async function saveSettings() {
   }
 }
 
+// The source alone changes, with the settings the app already has: unsaved edits in the
+// form stay in the form and are not silently written.
+async function changeSource(src: { repo: string; branch: string }) {
+  const a = app.value
+  if (!a) return
+  const hadEdits = formDirty
+  busy.value = true
+  try {
+    await api.updateApp(props.id, {
+      repo: src.repo,
+      branch: src.branch,
+      rootDir: a.rootDir,
+      build: a.build,
+      port: a.port,
+      domain: a.domain,
+      autoDeploy: a.autoDeploy,
+      keep: a.keep,
+      memoryMb: a.memoryMb,
+      access: a.accessMode,
+      allow: a.allow,
+      installCmd: a.installCmd,
+      buildCmd: a.buildCmd,
+      startCmd: a.startCmd,
+      dockerfile: a.dockerfile,
+      composeFile: a.composeFile,
+      envFile: a.envFile,
+      envPath: a.envPath,
+    })
+    branchesFor = ''
+    form.value.branch = src.branch
+    checkResult.value = null
+    sourceOpen.value = false
+    toast(`Source changed to ${src.repo}@${src.branch}. Redeploy to build from it.`)
+    await load()
+    // load() may have skipped the clean refresh while the branch watcher was running.
+    if (!hadEdits) formDirty = false
+  } catch (e) {
+    toastError(e)
+  } finally {
+    busy.value = false
+  }
+}
+
 async function remove() {
   const ok = await confirm({
     title: app.value?.dir ? `Unlink ${props.id}?` : `Delete ${props.id}?`,
@@ -315,6 +360,14 @@ onBeforeUnmount(() => {
     <template v-else>
       <section class="card stack">
         <div class="card-head"><h2>Settings</h2></div>
+        <div class="source-row">
+          <Icon name="github" :size="20" />
+          <div class="grow">
+            <div class="src-name">{{ app.repo }}</div>
+            <div class="muted small">Moved to another account or organization? Point the app at its new source.</div>
+          </div>
+          <button class="btn btn-text st" type="button" :disabled="busy" @click="sourceOpen = true">Change source</button>
+        </div>
         <div class="grid">
           <M3Select v-model="form.branch" label="Branch" :options="branchOptions" />
           <label class="tf"><span>Root folder</span><input v-model.trim="form.rootDir" placeholder="/" /></label>
@@ -354,6 +407,8 @@ onBeforeUnmount(() => {
         <button class="btn btn-danger st" type="button" :disabled="busy || running" @click="remove">Delete {{ app.id }}</button>
       </section>
     </template>
+
+    <ChangeSourceDialog v-model="sourceOpen" :repo="app.repo" :branch="app.branch" @change="changeSource" />
   </div>
   <div v-else class="loading-block"><ShapeLoader label="Loading app" /></div>
 </template>
@@ -530,6 +585,19 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+.source-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: var(--sch);
+}
+.src-name {
+  font-size: 15px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
 }
 .grid {
   display: grid;

@@ -282,12 +282,19 @@ export interface EnvVar {
   keep?: boolean
 }
 
+export interface Installation {
+  id: number
+  account: string
+  type: string
+  htmlUrl: string
+}
+
 export interface GitHubStatus {
   connected: boolean
   domains: boolean
   publicUrl: string
   app?: { slug: string; name: string; owner: string; htmlUrl: string; installUrl: string }
-  installations?: { id: number; account: string; type: string; htmlUrl: string }[]
+  installations?: Installation[]
   error?: string
 }
 

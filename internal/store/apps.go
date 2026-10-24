@@ -90,10 +90,10 @@ func (s *Store) AddApp(ctx context.Context, a *App) error {
 }
 
 func (s *Store) UpdateApp(ctx context.Context, a *App) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE apps SET branch = ?, root_dir = ?, build = ?, port = ?, domain = ?, auto_deploy = ?, keep = ?, memory_mb = ?,
+	_, err := s.db.ExecContext(ctx, `UPDATE apps SET repo = ?, installation_id = ?, branch = ?, root_dir = ?, build = ?, port = ?, domain = ?, auto_deploy = ?, keep = ?, memory_mb = ?,
 		install_cmd = ?, build_cmd = ?, start_cmd = ?, dockerfile = ?, compose_file = ?, access = ?, allow = ?, ts_port = ?,
 		env_file = ?, env_path = ? WHERE id = ?`,
-		a.Branch, a.RootDir, a.Build, a.Port, a.Domain, a.AutoDeploy, a.Keep, a.MemoryMB,
+		a.Repo, a.InstallationID, a.Branch, a.RootDir, a.Build, a.Port, a.Domain, a.AutoDeploy, a.Keep, a.MemoryMB,
 		a.InstallCmd, a.BuildCmd, a.StartCmd, a.Dockerfile, a.ComposeFile, a.Access, a.Allow, a.TSPort,
 		a.EnvFile, a.EnvPath, a.ID)
 	return err

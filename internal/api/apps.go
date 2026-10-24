@@ -198,6 +198,23 @@ func (s *Server) githubBranches(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"branches": list})
 }
 
+// readRepo looks a repository up in what the GitHub App can read, returning its current
+// owner/name and installation. An empty name means the App has no access to it. GitHub
+// reports the name it has today, so a repository that moved to an organization is found
+// under its new owner.
+func (s *Server) readRepo(ctx context.Context, name string) (string, int64, error) {
+	repos, err := s.GitHub.Repos(ctx)
+	if err != nil {
+		return "", 0, err
+	}
+	for _, rp := range repos {
+		if strings.EqualFold(rp.FullName, name) {
+			return rp.FullName, rp.InstallationID, nil
+		}
+	}
+	return "", 0, nil
+}
+
 // githubWebhook deploys apps that follow the pushed branch. Public, authenticated by the
 // HMAC signature GitHub computes with the App webhook secret.
 func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) {
@@ -457,21 +474,16 @@ func (s *Server) appCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The repository must be one the App can read; that also gives its installation.
-	repos, err := s.GitHub.Repos(r.Context())
+	repo, inst, err := s.readRepo(r.Context(), in.Repo)
 	if err != nil {
 		writeErrorMsg(w, githubStatusCode(err), "github_failed", err.Error())
 		return
-	}
-	var inst int64
-	for _, rp := range repos {
-		if strings.EqualFold(rp.FullName, in.Repo) {
-			inst, in.Repo = rp.InstallationID, rp.FullName
-		}
 	}
 	if inst == 0 {
 		writeErrorMsg(w, http.StatusBadRequest, "invalid", "the GitHub App has no access to "+in.Repo)
 		return
 	}
+	in.Repo = repo
 	env, msg := s.sealEnv(r.Context(), "", in.Env)
 	if msg != "" {
 		writeErrorMsg(w, http.StatusBadRequest, "invalid", msg)
@@ -546,6 +558,21 @@ func (s *Server) appUpdate(w http.ResponseWriter, r *http.Request) {
 	if msg := s.accessError(r.Context(), &in); msg != "" {
 		writeErrorMsg(w, http.StatusBadRequest, "invalid", msg)
 		return
+	}
+	// A repository can be renamed or moved to another account (for example from a user to
+	// an organization). Follow its new installation when the source changes, so pushes and
+	// deployments read the right repository.
+	if in.Repo != "" && !strings.EqualFold(in.Repo, a.Repo) {
+		repo, inst, err := s.readRepo(r.Context(), in.Repo)
+		if err != nil {
+			writeErrorMsg(w, githubStatusCode(err), "github_failed", err.Error())
+			return
+		}
+		if inst == 0 {
+			writeErrorMsg(w, http.StatusBadRequest, "invalid", "the GitHub App has no access to "+in.Repo)
+			return
+		}
+		a.Repo, a.InstallationID = repo, inst
 	}
 	// The build type is fixed once the app runs: switching between compose and a single
 	// container would leave the old one behind.
@@ -820,21 +847,16 @@ func (s *Server) appLink(w http.ResponseWriter, r *http.Request) {
 		writeErrorMsg(w, http.StatusBadRequest, "invalid", "invalid project, branch or root folder")
 		return
 	}
-	repos, err := s.GitHub.Repos(r.Context())
+	repo, inst, err := s.readRepo(r.Context(), in.Repo)
 	if err != nil {
 		writeErrorMsg(w, githubStatusCode(err), "github_failed", err.Error())
 		return
-	}
-	var inst int64
-	for _, rp := range repos {
-		if strings.EqualFold(rp.FullName, in.Repo) {
-			inst, in.Repo = rp.InstallationID, rp.FullName
-		}
 	}
 	if inst == 0 {
 		writeErrorMsg(w, http.StatusBadRequest, "invalid", "the GitHub App has no access to "+in.Repo+": add it on GitHub first")
 		return
 	}
+	in.Repo = repo
 	a := &store.App{ID: in.Project, Repo: in.Repo, InstallationID: inst, Branch: in.Branch, RootDir: strings.Trim(in.RootDir, "/"),
 		Build: deploy.BuildCompose, AutoDeploy: in.AutoDeploy, Keep: 5, Dir: dir}
 	err = s.Store.AddApp(r.Context(), a)

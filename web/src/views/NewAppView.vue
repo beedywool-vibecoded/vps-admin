@@ -20,6 +20,15 @@ const gh = ref<GitHubStatus | null>(null)
 const repos = ref<Repo[]>([])
 const loadingRepos = ref(true)
 const query = ref('')
+const account = ref('all')
+const accountOptions = computed(() => [
+  { value: 'all', label: 'All accounts' },
+  ...(gh.value?.installations ?? []).map((i) => ({
+    value: String(i.id),
+    label: i.account,
+    hint: i.type === 'Organization' ? 'Organization' : 'Personal account',
+  })),
+])
 const repo = ref<Repo | null>(null)
 const detection = ref<Detection | null>(null)
 const detecting = ref(false)
@@ -45,7 +54,9 @@ const envPath = ref('')
 
 const shown = computed(() => {
   const q = query.value.trim().toLowerCase()
-  return repos.value.filter((r) => !q || r.fullName.toLowerCase().includes(q)).sort((a, b) => b.pushedAt.localeCompare(a.pushedAt))
+  return repos.value
+    .filter((r) => (account.value === 'all' || String(r.installationId) === account.value) && (!q || r.fullName.toLowerCase().includes(q)))
+    .sort((a, b) => b.pushedAt.localeCompare(a.pushedAt))
 })
 const effectiveBuild = computed(() => (build.value === 'auto' ? detection.value?.build || '' : build.value))
 const needsPort = computed(() => effectiveBuild.value === 'dockerfile' && !port.value)
@@ -215,10 +226,16 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
     <Transition name="step" mode="out-in" @after-enter="fitCard">
     <section v-if="step === 1" ref="cardEl" class="card source" :style="{ maxHeight: cardMax ? `${cardMax}px` : undefined }">
         <h2>Pick a repository</h2>
-        <label class="field search">
-          <Icon name="search" :size="20" />
-          <input v-model="query" placeholder="Search repositories" aria-label="Search repositories" />
-        </label>
+        <div class="filters">
+          <label class="field search">
+            <Icon name="search" :size="20" />
+            <input v-model="query" placeholder="Search repositories" aria-label="Search repositories" />
+          </label>
+          <M3Select v-if="accountOptions.length > 2" v-model="account" class="account" label="Account" :options="accountOptions" />
+        </div>
+        <p v-if="gh?.app?.installUrl" class="muted small install">
+          Missing a repository? <a :href="gh.app.installUrl" target="_blank" rel="noopener">Choose repositories and organizations on GitHub</a>, then reload.
+        </p>
         <div v-if="loadingRepos" class="loading-block"><ShapeLoader label="Loading repositories" /></div>
         <p v-else-if="!repos.length" class="muted small">
           The GitHub App cannot read any repository yet.
@@ -505,6 +522,23 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
 .source h2,
 .config h2 {
   font-size: 20px;
+}
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.filters .search {
+  flex: 1;
+  min-width: 0;
+}
+.account {
+  flex: none;
+  width: 220px;
+}
+.install {
+  margin: -6px 0 0;
 }
 .repos {
   display: flex;
