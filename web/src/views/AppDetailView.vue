@@ -72,7 +72,9 @@ async function load() {
     app.value = res.app
     deployments.value = res.deployments
     domains.value = res.domains
-    if (!envDirty) env.value = res.env.map((e) => ({ ...e, keep: e.secret && e.hasValue }))
+    // Only send fields the API accepts: hasValue is read-only and the server
+    // rejects unknown JSON fields, which made every env save fail with 400.
+    if (!envDirty) env.value = res.env.map((e) => ({ key: e.key, value: e.value, secret: e.secret, keep: e.secret && e.hasValue }))
     const a = res.app
     if (!targetDirty) {
       envFile.value = a.envFile

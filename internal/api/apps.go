@@ -337,6 +337,9 @@ type envIn struct {
 	Value  string `json:"value"`
 	Secret bool   `json:"secret"`
 	Keep   bool   `json:"keep"` // secret left unchanged
+	// HasValue is read-only: the panel gets it from appGet and used to echo it back
+	// on save, which the strict JSON decoder rejected as an unknown field (400).
+	HasValue *bool `json:"hasValue"`
 }
 
 func validBuild(b string) bool {
