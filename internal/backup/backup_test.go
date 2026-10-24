@@ -93,7 +93,7 @@ func TestArchiveRefusesATamperedChunk(t *testing.T) {
 
 func TestArchiveRefusesUnsafeNames(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"../etc/passwd", "/etc/passwd", "a/../../b", ".hidden", "a\\b"} {
+	for _, name := range []string{"../etc/passwd", "/etc/passwd", "a/../../b", "a//b", "a/./b", "a\\b"} {
 		if err := Write(filepath.Join(dir, "a.vpb"), testPass, Header{Kind: settingsID}, []Entry{{Name: name, Data: []byte("x")}}); err == nil {
 			t.Errorf("entry %q should have been refused", name)
 		}

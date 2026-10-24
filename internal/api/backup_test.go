@@ -52,6 +52,7 @@ func TestBackupSettingsRoundTrip(t *testing.T) {
 		"path":       "backups/vps-admin",
 		"hour":       4,
 		"keep":       3,
+		"kind":       "full",
 		"enabled":    true,
 	})
 	req := httptest.NewRequest("PUT", "/api/backup", bytes.NewReader(body))
@@ -69,6 +70,9 @@ func TestBackupSettingsRoundTrip(t *testing.T) {
 	if got["path"] != "backups/vps-admin" || got["hour"] != float64(4) || got["keep"] != float64(3) {
 		t.Fatalf("the saved values did not come back: %v", got)
 	}
+	if got["kind"] != "full" {
+		t.Fatalf("the daily kind did not come back: %v", got)
+	}
 
 	// The token and the passphrase are never echoed back.
 	if _, leaked := got["token"]; leaked {
@@ -84,6 +88,7 @@ func TestBackupRefusesBadSettings(t *testing.T) {
 		`{"path":"../etc"}`,
 		`{"passphrase":"short"}`,
 		`{"token":"not json"}`,
+		`{"kind":"everything"}`,
 	} {
 		rec := httptest.NewRecorder()
 		s.backupUpdate(rec, httptest.NewRequest("PUT", "/api/backup", bytes.NewReader([]byte(body))))

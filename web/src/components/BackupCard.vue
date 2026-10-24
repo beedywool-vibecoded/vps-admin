@@ -4,6 +4,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import Icon from '@/components/Icon.vue'
 import M3Dialog from '@/components/M3Dialog.vue'
+import M3Select from '@/components/M3Select.vue'
 import M3Switch from '@/components/M3Switch.vue'
 import StatusDot from '@/components/StatusDot.vue'
 import { api, type BackupStatus } from '@/lib/api'
@@ -20,8 +21,14 @@ const editing = ref(false)
 const path = ref('')
 const hour = ref(3)
 const keep = ref(7)
+const kind = ref<'settings' | 'full'>('settings')
 const enabled = ref(false)
 const mountOn = ref(true)
+
+const kindOptions = [
+  { value: 'settings' as const, label: 'Panel state only', hint: 'Database, its key, secrets and settings' },
+  { value: 'full' as const, label: 'Everything', hint: 'Also the app sources, the wallpaper and the Docker volumes' },
+]
 
 const restoreOpen = ref(false)
 const restoreFile = ref('')
@@ -43,6 +50,7 @@ async function load(withArchives = false) {
     path.value = s.path
     hour.value = s.hour
     keep.value = s.keep
+    kind.value = s.kind === 'full' ? 'full' : 'settings'
     enabled.value = s.enabled
     mountOn.value = s.mount
   }
@@ -156,6 +164,7 @@ function saveSchedule() {
       path: path.value,
       hour: Math.min(23, Math.max(0, Math.round(hour.value || 0))),
       keep: Math.min(60, Math.max(1, Math.round(keep.value || 7))),
+      kind: kind.value,
       enabled: enabled.value,
       mount: mountOn.value,
     },
@@ -232,6 +241,18 @@ function saveSchedule() {
 
         <div class="row">
           <div class="grow">
+            <div>What the daily backup keeps</div>
+            <div class="muted small">
+              {{ kind === 'full'
+                ? 'The panel state plus app sources, wallpaper and Docker volumes. Containers are paused while volumes are copied.'
+                : 'The panel state: database, key, apps and their variables. Restoring it leaves the containers untouched.' }}
+            </div>
+          </div>
+          <M3Select v-model="kind" label="Daily archive" :options="kindOptions" />
+        </div>
+
+        <div class="row">
+          <div class="grow">
             <div>Mount at boot</div>
             <div class="muted small">The panel mounts the Drive again if the unit stops</div>
           </div>
@@ -241,7 +262,10 @@ function saveSchedule() {
         <div class="acts">
           <button class="btn btn-outlined st" type="button" :disabled="busy === 'save'" @click="saveSchedule">Save</button>
           <button class="btn btn-filled st" type="button" :disabled="busy === 'run' || st.running" @click="run('settings')">
-            <Icon name="cloud" :size="18" /> {{ st.running ? st.progress || 'Backing up…' : 'Back up now' }}
+            <Icon name="cloud" :size="18" /> {{ st.running ? st.progress || 'Backing up…' : 'Back up the panel state' }}
+          </button>
+          <button class="btn btn-outlined st" type="button" :disabled="busy === 'run' || st.running" @click="run('full')">
+            <Icon name="database" :size="18" /> Full backup
           </button>
           <button class="btn btn-text st" type="button" @click="editing = true">Change Drive token</button>
         </div>
@@ -273,9 +297,10 @@ function saveSchedule() {
 
     <M3Dialog v-model="restoreOpen" title="Restore this backup">
       <p class="muted" style="margin: 0">
-        The panel replaces its database and its key with <code>{{ restoreFile }}</code>, then restarts. The apps keep running; the panel comes
-        back with the apps, devices and settings of the archive. The files it replaces are kept next to the database. Passkeys only keep
-        working on the domain they were registered on.
+        The panel replaces its database and its key with <code>{{ restoreFile }}</code>, then restarts. A full archive also brings back the app
+        folders, the wallpaper and the Docker volumes, with the containers paused while they are unpacked. The apps keep running until then; the
+        panel comes back with the apps, devices and settings of the archive. The files it replaces are kept next to the database. Passkeys only
+        keep working on the domain they were registered on.
       </p>
       <label class="stack" style="margin-top: 14px">
         <span class="small">Passphrase of the archive</span>

@@ -508,6 +508,8 @@ export interface BackupStatus {
   path: string
   hour: number
   keep: number
+  /** What the daily run writes: the panel state, or everything. */
+  kind: 'settings' | 'full'
   mount: boolean
   mountPoint: string
   mounted: boolean
@@ -527,6 +529,7 @@ export interface BackupOptions {
   path?: string
   hour?: number
   keep?: number
+  kind?: 'settings' | 'full'
   mount?: boolean
   token?: string
   passphrase?: string

@@ -36,9 +36,9 @@ const (
 	scryptP        = 1
 	keyLen         = 32
 
-	// MaxArchive bounds what restore will read into a temporary folder. A database of a
-	// small server stays far below; the volumes of the full backup will raise it.
-	MaxArchive = 4 << 30
+	// MaxArchive bounds what restore will read into a temporary folder. It has to fit a
+	// full archive: every app source and every volume of a small server.
+	MaxArchive = 64 << 30
 
 	manifestName = "manifest.json"
 )
@@ -55,8 +55,8 @@ type Header struct {
 }
 
 // Entry is one file written into the payload. Data carries small values (secret.key,
-// config); Path streams a file from disk (the database snapshot), which keeps a large
-// backup out of memory.
+// config); Path streams a file from disk (the database snapshot, the app sources, the
+// volume tarballs), which keeps a large backup out of memory.
 type Entry struct {
 	Name string
 	Mode int64
@@ -174,7 +174,14 @@ func writeEntry(tw *tar.Writer, e Entry) error {
 		if err != nil {
 			return err
 		}
-		if err := tw.WriteHeader(&tar.Header{Name: e.Name, Mode: 0o600, Size: st.Size(), ModTime: st.ModTime()}); err != nil {
+		mode := e.Mode
+		if mode == 0 {
+			mode = int64(st.Mode().Perm())
+		}
+		if mode == 0 {
+			mode = 0o600
+		}
+		if err := tw.WriteHeader(&tar.Header{Name: e.Name, Mode: mode, Size: st.Size(), ModTime: st.ModTime()}); err != nil {
 			return err
 		}
 		_, err = io.Copy(tw, f)
@@ -260,7 +267,11 @@ func Extract(path, passphrase, dir string) (Header, []string, error) {
 		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 			return h, nil, err
 		}
-		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		mode := os.FileMode(th.Mode).Perm()
+		if mode == 0 {
+			mode = 0o600
+		}
+		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 		if err != nil {
 			return h, nil, err
 		}
@@ -353,21 +364,19 @@ func open(dst io.Writer, aead cipher.AEAD, prefix []byte, src io.Reader) error {
 	}
 }
 
-// safeName accepts a plain file or one folder level (volumes/<app>/<file>), never an
-// absolute path, a traversal or a hidden file.
+// safeName accepts a relative path with at most sixteen folder levels
+// (apps/<app>/src/compose.yaml), never an absolute path or a traversal. Dot files are
+// allowed: a compose app keeps its variables in a .env next to its compose file.
 func safeName(name string) bool {
-	if name == "" || strings.HasPrefix(name, "/") || strings.Contains(name, "\\") || strings.Contains(name, "\x00") {
-		return false
-	}
-	if strings.HasPrefix(name, ".") {
+	if name == "" || len(name) > 512 || strings.HasPrefix(name, "/") || strings.Contains(name, "\\") || strings.Contains(name, "\x00") {
 		return false
 	}
 	parts := strings.Split(name, "/")
-	if len(parts) > 3 {
+	if len(parts) > 16 {
 		return false
 	}
 	for _, p := range parts {
-		if p == "" || p == "." || p == ".." || strings.HasPrefix(p, ".") {
+		if p == "" || p == "." || p == ".." {
 			return false
 		}
 	}

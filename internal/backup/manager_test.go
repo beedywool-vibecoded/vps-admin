@@ -229,6 +229,7 @@ func TestManagerRefusesBadSettings(t *testing.T) {
 		{Keep: intptr(200)},
 		{Passphrase: strptr("short")},
 		{Token: strptr(`{"access_token":"x"}`)},
+		{Kind: strptr("everything")},
 	}
 	for _, o := range cases {
 		if err := m.Save(ctx, o); err == nil {
@@ -291,5 +292,8 @@ func TestScheduledHourIsClampedOnRead(t *testing.T) {
 	}
 	if !m.mountOn(ctx) {
 		t.Fatal("the Drive mounts at boot by default")
+	}
+	if got := m.kind(ctx); got != settingsID {
+		t.Fatalf("the daily backup is settings only by default, got %q", got)
 	}
 }

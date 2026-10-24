@@ -1,0 +1,404 @@
+package backup
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/beedywool/vps-admin/internal/docker"
+)
+
+// The full archive adds to the panel state what the state alone cannot bring back: the
+// apps' source folders (compose files, env files), the wallpaper, and the named Docker
+// volumes the apps keep their data in. The panel configuration travels as a copy, to
+// read after a disaster; it is never written back, since it says how this host runs.
+const (
+	backgroundName  = "background"
+	panelConfigName = "panel-config.json"
+	configPath      = "/etc/vps-admin/config.json"
+	appsPrefix      = "apps/"
+	volumesPrefix   = "volumes/"
+	volumeStageDir  = "/var/lib/vps-admin/volumes"
+	volumeTimeout   = 30 * time.Minute
+)
+
+// skipDirs are regenerable and often larger than everything else: a restore brings the
+// sources back, and the next deploy rebuilds these.
+var skipDirs = map[string]bool{".git": true, "node_modules": true, ".cache": true}
+
+// collectFull gathers the extra entries of a full archive. Volumes are exported one at a
+// time with the containers that use them paused, so a database file is never copied
+// while it is written.
+func (m *Manager) collectFull(ctx context.Context, work string) ([]Entry, error) {
+	var entries []Entry
+
+	if p := filepath.Join(m.Cfg.DataDir, backgroundName); fileExists(p) {
+		entries = append(entries, Entry{Name: backgroundName, Path: p})
+	}
+	if fileExists(configPath) {
+		entries = append(entries, Entry{Name: panelConfigName, Path: configPath})
+	}
+
+	m.setProgress("Collecting app sources")
+	apps, err := m.appEntries()
+	if err != nil {
+		return nil, err
+	}
+	entries = append(entries, apps...)
+
+	m.setProgress("Listing Docker volumes")
+	uses, err := m.panelVolumes(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing the Docker volumes: %w", err)
+	}
+	if len(uses) == 0 {
+		return entries, nil
+	}
+	paused := m.pauseForVolumes(ctx, uses)
+	defer m.resume(ctx, paused)
+
+	dir := filepath.Join(work, "volumes")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	for i, u := range uses {
+		m.setProgress(fmt.Sprintf("Copying volume %s (%d/%d)", u.Name, i+1, len(uses)))
+		tar := filepath.Join(dir, u.Name+".tar")
+		if err := m.exportVolume(ctx, u.Name, tar); err != nil {
+			return nil, fmt.Errorf("volume %s: %w", u.Name, err)
+		}
+		entries = append(entries, Entry{Name: volumesPrefix + u.Name + ".tar", Path: tar})
+	}
+	return entries, nil
+}
+
+// appEntries walks the panel's app folders. Symlinks are skipped: they can point outside
+// the folder, and the sources do not need them after a restore.
+func (m *Manager) appEntries() ([]Entry, error) {
+	root := filepath.Join(m.Cfg.DataDir, "apps")
+	if !fileExists(root) {
+		return nil, nil
+	}
+	var entries []Entry
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, fs.ErrPermission) {
+				slog.Warn("backup: cannot read an app folder", "path", p, "err", err)
+				return nil
+			}
+			return err
+		}
+		if d.IsDir() {
+			if p != root && skipDirs[d.Name()] {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return nil
+		}
+		name := appsPrefix + filepath.ToSlash(rel)
+		if !safeName(name) {
+			slog.Warn("backup: skipping a file with an unusable name", "path", p)
+			return nil
+		}
+		entries = append(entries, Entry{Name: name, Path: p})
+		return nil
+	})
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+	return entries, err
+}
+
+// panelVolumes lists the volumes of panel apps, through Docker or through the hook the
+// tests use.
+func (m *Manager) panelVolumes(ctx context.Context) ([]docker.VolumeUse, error) {
+	if m.Volumes != nil {
+		return m.Volumes(ctx)
+	}
+	if m.Docker == nil {
+		return nil, nil
+	}
+	return m.Docker.PanelVolumes(ctx)
+}
+
+// pauseForVolumes freezes every running container that mounts one of the volumes. A
+// frozen process cannot write, so the tarball is a consistent picture of the files.
+func (m *Manager) pauseForVolumes(ctx context.Context, uses []docker.VolumeUse) []string {
+	if m.Docker == nil {
+		return nil
+	}
+	var paused []string
+	seen := map[string]bool{}
+	for _, u := range uses {
+		for _, id := range u.Containers {
+			if seen[id] {
+				continue
+			}
+			if err := m.Docker.Pause(ctx, id); err != nil {
+				slog.Warn("backup: cannot pause a container", "container", id, "err", err)
+				continue
+			}
+			seen[id] = true
+			paused = append(paused, id)
+		}
+	}
+	return paused
+}
+
+func (m *Manager) resume(ctx context.Context, ids []string) {
+	if m.Docker == nil {
+		return
+	}
+	// The backup may have been canceled: the containers must run again regardless.
+	ctx = context.WithoutCancel(ctx)
+	for _, id := range ids {
+		if err := m.Docker.Unpause(ctx, id); err != nil {
+			slog.Warn("backup: a container stayed paused", "container", id, "err", err)
+		}
+	}
+}
+
+// exportVolume writes the volume into dest as a tar, through the root helper (the volume
+// folders belong to root), or directly when the agent already runs as root.
+func (m *Manager) exportVolume(ctx context.Context, name, dest string) error {
+	if m.exportVolumeFn != nil {
+		return m.exportVolumeFn(ctx, name, dest)
+	}
+	if m.Helper != "" {
+		if err := os.MkdirAll(volumeStageDir, 0o700); err != nil {
+			return err
+		}
+		staged := filepath.Join(volumeStageDir, name+".tar")
+		os.Remove(staged)
+		if _, err := m.sudo(ctx, volumeTimeout, m.Helper, "volume-export", name); err != nil {
+			return err
+		}
+		if err := copyFile(staged, dest); err != nil {
+			return err
+		}
+		os.Remove(staged)
+		return nil
+	}
+	if os.Geteuid() != 0 {
+		return errors.New("the storage helper is missing: rerun the installer to back up Docker volumes")
+	}
+	mount, err := m.volumeMountpoint(ctx, name)
+	if err != nil {
+		return err
+	}
+	_, err = m.exec(ctx, volumeTimeout, "tar", "-C", mount, "-cf", dest, "--numeric-owner", ".")
+	return err
+}
+
+// importVolume empties a volume and unpacks src into it. The caller pauses the
+// containers that use it.
+func (m *Manager) importVolume(ctx context.Context, name, src string) error {
+	if m.importVolumeFn != nil {
+		return m.importVolumeFn(ctx, name, src)
+	}
+	if m.Helper != "" {
+		if err := os.MkdirAll(volumeStageDir, 0o700); err != nil {
+			return err
+		}
+		staged := filepath.Join(volumeStageDir, name+".tar")
+		if err := copyFile(src, staged); err != nil {
+			return err
+		}
+		defer os.Remove(staged)
+		_, err := m.sudo(ctx, volumeTimeout, m.Helper, "volume-import", name)
+		return err
+	}
+	if os.Geteuid() != 0 {
+		return errors.New("the storage helper is missing: rerun the installer to restore Docker volumes")
+	}
+	mount, err := m.volumeMountpoint(ctx, name)
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(mount)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if err := os.RemoveAll(filepath.Join(mount, e.Name())); err != nil {
+			return err
+		}
+	}
+	_, err = m.exec(ctx, volumeTimeout, "tar", "-C", mount, "-xf", src, "--numeric-owner", "-p")
+	return err
+}
+
+func (m *Manager) volumeMountpoint(ctx context.Context, name string) (string, error) {
+	if !docker.ValidID(name) {
+		return "", errors.New("invalid volume name")
+	}
+	out, err := m.exec(ctx, time.Minute, "docker", "volume", "inspect", "-f", "{{.Mountpoint}}", name)
+	if err != nil {
+		return "", err
+	}
+	mount := strings.TrimSpace(out)
+	if !filepath.IsAbs(mount) {
+		return "", fmt.Errorf("docker reported no mountpoint for %s", name)
+	}
+	return mount, nil
+}
+
+// ApplyStagedVolumes puts the volumes of a restored full archive back. It runs after the
+// store opens: the containers that use them are paused for the duration, then resumed.
+func (m *Manager) ApplyStagedVolumes(ctx context.Context) error {
+	stage := filepath.Join(m.Cfg.DataDir, "restore")
+	dir := filepath.Join(stage, "volumes")
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	names := map[string]string{}
+	for _, e := range entries {
+		name, ok := strings.CutSuffix(e.Name(), ".tar")
+		if !ok || e.IsDir() || !docker.ValidID(name) {
+			continue
+		}
+		names[name] = filepath.Join(dir, e.Name())
+	}
+	if len(names) == 0 {
+		return os.RemoveAll(stage)
+	}
+
+	var paused []string
+	if uses, err := m.panelVolumes(ctx); err == nil {
+		wanted := make([]docker.VolumeUse, 0, len(uses))
+		for _, u := range uses {
+			if _, ok := names[u.Name]; ok {
+				wanted = append(wanted, u)
+			}
+		}
+		paused = m.pauseForVolumes(ctx, wanted)
+	} else {
+		slog.Warn("backup: cannot list the containers to pause for the restore", "err", err)
+	}
+	defer m.resume(ctx, paused)
+
+	sorted := make([]string, 0, len(names))
+	for name := range names {
+		sorted = append(sorted, name)
+	}
+	sort.Strings(sorted)
+	for i, name := range sorted {
+		m.setProgress(fmt.Sprintf("Restoring volume %s (%d/%d)", name, i+1, len(sorted)))
+		if err := m.importVolume(ctx, name, names[name]); err != nil {
+			return fmt.Errorf("volume %s: %w", name, err)
+		}
+	}
+	m.setProgress("")
+	return os.RemoveAll(stage)
+}
+
+// restoreFull stages the files a full archive carries next to the database. The volumes
+// stay in the stage: they are unpacked once the agent runs again, through the helper.
+func restoreFull(stage, payload string, names []string) error {
+	for _, n := range names {
+		switch {
+		case n == backgroundName:
+			if err := copyFile(filepath.Join(payload, n), filepath.Join(stage, n)); err != nil {
+				return err
+			}
+		case strings.HasPrefix(n, appsPrefix):
+			src := filepath.Join(payload, filepath.FromSlash(n))
+			dst := filepath.Join(stage, filepath.FromSlash(n))
+			if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+				return err
+			}
+			if err := copyWithMode(src, dst); err != nil {
+				return err
+			}
+		case strings.HasPrefix(n, volumesPrefix):
+			name, ok := strings.CutSuffix(strings.TrimPrefix(n, volumesPrefix), ".tar")
+			if !ok || !docker.ValidID(name) {
+				return fmt.Errorf("the archive holds an invalid volume name: %q", n)
+			}
+			dst := filepath.Join(stage, "volumes", name+".tar")
+			if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+				return err
+			}
+			if err := copyFile(filepath.Join(payload, filepath.FromSlash(n)), dst); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// applyFullFiles installs the wallpaper and the app folders of a staged full restore.
+// The previous files are kept with a timestamp, like the database.
+func applyFullFiles(dataDir, stage, stamp string) error {
+	if p := filepath.Join(stage, backgroundName); fileExists(p) {
+		dst := filepath.Join(dataDir, backgroundName)
+		if fileExists(dst) {
+			if err := os.Rename(dst, dst+".before-restore-"+stamp); err != nil {
+				return err
+			}
+		}
+		if err := os.Rename(p, dst); err != nil {
+			return err
+		}
+	}
+	apps := filepath.Join(stage, "apps")
+	entries, err := os.ReadDir(apps)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	root := filepath.Join(dataDir, "apps")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if !e.IsDir() || !safeName(appsPrefix+e.Name()+"/x") {
+			continue
+		}
+		dst := filepath.Join(root, e.Name())
+		if _, err := os.Stat(dst); err == nil {
+			if err := os.Rename(dst, dst+".before-restore-"+stamp); err != nil {
+				return err
+			}
+		}
+		if err := os.Rename(filepath.Join(apps, e.Name()), dst); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// copyWithMode keeps the executable bit of the sources, which scripts in an app folder
+// need after a restore.
+func copyWithMode(src, dst string) error {
+	st, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if err := copyFile(src, dst); err != nil {
+		return err
+	}
+	return os.Chmod(dst, st.Mode().Perm())
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}

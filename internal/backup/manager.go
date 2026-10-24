@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/beedywool/vps-admin/internal/config"
+	"github.com/beedywool/vps-admin/internal/docker"
 	"github.com/beedywool/vps-admin/internal/secret"
 	"github.com/beedywool/vps-admin/internal/store"
 	"github.com/beedywool/vps-admin/internal/system"
@@ -38,7 +39,8 @@ const (
 	fullID        = "full"     // backup kind: state plus app sources and volumes
 	minPassphrase = 12
 	maxKeep       = 60
-	runTimeout    = 45 * time.Minute
+	// A full archive copies app sources and volumes: allow it to run long.
+	runTimeout = 4 * time.Hour
 )
 
 // Settings keys, in the settings table next to the others.
@@ -50,6 +52,7 @@ const (
 	SettingHour       = "backup.hour"
 	SettingKeep       = "backup.keep"
 	SettingMount      = "backup.mount"
+	SettingKind       = "backup.kind" // settings | full: what the daily run writes
 	SettingLast       = "backup.last"
 )
 
@@ -58,6 +61,7 @@ const (
 	DefaultPath = "vps-admin"
 	DefaultHour = 3
 	DefaultKeep = 7
+	DefaultKind = settingsID
 )
 
 var (
@@ -92,6 +96,7 @@ type Status struct {
 	Path          string    `json:"path"`
 	Hour          int       `json:"hour"`
 	Keep          int       `json:"keep"`
+	Kind          string    `json:"kind"` // what the daily run writes
 	Mount         bool      `json:"mount"`
 	MountPoint    string    `json:"mountPoint"`
 	Mounted       bool      `json:"mounted"`
@@ -112,6 +117,7 @@ type Options struct {
 	Path       *string `json:"path"`
 	Hour       *int    `json:"hour"`
 	Keep       *int    `json:"keep"`
+	Kind       *string `json:"kind"`
 	Mount      *bool   `json:"mount"`
 	Token      *string `json:"token"`
 	Passphrase *string `json:"passphrase"`
@@ -125,6 +131,13 @@ type Manager struct {
 	Cfg     *config.Config
 	Version string
 	Helper  string // path of the root helper, empty when the installer did not put it
+	Docker  *docker.Client
+
+	// Tests replace the volume listing and the tar/unpack of a volume; in production
+	// they go through Docker and the root helper.
+	Volumes        func(context.Context) ([]docker.VolumeUse, error)
+	exportVolumeFn func(context.Context, string, string) error
+	importVolumeFn func(context.Context, string, string) error
 
 	mu         sync.Mutex
 	running    bool
@@ -187,6 +200,13 @@ func (m *Manager) mountOn(ctx context.Context) bool {
 	return m.Store.Setting(ctx, SettingMount, "true") == "true"
 }
 
+func (m *Manager) kind(ctx context.Context) string {
+	if m.Store.Setting(ctx, SettingKind, DefaultKind) == fullID {
+		return fullID
+	}
+	return settingsID
+}
+
 func (m *Manager) token(ctx context.Context) (string, error) {
 	return m.Box.Open(m.Store.Setting(ctx, SettingToken, ""))
 }
@@ -222,6 +242,14 @@ func (m *Manager) Save(ctx context.Context, o Options) error {
 			return fmt.Errorf("keep between 1 and %d archives", maxKeep)
 		}
 		if err := m.Store.SetSetting(ctx, SettingKeep, strconv.Itoa(*o.Keep)); err != nil {
+			return err
+		}
+	}
+	if o.Kind != nil {
+		if *o.Kind != settingsID && *o.Kind != fullID {
+			return errors.New("the scheduled backup must be settings or full")
+		}
+		if err := m.Store.SetSetting(ctx, SettingKind, *o.Kind); err != nil {
 			return err
 		}
 	}
@@ -387,6 +415,7 @@ func (m *Manager) Status(ctx context.Context, withArchives bool) Status {
 		Path:          m.remotePath(ctx),
 		Hour:          m.hour(ctx),
 		Keep:          m.keep(ctx),
+		Kind:          m.kind(ctx),
 		Mount:         m.mountOn(ctx),
 		MountPoint:    MountPoint,
 		Mounted:       m.Mounted(),
@@ -439,10 +468,7 @@ func (m *Manager) setProgress(p string) {
 // Start runs a backup in the background and returns at once: the panel polls the status
 // for the progress and the outcome.
 func (m *Manager) Start(ctx context.Context, kind string) error {
-	if kind != settingsID {
-		if kind == fullID {
-			return errors.New("the full backup (app sources and volumes) comes after the settings one")
-		}
+	if kind != settingsID && kind != fullID {
 		return errors.New("unknown backup kind")
 	}
 	if !m.Configured(ctx) {
@@ -507,6 +533,13 @@ func (m *Manager) run(ctx context.Context, kind string) (string, int64, error) {
 		{Name: "vps-admin.db", Path: snapshot, Mode: 0o600},
 		{Name: "secret.key", Data: key, Mode: 0o600},
 	}
+	if kind == fullID {
+		extra, err := m.collectFull(ctx, work)
+		if err != nil {
+			return name, 0, err
+		}
+		entries = append(entries, extra...)
+	}
 	m.setProgress("Encrypting the archive")
 	if err := Write(dest, pass, h, entries); err != nil {
 		return name, 0, err
@@ -547,7 +580,7 @@ func (m *Manager) upload(ctx context.Context, local, name string) error {
 		return errors.New("Google Drive is not mounted and rclone is not installed")
 	}
 	remote := RemoteName + ":" + m.remotePath(ctx) + "/" + name
-	_, err := m.exec(ctx, 30*time.Minute, "rclone", "copyto", "--drive-use-trash=false",
+	_, err := m.exec(ctx, time.Hour, "rclone", "copyto", "--drive-use-trash=false",
 		"--config", m.confPath(), local, remote)
 	return err
 }
@@ -723,7 +756,7 @@ func (m *Manager) Restore(ctx context.Context, file, passphrase string) (Header,
 		if _, err := exec.LookPath("rclone"); err != nil {
 			return h, errors.New("rclone is not installed and the Drive is not mounted")
 		}
-		if _, err := m.exec(ctx, 30*time.Minute, "rclone", "copyto", "--config", m.confPath(),
+		if _, err := m.exec(ctx, time.Hour, "rclone", "copyto", "--config", m.confPath(),
 			RemoteName+":"+m.remotePath(ctx)+"/"+file, local); err != nil {
 			return h, err
 		}
@@ -767,6 +800,11 @@ func (m *Manager) Restore(ctx context.Context, file, passphrase string) (Header,
 			return h, err
 		}
 	}
+	if h.Kind == fullID {
+		if err := restoreFull(stage, dir, names); err != nil {
+			return h, err
+		}
+	}
 	return h, nil
 }
 
@@ -792,6 +830,9 @@ func ApplyPending(dataDir string) error {
 	if err := os.Rename(db, filepath.Join(dataDir, "vps-admin.db")); err != nil {
 		return err
 	}
+	if err := applyFullFiles(dataDir, stage, stamp); err != nil {
+		return err
+	}
 	if _, err := os.Stat(filepath.Join(stage, "secret.key")); err == nil {
 		key := filepath.Join(dataDir, "secret.key")
 		if _, err := os.Stat(key); err == nil {
@@ -800,6 +841,12 @@ func ApplyPending(dataDir string) error {
 		if err := os.Rename(filepath.Join(stage, "secret.key"), key); err != nil {
 			return err
 		}
+	}
+	// The volumes are unpacked by ApplyStagedVolumes once the Docker client is up; the
+	// rest of the stage goes now.
+	if _, err := os.Stat(filepath.Join(stage, "volumes")); err == nil {
+		slog.Info("full restore staged", "volumes", filepath.Join(stage, "volumes"))
+		return nil
 	}
 	if err := os.RemoveAll(stage); err != nil {
 		return err
@@ -850,7 +897,7 @@ func (m *Manager) Loop(ctx context.Context) {
 				continue
 			}
 		}
-		if err := m.Start(ctx, settingsID); err != nil {
+		if err := m.Start(ctx, m.kind(ctx)); err != nil {
 			slog.Warn("scheduled backup not started", "err", err)
 		}
 	}

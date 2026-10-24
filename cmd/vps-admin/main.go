@@ -166,9 +166,14 @@ func serve(cfgPath string) error {
 	go collector.Run(ctx)
 
 	runner := system.NewRunner()
-	backupMgr := &backup.Manager{Store: st, Box: box, Runner: runner, Cfg: cfg, Version: buildinfo.Version}
+	dockerClient := docker.New(cfg.DockerSocket)
+	backupMgr := &backup.Manager{Store: st, Box: box, Runner: runner, Cfg: cfg, Version: buildinfo.Version, Docker: dockerClient}
 	if _, err := os.Stat(backup.HelperPath); err == nil {
 		backupMgr.Helper = backup.HelperPath
+	}
+	// The volumes of a restored full archive are unpacked before anything deploys.
+	if err := backupMgr.ApplyStagedVolumes(ctx); err != nil {
+		slog.Error("cannot restore the staged volumes", "err", err)
 	}
 	gh := github.New()
 	// For tests against a fake GitHub; never set in production.
@@ -201,7 +206,6 @@ func serve(cfgPath string) error {
 	scriptRunner.Init()
 	st.InterruptedScriptRuns(ctx)
 
-	dockerClient := docker.New(cfg.DockerSocket)
 	host := system.ReadHost()
 	asst := &assistant.Engine{
 		Deps: assistant.Deps{Store: st, Runner: runner, Docker: dockerClient, Collector: collector, Deploy: engine, Scripts: scriptRunner, Host: host, DataDir: cfg.DataDir},

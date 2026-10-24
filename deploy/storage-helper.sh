@@ -5,20 +5,70 @@
 #
 #   storage-helper mount vpsadmin    write the unit, enable and start it
 #   storage-helper umount vpsadmin   stop it and remove the unit
+#   storage-helper volume-export NAME  tar a Docker volume into /var/lib/vps-admin/volumes
+#   storage-helper volume-import NAME  empty a Docker volume and unpack that tar into it
 set -eu
 
+action=${1:-}
 name=${2:-}
-[ "$name" = vpsadmin ] || { echo "invalid storage name" >&2; exit 64; }
 
 target=/srv/storage/$name
 conf=/var/lib/vps-admin/rclone.conf
 unit=/etc/systemd/system/rclone-$name.service
+work=/var/lib/vps-admin/volumes
 
 find_fuse() {
 	command -v fusermount3 2>/dev/null || command -v fusermount 2>/dev/null || true
 }
 
-case "${1:-}" in
+# A volume name reaches tar and a path under /var/lib/docker: keep it to what Docker
+# itself accepts.
+valid_volume() {
+	case "$1" in
+	'' | [!A-Za-z0-9]* | *[!A-Za-z0-9_.-]*) return 1 ;;
+	esac
+	return 0
+}
+
+volume_mount() {
+	valid_volume "$1" || { echo "invalid volume name" >&2; exit 64; }
+	docker volume inspect "$1" >/dev/null 2>&1 ||
+		{ echo "no such volume: $1" >&2; exit 66; }
+	mp=$(docker volume inspect -f '{{.Mountpoint}}' "$1")
+	case "$mp" in
+	/*) ;;
+	*) echo "docker reported no usable mountpoint" >&2; exit 69 ;;
+	esac
+	[ -d "$mp" ] || { echo "the volume folder is missing: $mp" >&2; exit 66; }
+	printf '%s' "$mp"
+}
+
+case "$action" in
+mount|umount)
+	[ "$name" = vpsadmin ] || { echo "invalid storage name" >&2; exit 64; }
+	;;
+esac
+
+case "$action" in
+volume-export)
+	mp=$(volume_mount "$name") || exit $?
+	install -d -o vps-admin -g vps-admin -m 700 "$work"
+	tar_file=$work/$name.tar
+	rm -f "$tar_file"
+	tar -C "$mp" -cf "$tar_file" --numeric-owner .
+	chown vps-admin:vps-admin "$tar_file"
+	chmod 600 "$tar_file"
+	;;
+volume-import)
+	# A fresh server restores before the app ever deployed: the volume does not exist yet.
+	valid_volume "$name" || { echo "invalid volume name" >&2; exit 64; }
+	docker volume inspect "$name" >/dev/null 2>&1 || docker volume create "$name" >/dev/null
+	mp=$(volume_mount "$name") || exit $?
+	tar_file=$work/$name.tar
+	[ -f "$tar_file" ] || { echo "no archive to restore for $name" >&2; exit 66; }
+	find "$mp" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+	tar -C "$mp" -xf "$tar_file" --numeric-owner -p
+	;;
 mount)
 	command -v rclone >/dev/null 2>&1 ||
 		{ echo "rclone is not installed: rerun install.sh" >&2; exit 69; }
@@ -67,7 +117,7 @@ umount)
 	[ -z "$fuse_bin" ] || "$fuse_bin" -uz "$target" 2>/dev/null || true
 	;;
 *)
-	echo "usage: storage-helper mount|umount vpsadmin" >&2
+	echo "usage: storage-helper mount|umount vpsadmin|volume-export NAME|volume-import NAME" >&2
 	exit 64
 	;;
 esac
