@@ -287,3 +287,69 @@ class AuditEntry {
   final String device, ip, action, target, detail;
   final bool ok;
 }
+
+class BackupArchive {
+  BackupArchive(Map<String, dynamic> j)
+    : name = j['name'] as String,
+      size = (j['size'] as num?)?.toInt() ?? 0,
+      time = DateTime.parse(j['time'] as String).toLocal();
+  final String name;
+  final int size;
+  final DateTime time;
+}
+
+class BackupRun {
+  BackupRun(Map<String, dynamic> j)
+    : at = DateTime.parse(j['at'] as String).toLocal(),
+      kind = j['kind'] as String? ?? '',
+      file = j['file'] as String? ?? '',
+      size = (j['size'] as num?)?.toInt() ?? 0,
+      ok = j['ok'] as bool? ?? false,
+      error = j['error'] as String? ?? '';
+  final DateTime at;
+  final String kind, file;
+  final int size;
+  final bool ok;
+  final String error;
+}
+
+class BackupStatus {
+  BackupStatus(Map<String, dynamic> j)
+    : configured = j['configured'] as bool? ?? false,
+      enabled = j['enabled'] as bool? ?? false,
+      hasToken = j['hasToken'] as bool? ?? false,
+      hasPassphrase = j['hasPassphrase'] as bool? ?? false,
+      path = j['path'] as String? ?? '',
+      hour = (j['hour'] as num?)?.toInt() ?? 3,
+      keep = (j['keep'] as num?)?.toInt() ?? 7,
+      kind = j['kind'] as String? ?? 'settings',
+      mount = j['mount'] as bool? ?? true,
+      mountPoint = j['mountPoint'] as String? ?? '',
+      mounted = j['mounted'] as bool? ?? false,
+      helper = j['helper'] as bool? ?? false,
+      rclone = j['rclone'] as String? ?? '',
+      running = j['running'] as bool? ?? false,
+      progress = j['progress'] as String? ?? '',
+      restoreStaged = j['restoreStaged'] as bool? ?? false,
+      warning = j['warning'] as String? ?? '',
+      last = j['last'] == null
+          ? null
+          : BackupRun(j['last'] as Map<String, dynamic>),
+      archives = [
+        for (final a in (j['archives'] as List?) ?? [])
+          BackupArchive(a as Map<String, dynamic>),
+      ];
+  final bool configured, enabled, hasToken, hasPassphrase;
+  final String path;
+  final int hour, keep;
+  final String kind;
+  final bool mount, mounted, helper;
+  final String mountPoint, rclone;
+  final bool running;
+  final String progress, warning;
+  final bool restoreStaged;
+  final BackupRun? last;
+  final List<BackupArchive> archives;
+
+  bool get connected => hasToken && hasPassphrase;
+}

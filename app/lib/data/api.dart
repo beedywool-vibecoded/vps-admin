@@ -299,6 +299,24 @@ class Api {
       get('/api/security${refresh ? '?refresh=1' : ''}');
   Future<Map<String, dynamic>> updateRaw() => get('/api/update');
 
+  // Google Drive backups (see internal/backup): the panel state or everything.
+  Future<Map<String, dynamic>> backupRaw({bool archives = false}) =>
+      get('/api/backup${archives ? '?archives=1' : ''}');
+  Future<Map<String, dynamic>> saveBackup(Map<String, dynamic> o) =>
+      put('/api/backup', o);
+  Future<Map<String, dynamic>> testBackup() => post('/api/backup/test');
+  Future<Map<String, dynamic>> mountBackup(bool mounted) =>
+      post('/api/backup/mount', {'mounted': mounted});
+  Future<void> runBackup(String kind) =>
+      post('/api/backup/run', {'kind': kind});
+  Future<Map<String, dynamic>> restoreBackup(
+    String file,
+    String passphrase,
+  ) => post('/api/backup/restore', {
+    'file': file,
+    'passphrase': passphrase,
+  });
+
   // The webhook that receives what breaks (see internal/alerts).
   Future<Map<String, dynamic>> alerts() => get('/api/alerts');
   Future<Map<String, dynamic>> updateAlerts({

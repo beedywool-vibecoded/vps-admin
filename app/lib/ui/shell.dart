@@ -10,6 +10,7 @@ import 'live.dart';
 import 'nav.dart';
 import 'pages/apps.dart';
 import 'pages/assistant.dart';
+import 'pages/backups.dart';
 import 'pages/containers.dart';
 import 'pages/overview.dart';
 import 'pages/scripts.dart';
@@ -41,6 +42,7 @@ const _pages = [
   ('assistant', 'Assistant', 'assistant', true),
   ('scripts', 'Scripts', 'terminal', false),
   ('updates', 'Updates', 'updates', false),
+  ('backups', 'Backups', 'cloud', false),
   ('settings', 'Settings', 'settings', false),
 ];
 
@@ -168,6 +170,7 @@ class _ShellState extends State<Shell> with WidgetsBindingObserver {
     'assistant' => const AssistantPage(),
     'scripts' => const ScriptsPage(),
     'updates' => const UpdatesPage(),
+    'backups' => const BackupsPage(),
     'settings' => const SettingsPage(),
     _ => const OverviewPage(),
   };
