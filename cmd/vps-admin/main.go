@@ -36,6 +36,7 @@ const usage = `Usage: vps-admin <command> [-config path]
 
 Commands:
   serve     run the agent (what the systemd unit starts)
+  install   rerun the installer from the latest release: sudo vps-admin install
   pair      print a one-time code to connect a browser or the app
   link      link a script so the panel can run it: sudo vps-admin link FILE [-name NAME]
   unlink    remove a script link: sudo vps-admin unlink NAME
@@ -49,6 +50,19 @@ func main() {
 		os.Exit(2)
 	}
 	cmd := os.Args[1]
+	// install hands its arguments to the installer untouched: it has no flags of its
+	// own, and --domain and friends are not flags this command parses.
+	if cmd == "install" {
+		args := os.Args[2:]
+		if len(args) > 0 && args[0] == "--" {
+			args = args[1:]
+		}
+		if err := installCmd(args); err != nil {
+			fmt.Fprintln(os.Stderr, "vps-admin:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
 	cfgPath := fs.String("config", config.DefaultPath, "configuration file")
 	linkName := fs.String("name", "", "name shown in the panel (link only, defaults to the file name)")

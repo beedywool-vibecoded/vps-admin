@@ -17,6 +17,17 @@ import { confirm, toast, toastError } from '@/lib/ui'
 import { resetAuthCheck } from '@/router'
 
 const router = useRouter()
+// Shown at the bottom of the page: rerunning the installer repairs the service and adds
+// what a new version needs, without touching the data.
+const installCommand = 'sudo vps-admin install'
+async function copyInstall() {
+  try {
+    await navigator.clipboard.writeText(installCommand)
+    toast('Installer command copied')
+  } catch {
+    toast('Copy the command from the card', true)
+  }
+}
 const devices = ref<Device[]>([])
 const current = ref('')
 const audit = ref<AuditEntry[]>([])
@@ -642,10 +653,47 @@ onMounted(async () => {
         </button>
       </div>
     </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Rerun the installer</h2>
+        <span class="muted small">Repairs the service and adds what a new version needs</span>
+      </div>
+      <p class="muted small" style="margin: 0 0 10px">
+        It keeps the database, the apps and the current URL. Run it after an update when the release needs a system package
+        or the privileged helper, like rclone and FUSE for Google Drive backups.
+      </p>
+      <div class="cmd">
+        <code>{{ installCommand }}</code>
+        <button class="icon-btn st" type="button" aria-label="Copy the installer command" v-tip="'Copy'" @click="copyInstall">
+          <Icon name="copy" :size="18" />
+        </button>
+      </div>
+      <p class="muted small" style="margin: 10px 0 0">
+        It reruns the installer of the latest release. To change how the panel is reached, give it the installer's options,
+        for example <code>sudo vps-admin install --domain panel.example.com</code>.
+      </p>
+    </section>
   </div>
 </template>
 
 <style scoped>
+.cmd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--sch);
+}
+.cmd code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+
 /* Three cards per row: six of them fill two rows exactly, so the last one never sits
    alone beside an empty cell. */
 .setup-grid {
