@@ -487,9 +487,12 @@ onBeforeUnmount(() => {
             </div>
 
             <h2 id="persona">Personality</h2>
-            <button class="btn btn-tonal st persona-open" type="button" @click="openPersona">
+            <button class="persona-open st" type="button" @click="openPersona">
               <Icon name="edit" :size="20" />
-              {{ settings?.persona ? 'Edit the personality prompt' : 'Write a personality prompt' }}
+              <span class="grow persona-label">
+                {{ settings?.persona ? 'Edit the personality prompt' : 'Write a personality prompt' }}
+              </span>
+              <Icon name="chevron-right" :size="18" class="persona-go" />
             </button>
             <p class="small muted">
               Added to every message, whichever AI answers. It guides the assistant but cannot lift an approval or a
@@ -800,13 +803,42 @@ onBeforeUnmount(() => {
   color: var(--error);
   font-size: 12px;
 }
-/* A settings action, not a chip: it fills the card like the rows around it. */
+/* A settings row, like the provider and address rows above it. `flex: none` and the
+   min-height matter: the settings column scrolls with a max-height, and `overflow:
+   hidden` on the state layer zeroed the button's automatic minimum size, so the column
+   shrank it to nothing. It was in the DOM, just 0px tall. */
 .persona-open {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
   width: 100%;
-  height: 44px;
-  justify-content: flex-start;
-  padding: 0 14px;
+  min-height: 48px;
+  padding: 12px 14px;
   border-radius: 16px;
+  border: 1px solid var(--outline-v);
+  background: var(--sch);
+  color: var(--on-surface);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+}
+.persona-open:hover {
+  background: var(--schh);
+}
+.persona-label {
+  min-width: 0;
+}
+.persona-go {
+  flex: none;
+  color: var(--on-sv);
+}
+/* A scrolling column of fixed rows: nothing in it may shrink. The state layer and the
+   select both hide their overflow, which zeroed their automatic minimum size; a
+   column that overflows shrank them before it scrolled. */
+.settings-body > * {
+  flex: none;
 }
 /* The personality prompt is a paragraph, not a line: the shared field grows with it. */
 .field.area {
