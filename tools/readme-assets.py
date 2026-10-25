@@ -126,7 +126,7 @@ def banner(theme, shot):
 
 def section(theme, num, title, kind):
     c = THEMES[theme]
-    width = 84 + len(title) * 15.5 + 24
+    width = 84 + len(title) * 17.5 + 24
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="100" viewBox="0 0 1000 100" role="img">
 <title>{title}</title>
 {STYLE}
