@@ -311,6 +311,30 @@ func TestProvidersListOllamaModels(t *testing.T) {
 	}
 }
 
+// Ollama answers with what is installed, and the settings screen shows the first model
+// when none was chosen. The conversation must use that model too: it used to display
+// qwen3:4b while resolve() refused to start and asked for a model to be picked.
+func TestOllamaWithoutAChoiceUsesTheFirstInstalledModel(t *testing.T) {
+	srv := tagsServer(t, `{"models":[{"name":"qwen3:4b","details":{"parameter_size":"4.0B"}}]}`)
+	e := testEngine(t)
+	ctx := context.Background()
+	e.Store.SetSetting(ctx, ollamaURLKey, srv.URL)
+	p := e.Settings(ctx)
+	if !p.Configured || p.Model != "qwen3:4b" {
+		t.Fatalf("the only installed model should be shown and used: %+v", p)
+	}
+	if got := e.Store.Setting(ctx, "assistant.model.ollama", ""); got != "qwen3:4b" {
+		t.Fatalf("the model the panel shows must be the one recorded, got %q", got)
+	}
+	tgt, err := e.resolve(ctx)
+	if err != nil {
+		t.Fatalf("a conversation must start on the model the panel shows: %v", err)
+	}
+	if tgt.Model != "qwen3:4b" {
+		t.Fatalf("the conversation would ask for %q", tgt.Model)
+	}
+}
+
 func TestOllamaWithoutModelIsNotReady(t *testing.T) {
 	srv := tagsServer(t, `{"models":[]}`)
 	e := testEngine(t)
@@ -325,6 +349,34 @@ func TestOllamaWithoutModelIsNotReady(t *testing.T) {
 	}
 	if _, err := e.resolve(ctx); err == nil {
 		t.Fatal("a conversation must not start without a model")
+	}
+}
+
+// The personality prompt the administrator writes rides on every model call, whichever
+// provider answers, and clearing it stops it being sent.
+func TestPersonaReachesEveryPrompt(t *testing.T) {
+	e := testEngine(t)
+	ctx := context.Background()
+	if err := e.SetPersona(ctx, "  Speak like a pirate, briefly.  "); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.Settings(ctx).Persona; got != "Speak like a pirate, briefly." {
+		t.Fatalf("the prompt should be trimmed: %q", got)
+	}
+	if p := e.systemPrompt(ctx); !strings.Contains(p, "Speak like a pirate, briefly.") {
+		t.Fatal("the personality prompt is not in the system prompt")
+	}
+	if p := e.panelPrompt(ctx); !strings.Contains(p, "Speak like a pirate, briefly.") {
+		t.Fatal("the personality prompt is not in the Claude Code prompt")
+	}
+	if err := e.SetPersona(ctx, strings.Repeat("x", maxPersona+1)); err == nil {
+		t.Fatal("an overlong prompt should be refused")
+	}
+	if err := e.SetPersona(ctx, ""); err != nil {
+		t.Fatal(err)
+	}
+	if p := e.systemPrompt(ctx); strings.Contains(p, "Speak like a pirate") {
+		t.Fatal("a cleared prompt should no longer be sent")
 	}
 }
 

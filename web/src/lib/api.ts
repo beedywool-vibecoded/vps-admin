@@ -378,6 +378,8 @@ export interface AssistantSettings {
   model: string
   effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   autoRead: boolean
+  // The administrator's personality prompt, added to every model call.
+  persona: string
   hint?: string
   ollamaUrl?: string
   providers: AssistantProvider[]
@@ -640,6 +642,7 @@ export const api = {
     effort?: string
     autoRead?: boolean
     ollamaUrl?: string
+    persona?: string
   }) => request<{ settings: AssistantSettings; models: { id: string; label: string }[] }>('PUT', '/api/assistant', s),
   conversations: () => request<{ conversations: Conversation[] }>('GET', '/api/assistant/conversations'),
   conversation: (id: string) =>

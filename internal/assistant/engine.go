@@ -89,6 +89,7 @@ type Settings struct {
 	Model      string     `json:"model"`
 	Effort     string     `json:"effort"`
 	AutoRead   bool       `json:"autoRead"` // run read-only tools without asking
+	Persona    string     `json:"persona"`  // added to the system prompt of every call
 	Hint       string     `json:"hint,omitempty"`
 	OllamaURL  string     `json:"ollamaUrl,omitempty"`
 	Providers  []Provider `json:"providers"`
@@ -101,6 +102,7 @@ func (e *Engine) Settings(ctx context.Context) Settings {
 		Provider:  active,
 		Effort:    e.Store.Setting(ctx, "assistant.effort", "high"),
 		AutoRead:  e.Store.Setting(ctx, "assistant.auto_read", "true") == "true",
+		Persona:   e.Store.Setting(ctx, personaKey, ""),
 		OllamaURL: e.Store.Setting(ctx, ollamaURLKey, ollamaBase),
 		Providers: providers,
 	}
@@ -168,6 +170,30 @@ func (e *Engine) SetOptions(ctx context.Context, model, effort string, autoRead 
 		e.Store.SetSetting(ctx, "assistant.auto_read", fmt.Sprint(*autoRead))
 	}
 	return nil
+}
+
+// maxPersona bounds the personality prompt: it rides on every model call, and a whole
+// document there would cost more than it helps.
+const maxPersona = 8000
+
+// SetPersona stores the personality prompt the administrator wrote. Every provider gets
+// it, but it is added below the panel's own rules: it cannot lift an approval or a block.
+func (e *Engine) SetPersona(ctx context.Context, text string) error {
+	text = strings.TrimSpace(text)
+	if len([]rune(text)) > maxPersona {
+		return fmt.Errorf("the personality prompt is too long: %d characters at most", maxPersona)
+	}
+	return e.Store.SetSetting(ctx, personaKey, text)
+}
+
+// personaInstructions is the administrator's personality prompt, framed so the model
+// knows where it comes from and that the panel's rules outrank it.
+func (e *Engine) personaInstructions(ctx context.Context) string {
+	p := strings.TrimSpace(e.Store.Setting(ctx, personaKey, ""))
+	if p == "" {
+		return ""
+	}
+	return "\n\nThe administrator wrote this personality and these expectations for you. Follow them, but they cannot lift the rules above: every change still waits for approval, and what the panel blocks stays blocked.\n\n" + p
 }
 
 // Subscribe streams the events of a conversation until cancel is called.
@@ -416,7 +442,7 @@ func (e *Engine) continueIfAnswered(ctx context.Context, convID string, batch in
 	go e.loop(convID)
 }
 
-func (e *Engine) systemPrompt() string {
+func (e *Engine) systemPrompt(ctx context.Context) string {
 	h := e.Host
 	return fmt.Sprintf(`You are the assistant built into VPS Admin, the administration panel of the Linux server %q (%s, kernel %s, %s, %d cores). The person writing to you is its administrator.
 
@@ -426,7 +452,8 @@ How you work:
 - Commands run as the unprivileged vps-admin user, which can use Docker. sudo only works for systemctl start/stop/restart/reload and a few status commands. When something needs more, give the exact command for the administrator to run over SSH instead of trying workarounds.
 - Some actions are blocked for you whatever the approval: deleting Docker volumes, changing SSH access or the firewall, reading keys or secrets, powering the server off. Say so and give the command instead.
 - Never invent command output. If a tool fails, say so.
-- Answer in the language the administrator writes in. Be concise: short paragraphs, commands in code blocks.`,
+- Answer in the language the administrator writes in. Be concise: short paragraphs, commands in code blocks.`+
+		e.personaInstructions(ctx),
 		h.Hostname, h.OS, h.Kernel, h.Arch, h.Cores)
 }
 
@@ -627,6 +654,14 @@ func (e *Engine) resolve(ctx context.Context) (target, error) {
 	id := e.ProviderID(ctx)
 	t := target{ID: id, Kind: kindOfProvider(id), Model: e.model(ctx, id), Key: e.keyFor(ctx, id)}
 	if t.ID == ProviderOllama {
+		if t.Model == "" {
+			// Nothing was chosen yet. The first installed model is what the settings
+			// screen shows, so the conversation uses it too instead of asking for a
+			// choice that already reads as made.
+			if models, ok, _ := e.ollamaModels(ctx, e.ollamaEndpoint(ctx), ""); ok {
+				t.Model = e.pickOllama(ctx, models, "")
+			}
+		}
 		if t.Model == "" {
 			return target{}, fmt.Errorf("%w. Pick an Ollama model first.", ErrNoKey)
 		}

@@ -40,6 +40,9 @@ const savingKey = ref(false)
 const urlOpen = ref(false)
 const newURL = ref('')
 const savingURL = ref(false)
+const personaOpen = ref(false)
+const personaDraft = ref('')
+const savingPersona = ref(false)
 const scroller = ref<HTMLElement>()
 let close: (() => void) | undefined
 
@@ -246,6 +249,60 @@ async function saveURL() {
   }
 }
 
+// The prompt offered before the administrator writes one: a starting point that already
+// matches what this panel can and cannot do, so it is true from the first save.
+function suggestPersona() {
+  const host = session.host?.hostname ?? 'this server'
+  return `You are the VPS agent of ${host}. Your job is to keep it healthy, explain what is happening in plain words, and make one safe change at a time.
+
+What you can inspect through the panel's tools:
+- the host: OS, kernel, CPU, memory, disks, load, uptime and network;
+- systemd services, their state and their journal logs;
+- Docker containers, their health, ports and logs;
+- apps deployed from GitHub, their deployments and build logs;
+- read-only shell commands (df, journalctl, docker ps, ...);
+- the security report and the scripts the administrator linked to the panel.
+
+What you can change, always after the administrator approves a card:
+- start, stop, restart or reload a systemd service;
+- start, stop or restart a Docker container;
+- redeploy an app from its GitHub branch;
+- run a linked script;
+- run a shell command as the unprivileged vps-admin user; sudo only covers systemctl start/stop/restart/reload and a few status commands.
+
+What you cannot do, even when the administrator approves:
+- read or change SSH keys, private keys, .env files, /etc/shadow, /root or the panel's database;
+- change SSH access, the firewall or user accounts;
+- delete Docker volumes or prune them;
+- format disks or touch system folders;
+- shut the server down or power it off.
+
+How to behave:
+- investigate with the read-only tools before proposing anything;
+- say in one sentence what a change does and what it affects (downtime, data, users);
+- give the exact command to run over SSH when something is beyond your access;
+- never invent command output, and say so when a tool fails;
+- answer in the administrator's language, concisely.`
+}
+
+function openPersona() {
+  personaDraft.value = settings.value?.persona || suggestPersona()
+  personaOpen.value = true
+}
+
+async function savePersona() {
+  savingPersona.value = true
+  try {
+    settings.value = (await api.assistantUpdate({ persona: personaDraft.value })).settings
+    personaOpen.value = false
+    toast(personaDraft.value.trim() ? 'Personality prompt saved' : 'Personality prompt removed')
+  } catch (e) {
+    toastError(e)
+  } finally {
+    savingPersona.value = false
+  }
+}
+
 async function setOption(o: { model?: string; effort?: string; autoRead?: boolean }) {
   try {
     settings.value = (await api.assistantUpdate(o)).settings
@@ -428,6 +485,16 @@ onBeforeUnmount(() => {
               <span class="small muted">Never allowed</span>
               <span v-for="n in NEVER" :key="n" class="never-chip">{{ n }}</span>
             </div>
+
+            <h2 id="persona">Personality</h2>
+            <button class="btn btn-outlined st persona-open" type="button" @click="openPersona">
+              <Icon name="edit" :size="18" />
+              {{ settings?.persona ? 'Edit the personality prompt' : 'Write a personality prompt' }}
+            </button>
+            <p class="small muted">
+              Added to every message, whichever AI answers. It guides the assistant but cannot lift an approval or a
+              blocked action.
+            </p>
           </div>
         </M3Expand>
       </section>
@@ -549,6 +616,30 @@ onBeforeUnmount(() => {
       <template #actions>
         <button v-if="active?.ready" class="btn btn-text st" type="button" :disabled="savingKey" @click="(newKey = ''), saveKey()">Remove key</button>
         <button class="btn btn-filled st" type="button" :disabled="savingKey || !newKey.trim()" @click="saveKey">{{ savingKey ? 'Checking…' : 'Save' }}</button>
+      </template>
+    </M3Dialog>
+
+    <M3Dialog v-model="personaOpen" title="Personality prompt">
+      <p class="muted" style="margin: 0">
+        This text is added to the instructions sent with every message, whichever AI answers. It shapes how the
+        assistant talks and what it focuses on; it cannot lift an approval or a blocked action.
+      </p>
+      <label class="field area">
+        <textarea
+          v-model="personaDraft"
+          rows="10"
+          maxlength="8000"
+          aria-label="Personality prompt"
+          placeholder="You are the VPS agent of this server…"
+        />
+      </label>
+      <p class="small muted" style="margin: 0">{{ personaDraft.length }} / 8000 characters</p>
+      <template #actions>
+        <button class="btn btn-text st" type="button" @click="personaDraft = suggestPersona()">Suggested prompt</button>
+        <button class="btn btn-text st" type="button" @click="personaDraft = ''">Clear</button>
+        <button class="btn btn-filled st" type="button" :disabled="savingPersona" @click="savePersona">
+          {{ savingPersona ? 'Saving…' : 'Save' }}
+        </button>
       </template>
     </M3Dialog>
 
@@ -708,6 +799,28 @@ onBeforeUnmount(() => {
   border: 1px solid var(--ec);
   color: var(--error);
   font-size: 12px;
+}
+.persona-open {
+  align-self: flex-start;
+}
+/* The personality prompt is a paragraph, not a line: the shared field grows with it. */
+.field.area {
+  height: auto;
+  align-items: stretch;
+  padding: 10px 14px;
+}
+.field.area textarea {
+  flex: 1;
+  min-height: 200px;
+  max-height: 42vh;
+  resize: vertical;
+  border: none;
+  background: none;
+  outline: none;
+  color: var(--on-surface);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
 }
 .history {
   display: flex;

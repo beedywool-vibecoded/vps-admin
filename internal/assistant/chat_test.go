@@ -103,7 +103,8 @@ func TestChatReassemblesStream(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	e := &Engine{GeminiURL: srv.URL}
+	e := testEngine(t)
+	e.GeminiURL = srv.URL
 	var text, thinking strings.Builder
 	turn, err := e.chat(context.Background(), ProviderGemini, "gemini-2.5-flash", "test-key", nil,
 		func(s string) { text.WriteString(s) }, func(s string) { thinking.WriteString(s) })
@@ -181,7 +182,8 @@ func TestChatExplainsRejectedKey(t *testing.T) {
 		io.WriteString(w, `{"error":{"message":"API key not valid"}}`)
 	}))
 	defer srv.Close()
-	e := &Engine{GeminiURL: srv.URL}
+	e := testEngine(t)
+	e.GeminiURL = srv.URL
 	_, err := e.chat(context.Background(), ProviderGemini, "gemini-2.5-flash", "bad", nil, func(string) {}, func(string) {})
 	if err == nil || !strings.Contains(err.Error(), "rejected the API key") {
 		t.Fatalf("want a rejected-key message, got %v", err)
@@ -194,7 +196,8 @@ func TestChatExplainsExhaustedQuota(t *testing.T) {
 		io.WriteString(w, `{"error":{"message":"quota"}}`)
 	}))
 	defer srv.Close()
-	e := &Engine{GeminiURL: srv.URL}
+	e := testEngine(t)
+	e.GeminiURL = srv.URL
 	_, err := e.chat(context.Background(), ProviderGemini, "gemini-2.5-flash", "k", nil, func(string) {}, func(string) {})
 	if err == nil || !strings.Contains(err.Error(), "quota") {
 		t.Fatalf("want a quota message, got %v", err)

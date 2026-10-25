@@ -43,6 +43,9 @@ const (
 	ollamaURLKey = "assistant.ollama_url"
 	geminiKey    = "assistant.key.gemini"
 	claudeKey    = "assistant.key.claude-code"
+	// personaKey holds the personality prompt the administrator writes in the settings;
+	// it is added to the system prompt of every model call.
+	personaKey = "assistant.persona"
 	// geminiRetiredKey holds the model names Google refused for a key, so the panel stops
 	// offering them and no message asks for one again.
 	geminiRetiredKey = "assistant.gemini.retired"
@@ -131,9 +134,13 @@ func (e *Engine) Providers(ctx context.Context) []Provider {
 			Models: claudeModels, Model: e.model(ctx, ProviderClaudeCode),
 		},
 	}
-	list[0].Models, list[0].Ready, list[0].Hint = e.ollamaModels(ctx, list[0].URL, e.model(ctx, ProviderOllama))
+	savedOllama := e.model(ctx, ProviderOllama)
+	list[0].Models, list[0].Ready, list[0].Hint = e.ollamaModels(ctx, list[0].URL, savedOllama)
 	if list[0].Ready {
-		list[0].Model = firstModel(list[0].Models, e.model(ctx, ProviderOllama))
+		// The panel shows a model, so it must be the one a conversation uses: the first
+		// installed model is recorded when nothing was saved. It used to be shown only,
+		// and every message then failed asking for a model to be picked.
+		list[0].Model = e.pickOllama(ctx, list[0].Models, savedOllama)
 	}
 	if !list[0].Ready && len(list[0].Models) == 0 {
 		list[0].Install = ollamaInstall
@@ -661,6 +668,20 @@ func (e *Engine) ollamaModels(ctx context.Context, base, want string) ([]Model, 
 		return models, false, "Pick one of the installed models."
 	}
 	return models, ok, hint
+}
+
+// pickOllama is the model a conversation runs: the saved one when Ollama has it, and
+// otherwise the first installed one. The fallback is recorded, not just displayed, so
+// the settings screen and resolve agree on what will answer.
+func (e *Engine) pickOllama(ctx context.Context, models []Model, saved string) string {
+	pick := firstModel(models, saved)
+	if pick == "" || pick == saved {
+		return pick
+	}
+	if err := e.Store.SetSetting(ctx, "assistant.model."+ProviderOllama, pick); err != nil {
+		slog.Warn("ollama model not recorded", "model", pick, "err", err)
+	}
+	return pick
 }
 
 func (e *Engine) fetchOllama(base string) ([]Model, bool, string) {

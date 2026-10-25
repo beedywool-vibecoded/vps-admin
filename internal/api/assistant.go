@@ -31,6 +31,7 @@ func (s *Server) assistantUpdate(w http.ResponseWriter, r *http.Request) {
 		Effort    string  `json:"effort"`
 		AutoRead  *bool   `json:"autoRead"`
 		OllamaURL *string `json:"ollamaUrl"`
+		Persona   *string `json:"persona"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request")
@@ -61,6 +62,12 @@ func (s *Server) assistantUpdate(w http.ResponseWriter, r *http.Request) {
 	if body.OllamaURL != nil {
 		if err := s.Assistant.SetOllamaURL(ctx, *body.OllamaURL); err != nil {
 			writeErrorMsg(w, http.StatusBadRequest, "invalid_url", err.Error())
+			return
+		}
+	}
+	if body.Persona != nil {
+		if err := s.Assistant.SetPersona(ctx, *body.Persona); err != nil {
+			writeErrorMsg(w, http.StatusBadRequest, "invalid", err.Error())
 			return
 		}
 	}

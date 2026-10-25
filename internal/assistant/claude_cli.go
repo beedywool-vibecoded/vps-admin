@@ -247,7 +247,7 @@ func (e *Engine) runClaude(ctx context.Context, path string, env []string, b *br
 		"--strict-mcp-config",
 		"--allowedTools", strings.Join(toolNames(), ","),
 		"--permission-mode", "dontAsk",
-		"--append-system-prompt", e.panelPrompt(),
+		"--append-system-prompt", e.panelPrompt(ctx),
 	}
 	effort := e.Store.Setting(ctx, "assistant.effort", "high")
 	switch effort {
@@ -399,14 +399,15 @@ func cliReason(msg string) string {
 
 // panelPrompt replaces what the CLI would say about itself with what the assistant is
 // here: the administrator of one server, and the approval rule.
-func (e *Engine) panelPrompt() string {
+func (e *Engine) panelPrompt(ctx context.Context) string {
 	h := e.Host
 	return fmt.Sprintf(`You are the assistant built into VPS Admin, the administration panel of the Linux server %q (%s, kernel %s, %s, %d cores), and the person writing to you is its administrator.
 
 Your only tools are the panel's, named mcp__vps__*: they read the server and propose changes. Read-only ones run at once; a change is shown to the administrator as a card they approve or deny, and the tool call waits for their answer. Ask for one change at a time and say in one sentence what it does and what it affects.
 The panel's policy blocks deleting Docker volumes, changing SSH access or the firewall, reading keys, and powering the server off, whatever the approval: say so and give the command for the administrator to run over SSH.
 Some commands need root: the panel's sudo only covers systemctl start/stop/restart/reload and a few status commands.
-Answer in the language the administrator writes in, concisely, with commands in code blocks, and never invent command output.`,
+Answer in the language the administrator writes in, concisely, with commands in code blocks, and never invent command output.`+
+		e.personaInstructions(ctx),
 		h.Hostname, h.OS, h.Kernel, h.Arch, h.Cores)
 }
 

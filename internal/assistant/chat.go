@@ -296,7 +296,7 @@ func (e *Engine) chat(ctx context.Context, id, model, key string, history []stor
 	onText, onThinking func(string)) (*turn, error) {
 	req := chatRequest{
 		Model:     model,
-		Messages:  append([]oaMsg{{Role: "system", Content: e.systemPrompt()}}, toOpenAI(history)...),
+		Messages:  append([]oaMsg{{Role: "system", Content: e.systemPrompt(ctx)}}, toOpenAI(history)...),
 		Tools:     openAITools(),
 		Stream:    true,
 		MaxTokens: e.chatMaxTokens(id),
