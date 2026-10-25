@@ -487,8 +487,8 @@ onBeforeUnmount(() => {
             </div>
 
             <h2 id="persona">Personality</h2>
-            <button class="btn btn-outlined st persona-open" type="button" @click="openPersona">
-              <Icon name="edit" :size="18" />
+            <button class="btn btn-tonal st persona-open" type="button" @click="openPersona">
+              <Icon name="edit" :size="20" />
               {{ settings?.persona ? 'Edit the personality prompt' : 'Write a personality prompt' }}
             </button>
             <p class="small muted">
@@ -800,8 +800,13 @@ onBeforeUnmount(() => {
   color: var(--error);
   font-size: 12px;
 }
+/* A settings action, not a chip: it fills the card like the rows around it. */
 .persona-open {
-  align-self: flex-start;
+  width: 100%;
+  height: 44px;
+  justify-content: flex-start;
+  padding: 0 14px;
+  border-radius: 16px;
 }
 /* The personality prompt is a paragraph, not a line: the shared field grows with it. */
 .field.area {
