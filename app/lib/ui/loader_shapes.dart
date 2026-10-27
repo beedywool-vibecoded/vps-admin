@@ -1,5 +1,5 @@
-// The M3 Expressive loading shapes, copied from Pelote (components/bundle.js, computed by
-// porting androidx.graphics.shapes.RoundedPolygon): exact cubic paths in a 100-unit box.
+// M3 Expressive loading shapes copied from Pelote (components/bundle.js, ported from
+// androidx.graphics.shapes.RoundedPolygon): cubic paths in a 100-unit box.
 const kLoaderSequence = [
   'cookie9',
   'pentagon',

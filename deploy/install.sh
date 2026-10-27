@@ -46,7 +46,7 @@ die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 # Questions go to the terminal even when the script is piped into bash.
 ask() {
 	local reply=""
-	# No terminal (cron, CI, a pipe without tty): no question, the caller's default.
+	# No tty (cron, CI): use the caller's default.
 	{ printf '%s ' "$1" >/dev/tty; } 2>/dev/null || return 1
 	{ read -r reply </dev/tty; } 2>/dev/null || return 1
 	printf '%s' "$reply"
@@ -142,8 +142,7 @@ if ! id vps-admin >/dev/null 2>&1; then
 	say "Creating the vps-admin system user"
 	useradd --system --home-dir /var/lib/vps-admin --shell /usr/sbin/nologin vps-admin
 fi
-# docker: manage containers (this is root-equivalent, like any Docker admin tool).
-# systemd-journal and adm: read service logs and auth.log without sudo.
+# docker is root-equivalent; systemd-journal and adm let it read logs without sudo.
 for g in docker systemd-journal adm; do
 	getent group "$g" >/dev/null && usermod -aG "$g" vps-admin
 done
@@ -156,8 +155,7 @@ install -d -o root -g root -m 755 /etc/vps-admin/scripts
 # Google Drive backups mount their remote here, as the service user.
 install -d -o vps-admin -g vps-admin -m 755 /srv/storage
 
-# Google Drive backups need rclone and FUSE. The panel installs without them; the
-# storage card then explains what is missing instead of failing every backup.
+# rclone and FUSE are optional; the storage card explains what is missing.
 have_fuse=1
 command -v fusermount3 >/dev/null 2>&1 || command -v fusermount >/dev/null 2>&1 || have_fuse=0
 if ! command -v rclone >/dev/null 2>&1 || [ "$have_fuse" = 0 ]; then
@@ -176,7 +174,6 @@ if ! command -v rclone >/dev/null 2>&1 || [ "$have_fuse" = 0 ]; then
 fi
 [ -e /dev/fuse ] || say "warning: /dev/fuse is missing, so this VPS cannot mount the Drive"
 
-# Private panel through Tailscale: its MagicDNS name with a certificate from the tailnet.
 if [ "$TAILSCALE" != no ] && command -v tailscale >/dev/null && tailscale status >/dev/null 2>&1; then
 	TS_NAME=$(tailscale status --json 2>/dev/null | sed -n 's/^ *"DNSName": *"\([^"]*\)\.",*$/\1/p' | head -1)
 	if [ "$TAILSCALE" = ask ] && [ -n "$TS_NAME" ]; then
@@ -196,8 +193,7 @@ PUBLIC_URL="http://localhost:$PORT"
 [ -n "$DOMAIN" ] && PUBLIC_URL="https://$DOMAIN"
 WEBHOOK_URL=""
 if [ "$TAILSCALE" = yes ]; then
-	# Port 443 on the tailnet address would block a local proxy that listens on [::]:443
-	# (nginx and Caddy do): then the panel takes 10443 on the tailnet instead.
+	# A tailnet listener on 443 would block a local proxy on [::]:443, so use 10443 then.
 	if ss -Hltnp 2>/dev/null | grep -v tailscaled | awk '{print $4}' | grep -qE '(^|[]:*])443$'; then
 		TS_PORT=10443
 	fi
@@ -235,8 +231,7 @@ chown root:vps-admin /etc/vps-admin/config.json
 chmod 640 /etc/vps-admin/config.json
 
 # 3. Privileged commands --------------------------------------------------------------
-# The agent may run exactly these as root. Paths differ between distributions, so they
-# are resolved here.
+# The agent may run exactly these as root. Paths differ between distros.
 say "Writing the sudo allowlist"
 rules=""
 allow() {
@@ -266,8 +261,7 @@ install -o root -g root -m 440 "$TMP/sudoers" /etc/sudoers.d/vps-admin
 # 4. Service --------------------------------------------------------------------------
 say "Installing vps-admin $NEW_VERSION"
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo "")
-# The service files ship as one archive, so the release page lists one asset instead of
-# four. Local files win with --binary: piped through bash, the "script dir" is the cwd.
+# With --binary, local service files win. Piped through bash, the "script dir" is the cwd.
 if [ -n "$LOCAL_BINARY" ] && [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/preflight.sh" ]; then
 	for f in preflight.sh run-script.sh proxy-helper.sh storage-helper.sh vps-admin.service; do
 		cp "$SCRIPT_DIR/$f" "$TMP/$f"
@@ -363,10 +357,8 @@ CADDY
 	fi
 }
 
-# nginx: one site file for the panel, then a Let's Encrypt certificate through certbot,
-# which adds the HTTPS part to that same file and keeps it renewed.
+# nginx: certbot adds the HTTPS part to the panel's site file and keeps it renewed.
 setup_nginx() {
-	# Deployed apps get one server block each in this folder, written by the agent.
 	install -d -o vps-admin -g vps-admin -m 755 /etc/nginx/vps-admin-apps
 	if [ -d /etc/nginx/conf.d ] && [ ! -f /etc/nginx/conf.d/vps-admin-apps.conf ]; then
 		echo "include /etc/nginx/vps-admin-apps/*.conf;" > /etc/nginx/conf.d/vps-admin-apps.conf
@@ -386,8 +378,7 @@ setup_nginx() {
 		say "$conf already has a server block for $DOMAIN: remove it (or rerun with --proxy none) so the installer can manage it."
 		return
 	fi
-	# Rewritten on every run (certbot puts its HTTPS lines back below, keeping the
-	# certificate), so switching between public, --allow and --tailscale is a rerun.
+	# Rewritten on every run (certbot re-adds its HTTPS lines), so switching modes is a rerun.
 	local proxy allow="" panel
 	proxy="		proxy_pass http://127.0.0.1:$PORT;
 		proxy_http_version 1.1;
@@ -395,7 +386,6 @@ setup_nginx() {
 		proxy_set_header X-Real-IP \$remote_addr;
 		proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
 		proxy_set_header X-Forwarded-Proto \$scheme;
-		# Live views (metrics, logs, builds, the assistant) stream: no buffering.
 		proxy_buffering off;
 		proxy_cache off;
 		proxy_read_timeout 1h;"
@@ -444,7 +434,6 @@ NGINX
 			return
 		fi
 	fi
-	# An existing certificate is reinstalled as is, a new one requested otherwise.
 	local args=(--nginx -d "$DOMAIN" --non-interactive --agree-tos --redirect --keep-until-expiring)
 	if [ -n "$EMAIL" ]; then
 		args+=(-m "$EMAIL")

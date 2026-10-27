@@ -10,8 +10,7 @@ import 'ui/shell.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Never stay on the splash screen: if stored settings cannot be read, start empty
-  // and say so, instead of failing before the first frame.
+  // Never stay on the splash: start empty if stored settings can't be read.
   AppState state;
   Object? startError;
   try {
@@ -47,8 +46,7 @@ class VpsAdminApp extends StatelessWidget {
             state.useDynamicColor &&
             lightDynamic != null &&
             darkDynamic != null;
-        // The palette is generated like the panel's (tonal spot from one seed), so every
-        // container role exists; Material You only changes the seed.
+        // Tonal spot from one seed like the panel, so every container role exists.
         final seed = dyn ? lightDynamic.primary : state.seed.color;
         final light = ColorScheme.fromSeed(seedColor: seed);
         final dark = ColorScheme.fromSeed(

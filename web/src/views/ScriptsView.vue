@@ -17,7 +17,6 @@ const loading = ref(true)
 const args = ref<Record<string, string>>({})
 const busy = ref<Record<string, boolean>>({})
 
-// Output panel: the live run or a run from the history
 const shown = ref<{ title: string; text: string; live: boolean; exit?: number; error?: string } | null>(null)
 const outEl = ref<HTMLElement>()
 let closeStream: (() => void) | undefined

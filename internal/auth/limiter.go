@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// limiter counts failed attempts per IP and overall, in a fixed window. The global cap
-// stops a botnet from spreading guesses over many addresses.
+// limiter counts failed attempts per IP and globally in a fixed window; the global cap
+// stops guesses spread over many addresses.
 type limiter struct {
 	mu       sync.Mutex
 	perIP    int

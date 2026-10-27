@@ -1,5 +1,4 @@
-// Icons an admin can give to a group of containers, shared with everyone through the
-// server appearance. No icon keeps the Material shape.
+// Icons for container groups, shared with everyone via the server appearance.
 import type { IconName } from '@/components/Icon.vue'
 import { appearance, type Appearance } from './appearance'
 import { request } from './api'

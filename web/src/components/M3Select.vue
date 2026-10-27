@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="T extends string">
-// M3 exposed dropdown menu. Replaces <select>, whose popup is drawn by the browser.
+// M3 exposed dropdown menu replacing <select>, whose popup the browser draws.
 // Keyboard: arrows move, Enter or Space picks, Escape closes, letters jump.
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import Icon from './Icon.vue'
@@ -23,9 +23,8 @@ const pos = ref<Record<string, string>>({})
 const id = `sel-${Math.random().toString(36).slice(2, 8)}`
 const current = computed(() => props.options.find((o) => o.value === model.value))
 
-// The menu is placed against the window instead of inside the field: a scrolling card,
-// a clipped column or a short window would otherwise cut it off. Inside a dialog it has
-// to live in the dialog itself, which is its own layer above the page.
+// Positioned against the window so scrolling or clipped containers can't cut it off.
+// Inside a dialog it must live in the dialog, which is its own top layer.
 function place() {
   const el = btn.value
   if (!el) return
@@ -206,7 +205,7 @@ onBeforeUnmount(hide)
   rotate: 180deg;
 }
 .menu {
-  /* Placed by script: fixed to the window, so nothing can clip it. */
+  /* Positioned by place() */
   position: fixed;
   z-index: 90;
   box-sizing: border-box;

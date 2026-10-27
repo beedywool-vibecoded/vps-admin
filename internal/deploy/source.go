@@ -39,8 +39,7 @@ type packageJSON struct {
 	Scripts map[string]string `json:"scripts"`
 }
 
-// Detect picks a build from the file names at the app root. pkg is package.json if any,
-// dockerfile the Dockerfile content if any.
+// Detect picks a build from the file names at the app root.
 func Detect(files []string, pkg, dockerfile string) Detection {
 	for _, f := range composeFiles {
 		if slices.Contains(files, f) {
@@ -99,8 +98,7 @@ type Commands struct {
 	Install, Build, Start string
 }
 
-// GeneratedDockerfile returns the Dockerfile used for node and static builds. Static
-// builds look for the usual output folders of front-end tools.
+// GeneratedDockerfile returns the Dockerfile for node and static builds.
 func GeneratedDockerfile(build string, files []string, hasBuildScript bool, cmd Commands) string {
 	install := installCmd(files)
 	if cmd.Install != "" {
@@ -150,8 +148,8 @@ EXPOSE 80
 	return ""
 }
 
-// Extract unpacks a GitHub tarball into dst, dropping its top-level folder. Paths that
-// escape dst, links and device files are refused or skipped.
+// Extract unpacks a GitHub tarball into dst, dropping its top-level folder. Escaping
+// paths, links and device files are refused or skipped.
 func Extract(r io.Reader, dst string) error {
 	gz, err := gzip.NewReader(r)
 	if err != nil {
@@ -200,7 +198,7 @@ func Extract(r io.Reader, dst string) error {
 			if h.Mode&0o111 != 0 {
 				mode = 0o755
 			}
-			os.Remove(target) // replace in place on redeploys (compose keeps its folder)
+			os.Remove(target) // compose keeps its folder across redeploys
 			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 			if err != nil {
 				return err

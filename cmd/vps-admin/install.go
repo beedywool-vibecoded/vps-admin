@@ -16,11 +16,8 @@ import (
 	"github.com/beedywool/vps-admin/internal/buildinfo"
 )
 
-// installCmd reruns the installer from the latest release, so the settings page can
-// offer one command on a server that already runs the agent. The installer replaces the
-// binary and reinstalls the helpers; the panel's data is untouched.
-//
-// Options pass through: sudo vps-admin install --domain panel.example.com
+// installCmd reruns the installer from the latest release; data is untouched. Options
+// pass through: sudo vps-admin install --domain panel.example.com
 func installCmd(args []string) error {
 	if os.Geteuid() != 0 {
 		return errors.New("run it with sudo: sudo vps-admin install")
@@ -45,8 +42,7 @@ func installCmd(args []string) error {
 	if res.StatusCode != http.StatusOK {
 		return fmt.Errorf("cannot download the installer from %s: HTTP %d", repo, res.StatusCode)
 	}
-	// Read the whole script before running it: the client timeout must not cut stdin
-	// while the installer is still working through its lines.
+	// Read the whole script first so the client timeout can't cut stdin mid-install.
 	script, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 	if err != nil {
 		return fmt.Errorf("cannot read the installer: %w", err)

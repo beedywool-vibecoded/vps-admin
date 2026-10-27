@@ -5,18 +5,15 @@ import (
 	"strings"
 )
 
-// A site written in a shared configuration file (the main Caddyfile, or a file imported
-// from it) cannot be paused by moving the file aside: the other sites would go with it.
-// The block alone is commented out between these markers. Caddy ignores comments, the
-// panel lists the block as paused, and restoring it puts the exact lines back.
+// Sites in a shared Caddyfile can't be paused by moving the file, so the block is
+// commented out between these markers and restored verbatim.
 const (
 	PausedBegin = "# vps-admin: paused site"
 	PausedEnd   = "# vps-admin: end paused site"
 )
 
-// CommentBlock takes the site block serving domain out of src, as comments between the
-// two markers. A leading comment attached to the block travels with it. It reports false
-// when the file has no such block.
+// CommentBlock comments out the site block serving domain, along with a leading comment.
+// It reports false when there is no such block.
 func CommentBlock(src, domain string) (string, bool) {
 	lines := strings.Split(src, "\n")
 	start, end, ok := findBlock(lines, domain)
@@ -34,8 +31,7 @@ func CommentBlock(src, domain string) (string, bool) {
 	return strings.Join(out, "\n"), true
 }
 
-// RestoreBlock puts the paused block serving domain back in place, exactly as it was
-// written. It reports false when no paused block serves that domain.
+// RestoreBlock puts the paused block serving domain back exactly as it was.
 func RestoreBlock(src, domain string) (string, bool) {
 	lines := strings.Split(src, "\n")
 	for _, span := range pausedSpans(lines) {
@@ -51,8 +47,7 @@ func RestoreBlock(src, domain string) (string, bool) {
 	return src, false
 }
 
-// RemoveBlock deletes every block serving domain from src, paused or active. A deleted
-// site is not kept aside: the caller reloads the proxy after the file is written.
+// RemoveBlock deletes every block serving domain, paused or active.
 func RemoveBlock(src, domain string) (string, bool) {
 	lines := strings.Split(src, "\n")
 	var spans []blockSpan
@@ -67,7 +62,6 @@ func RemoveBlock(src, domain string) (string, bool) {
 	if len(spans) == 0 {
 		return src, false
 	}
-	// Remove from the bottom up so the indexes above stay valid.
 	sort.Slice(spans, func(i, j int) bool { return spans[i].start > spans[j].start })
 	for _, span := range spans {
 		lines = append(lines[:span.start], lines[span.end+1:]...)
@@ -75,8 +69,7 @@ func RemoveBlock(src, domain string) (string, bool) {
 	return strings.Join(lines, "\n"), true
 }
 
-// pausedBlockSites returns the site blocks kept as comments by CommentBlock. They are
-// listed with their real file name, so the panel can offer to turn them back on.
+// pausedBlockSites returns the blocks commented out by CommentBlock, so they can be resumed.
 func pausedBlockSites(src, file, apps string) []Site {
 	var out []Site
 	for _, span := range pausedSpans(strings.Split(src, "\n")) {
@@ -98,8 +91,7 @@ type blockSpan struct {
 	body  []string
 }
 
-// pausedSpans finds the marker pairs and returns the uncommented lines between them.
-// A marker that is not closed, or that wraps lines not commented out, is ignored.
+// pausedSpans finds the marker pairs. Unclosed markers or uncommented lines are ignored.
 func pausedSpans(lines []string) []blockSpan {
 	var out []blockSpan
 	for i := 0; i < len(lines); i++ {
@@ -114,8 +106,7 @@ func pausedSpans(lines []string) []blockSpan {
 				break
 			}
 			line := lines[j]
-			// CommentBlock prefixes every line with one #; strip exactly that one so
-			// comments inside the block come back unchanged.
+			// Strip exactly the one # CommentBlock added.
 			if !strings.HasPrefix(line, "#") {
 				bad = true
 				break
@@ -146,8 +137,7 @@ func findBlock(lines []string, domain string) (start, end int, ok bool) {
 		domains, _ := caddyAddresses(head)
 		if hasDomain(domains, domain) {
 			start = i
-			// A comment directly above describes the site: take it along, but never
-			// swallow the markers of another paused block.
+			// Take the comment directly above along, but not another paused block's markers.
 			for start > 0 {
 				prev := strings.TrimSpace(lines[start-1])
 				if prev == "" || !strings.HasPrefix(prev, "#") || prev == PausedBegin || prev == PausedEnd {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Where the variables go: into the app's environment (the default), or into a file
-// inside the deployed folder, since some compose files read a real .env instead.
+// Variables go to the app's environment or to a file in the deployed folder (some
+// compose files read a real .env).
 import M3Switch from './M3Switch.vue'
 
 const file = defineModel<boolean>('file', { required: true })

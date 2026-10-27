@@ -39,10 +39,8 @@ const id = `exp-${Math.random().toString(36).slice(2, 8)}`
   margin-left: auto;
   transition: rotate 0.25s var(--ease);
 }
-/* Animates to the content height without measuring it.
-   Both rules name the open disclosure as their parent, never just any ancestor: a
-   disclosure inside another one took the ancestor's state, so its body stayed at full
-   height while its summary said it was closed, and its content could not be selected. */
+/* Animates to the content height without measuring it. Use the direct parent, or a nested
+   disclosure inherits the outer one's open state. */
 .body {
   display: grid;
   grid-template-rows: 0fr;

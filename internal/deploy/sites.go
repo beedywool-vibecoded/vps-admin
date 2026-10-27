@@ -16,9 +16,8 @@ import (
 	"github.com/beedywool/vps-admin/internal/store"
 )
 
-// How an app is reached. Public and VPN go through the reverse proxy the installer set
-// up (Caddy, or nginx with certbot); VPN only lets the listed networks in. Tailscale
-// serves the app on this machine's tailnet name; local leaves it on 127.0.0.1.
+// Access modes. Public and VPN go through the reverse proxy; VPN only lets the listed
+// networks in.
 const (
 	AccessPublic    = "public"
 	AccessVPN       = "vpn"
@@ -90,22 +89,18 @@ func (e *Engine) URL(ctx context.Context, app store.App) string {
 	return ""
 }
 
-// Printer is where a site change logs its progress: a deployment's log, or the agent's
-// own log when the change comes from the Proxy tab.
+// Printer receives a site change's progress (deployment log or agent log).
 type Printer interface {
 	Printf(format string, args ...any)
 }
 
-// agentLog prints to the agent log, for actions with no deployment behind them.
 type agentLog struct{}
 
 func (agentLog) Printf(format string, args ...any) { slog.Info(fmt.Sprintf(format, args...)) }
 
-// publish routes the app to its container port according to its access mode, and
-// withdraws it from the ways it no longer uses.
+// publish routes the app according to its access mode and withdraws the other routes.
 func (e *Engine) publish(ctx context.Context, l Printer, app store.App, port int) error {
-	// A URL paused from the Proxy tab stays off after every deployment: the app runs,
-	// it is just not reachable.
+	// A URL paused from the Proxy tab stays off across deployments.
 	if e.Paused(ctx, app.ID) {
 		err := e.unpublishProxy(ctx, app)
 		e.tailscaleOff(ctx, app)
@@ -138,18 +133,16 @@ func (e *Engine) publish(ctx context.Context, l Printer, app store.App, port int
 	}
 }
 
-// unpublish removes every route to the app (when it is deleted).
+// unpublish removes every route to the app.
 func (e *Engine) unpublish(ctx context.Context, app store.App) error {
 	err := e.unpublishProxy(ctx, app)
 	e.tailscaleOff(ctx, app)
 	return err
 }
 
-// pausedSetting holds the apps whose URL was paused from the Proxy tab: the app keeps
-// running, its domain stops answering until it is turned back on.
+// pausedSetting holds the apps whose URL was paused; the app itself keeps running.
 const pausedSetting = "proxy.paused"
 
-// Paused tells whether an app's URL is paused.
 func (e *Engine) Paused(ctx context.Context, appID string) bool {
 	return e.pausedMap(ctx)[appID]
 }
@@ -163,8 +156,7 @@ func (e *Engine) pausedMap(ctx context.Context) map[string]bool {
 	return m
 }
 
-// SetPaused withdraws or restores an app's URL. Its containers keep running either way:
-// this is about the domain, not the app.
+// SetPaused withdraws or restores an app's URL. Containers keep running either way.
 func (e *Engine) SetPaused(ctx context.Context, app store.App, paused bool) error {
 	m := e.pausedMap(ctx)
 	if paused {
@@ -186,7 +178,7 @@ func (e *Engine) SetPaused(ctx context.Context, app store.App, paused bool) erro
 	return e.publish(ctx, agentLog{}, app, port)
 }
 
-// forgetPaused drops the pause of an app that is gone, so its id can be used again.
+// forgetPaused drops the pause of a deleted app so its id can be reused.
 func (e *Engine) forgetPaused(ctx context.Context, appID string) {
 	m := e.pausedMap(ctx)
 	if !m[appID] {
@@ -197,8 +189,7 @@ func (e *Engine) forgetPaused(ctx context.Context, appID string) {
 	e.Store.SetSetting(ctx, pausedSetting, string(b))
 }
 
-// LivePort is the local port the app answers on right now: the compose port it was
-// given, or the port of the container that is live.
+// LivePort is the compose port, or the port of the live container.
 func (e *Engine) LivePort(ctx context.Context, app store.App) int {
 	if app.Build != BuildCompose {
 		if d, err := e.Store.LiveDeployment(ctx, app.ID); err == nil && d != nil && d.HostPort != 0 {
@@ -210,17 +201,15 @@ func (e *Engine) LivePort(ctx context.Context, app store.App) int {
 
 var snippetName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*\.(caddy|conf)$`)
 
-// PausedSite is a site file the panel took out of the proxy and keeps aside: its domains
-// stop answering until it is put back.
+// PausedSite is a site file taken out of the proxy and kept aside.
 type PausedSite struct {
 	File   string `json:"file"`   // where it belongs, and the path the panel sends back
 	Stored string `json:"stored"` // the kept copy, under the data directory
 	Engine string `json:"engine"` // caddy or nginx
 }
 
-// siteFile checks a path handed by the panel: a site name directly inside one of the two
-// directories the proxy reads, or a Caddy file the proxy imports (the main Caddyfile,
-// conf.d/*.caddy). Anything else belongs to the administrator.
+// siteFile only accepts a site directly inside one of the proxy's directories, or a Caddy
+// file the proxy imports. Anything else belongs to the admin.
 func (e *Engine) siteFile(file string) (path, engine string, err error) {
 	path = filepath.Clean(file)
 	base := filepath.Base(path)
@@ -235,9 +224,8 @@ func (e *Engine) siteFile(file string) (path, engine string, err error) {
 	return "", "", errors.New("this is not a proxy site file")
 }
 
-// sharedCaddyFile reports a file Caddy reads besides the panel's own snippets: the main
-// Caddyfile, and the .caddy files it imports. Several sites can share one, so the panel
-// edits a block selected by domain instead of moving the whole file.
+// sharedCaddyFile reports the main Caddyfile and the files it imports. Several sites can
+// share one, so edits target a block by domain.
 func sharedCaddyFile(path, root string) bool {
 	if root == "" || strings.Contains(strings.ToLower(filepath.Base(path)), ".bak") {
 		return false
@@ -252,17 +240,13 @@ func sharedCaddyFile(path, root string) bool {
 	return strings.HasSuffix(filepath.Base(path), ".caddy")
 }
 
-// sharedCaddy tells whether a site lives in a file several sites can share. The panel's
-// own snippets are one site per file and keep working the way they always did.
 func (e *Engine) sharedCaddy(path string) bool {
 	return e.SitesDir != "" && filepath.Dir(filepath.Clean(path)) != filepath.Clean(e.SitesDir)
 }
 
-// siteOwner is the app a site file belongs to: the panel names each site after its app,
-// so a file whose app still exists is driven from the app, not from this list.
+// siteOwner is the app a site file belongs to, if that app still exists.
 func (e *Engine) siteOwner(ctx context.Context, path string) *store.App {
-	// Only the panel's snippets are named after an app. A file Caddy imports is the
-	// administrator's, even when its name happens to match an app id.
+	// Only the panel's snippets are named after an app.
 	if e.Store == nil {
 		return nil
 	}
@@ -280,8 +264,7 @@ func (e *Engine) siteOwner(ctx context.Context, path string) *store.App {
 	return app
 }
 
-// reloadProxy applies the change to whichever proxy owns the file. Caddy refuses a bad
-// configuration and keeps the old one; nginx is reloaded through the root helper.
+// reloadProxy reloads Caddy directly, nginx through the root helper.
 func (e *Engine) reloadProxy(ctx context.Context, engine string) error {
 	if engine == "nginx" {
 		if e.Helper == nil {
@@ -298,11 +281,9 @@ func (e *Engine) reloadProxy(ctx context.Context, engine string) error {
 	return e.ReloadCaddy(ctx)
 }
 
-// pausedDir holds the site files taken out of the proxy, one per site.
 func (e *Engine) pausedDir() string { return filepath.Join(e.DataDir, "proxy-paused") }
 
-// storedName keeps the engine with the file it came from, so a kept site goes back where
-// it was.
+// storedName keeps the engine in the name so a resumed site goes back to the right place.
 func storedName(engine, base string) string { return engine + "__" + base }
 
 func splitStored(name string) (engine, base string, ok bool) {
@@ -313,8 +294,7 @@ func splitStored(name string) (engine, base string, ok bool) {
 	return engine, base, true
 }
 
-// PauseSite takes a site out of the proxy: its file is kept aside and the proxy reloaded,
-// so its domains stop answering. Everything else about the site is left alone.
+// PauseSite moves a site file aside and reloads the proxy.
 func (e *Engine) PauseSite(ctx context.Context, file, domain string) error {
 	path, engine, err := e.siteFile(file)
 	if err != nil {
@@ -346,7 +326,7 @@ func (e *Engine) PauseSite(ctx context.Context, file, domain string) error {
 		return err
 	}
 	if err := e.reloadProxy(ctx, engine); err != nil {
-		// The proxy keeps serving its old configuration: put the site back where it was.
+		// Reload failed: put the site back.
 		writeShared(path, data)
 		os.Remove(stored)
 		e.reloadProxy(context.WithoutCancel(ctx), engine)
@@ -355,7 +335,7 @@ func (e *Engine) PauseSite(ctx context.Context, file, domain string) error {
 	return nil
 }
 
-// ResumeSite puts a paused site back, byte for byte, and reloads the proxy.
+// ResumeSite restores a paused site byte for byte and reloads the proxy.
 func (e *Engine) ResumeSite(ctx context.Context, file, domain string) error {
 	path, engine, err := e.siteFile(file)
 	if err != nil {
@@ -387,9 +367,8 @@ func (e *Engine) ResumeSite(ctx context.Context, file, domain string) error {
 	return nil
 }
 
-// DeleteSite removes a site: the file in the proxy's directory, and the copy kept aside
-// when it is paused. A site an app still serves is refused, since the next deploy would
-// write it again.
+// DeleteSite removes a site and its paused copy. Sites still served by an app are
+// refused, since the next deploy would rewrite them.
 func (e *Engine) DeleteSite(ctx context.Context, file, domain string) error {
 	path, engine, err := e.siteFile(file)
 	if err != nil {
@@ -419,8 +398,7 @@ func (e *Engine) DeleteSite(ctx context.Context, file, domain string) error {
 	return e.reloadProxy(ctx, engine)
 }
 
-// pauseSharedSite comments out one site block in a Caddyfile: the other sites in the
-// same file keep answering, and the block itself stays where it was for a resume.
+// pauseSharedSite comments out one site block, leaving the rest of the file alone.
 func (e *Engine) pauseSharedSite(ctx context.Context, path, domain string) error {
 	if strings.TrimSpace(domain) == "" {
 		return errors.New("this file holds several sites: say which domain to pause")
@@ -439,7 +417,6 @@ func (e *Engine) pauseSharedSite(ctx context.Context, path, domain string) error
 	return e.applySharedSite(ctx, path, data, []byte(next))
 }
 
-// resumeSharedSite takes one block back out of its comment markers.
 func (e *Engine) resumeSharedSite(ctx context.Context, path, domain string) error {
 	if strings.TrimSpace(domain) == "" {
 		return errors.New("this file holds several sites: say which domain to resume")
@@ -455,7 +432,6 @@ func (e *Engine) resumeSharedSite(ctx context.Context, path, domain string) erro
 	return e.applySharedSite(ctx, path, data, []byte(next))
 }
 
-// deleteSharedSite removes one block and leaves every other site in the file alone.
 func (e *Engine) deleteSharedSite(ctx context.Context, path, domain string) error {
 	if strings.TrimSpace(domain) == "" {
 		return errors.New("this file holds several sites: say which domain to delete")
@@ -471,8 +447,8 @@ func (e *Engine) deleteSharedSite(ctx context.Context, path, domain string) erro
 	return e.applySharedSite(ctx, path, data, []byte(next))
 }
 
-// applySharedSite writes a Caddyfile and reloads Caddy. A refused configuration puts the
-// previous file back, so a restart does not bring the broken version up.
+// applySharedSite writes a Caddyfile and reloads Caddy, restoring the previous file if
+// the config is refused.
 func (e *Engine) applySharedSite(ctx context.Context, path string, prev, next []byte) error {
 	if err := e.writeCaddy(ctx, path, next); err != nil {
 		return err
@@ -487,8 +463,7 @@ func (e *Engine) applySharedSite(ctx context.Context, path string, prev, next []
 	return nil
 }
 
-// writeCaddy replaces a Caddy file. The main Caddyfile and the imported files belong to
-// root, so production goes through the helper; tests write them directly.
+// writeCaddy goes through the helper since these files belong to root; tests write them directly.
 func (e *Engine) writeCaddy(ctx context.Context, path string, data []byte) error {
 	if e.WriteCaddy != nil {
 		return e.WriteCaddy(ctx, path, data)
@@ -496,8 +471,7 @@ func (e *Engine) writeCaddy(ctx context.Context, path string, data []byte) error
 	return writeShared(path, data)
 }
 
-// EnableHTTPS asks certbot for a certificate on an nginx site: certbot edits that server
-// block in place and reloads nginx. Caddy gets its certificates by itself.
+// EnableHTTPS runs certbot on an nginx site. Caddy handles certificates itself.
 func (e *Engine) EnableHTTPS(ctx context.Context, file, domain string) error {
 	path, engine, err := e.siteFile(file)
 	if err != nil {
@@ -522,7 +496,6 @@ func (e *Engine) EnableHTTPS(ctx context.Context, file, domain string) error {
 	return nil
 }
 
-// PausedSites lists the files kept aside, with the path each one belongs to.
 func (e *Engine) PausedSites() []PausedSite {
 	entries, err := os.ReadDir(e.pausedDir())
 	if err != nil {
@@ -574,9 +547,8 @@ func (e *Engine) unpublishProxy(ctx context.Context, app store.App) error {
 	return errors.Join(errs...)
 }
 
-// caddySite points the domain at port; Caddy gets the certificate itself. If Caddy
-// rejects the result (a domain already used elsewhere, for instance) the previous
-// snippet is restored.
+// caddySite points the domain at port. If Caddy rejects the result the previous snippet
+// is restored.
 func (e *Engine) caddySite(ctx context.Context, l Printer, app store.App, port int) error {
 	path := e.caddyPath(app.ID)
 	prev, readErr := os.ReadFile(path)
@@ -603,8 +575,8 @@ func (e *Engine) caddySite(ctx context.Context, l Printer, app store.App, port i
 	return nil
 }
 
-// nginxSite writes the app's server block, then asks certbot for HTTPS. The block is
-// rewritten on every deploy; certbot reinstalls the existing certificate into it.
+// nginxSite writes the server block on every deploy; certbot reinstalls the existing
+// certificate into it.
 func (e *Engine) nginxSite(ctx context.Context, l Printer, app store.App, port int) error {
 	path := e.nginxPath(app.ID)
 	prev, readErr := os.ReadFile(path)
@@ -651,7 +623,6 @@ server {
 	}
 	l.Printf("Setting up HTTPS for %s with certbot", app.Domain)
 	if out, err := e.Helper(ctx, "certbot", app.Domain); err != nil {
-		// The app stays reachable over HTTP; HTTPS comes at the next deploy once DNS is right.
 		l.Printf("HTTPS not set up (DNS of %s must point here and port 80 be open): %s", app.Domain, lastLine(out, err))
 	}
 	return nil
@@ -672,8 +643,7 @@ func lastLine(out string, err error) string {
 	return err.Error()
 }
 
-// tailscaleServe publishes the app at https://<machine>.<tailnet>.ts.net:<port>, only on
-// the tailnet. Each app keeps its own port, picked once from 8443 up.
+// tailscaleServe publishes the app on the tailnet only, each app on its own port from 8443 up.
 func (e *Engine) tailscaleServe(ctx context.Context, l Printer, app store.App, port int) error {
 	if e.Helper == nil || e.TailscaleName == nil || e.TailscaleName(ctx) == "" {
 		return errors.New("Tailscale is not running on this server")
@@ -707,8 +677,7 @@ func (e *Engine) tailscaleOff(ctx context.Context, app store.App) {
 	}
 }
 
-// writeShared writes a proxy site readable by the proxy, which runs as another user:
-// the agent's own umask (0077) would otherwise make it private.
+// writeShared makes the file readable by the proxy user; the agent's umask is 0077.
 func writeShared(path string, data []byte) error {
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return err

@@ -22,9 +22,8 @@ const ceremonyTTL = 5 * time.Minute
 
 var ErrCeremony = errors.New("passkey ceremony expired, start again")
 
-// There is a single administrator per server, so every passkey belongs to one WebAuthn
-// user. Each passkey is also tied to the device that registered it, which is what a
-// login session is attached to and what revoking removes.
+// Single admin per server, so every passkey belongs to one WebAuthn user. Each passkey is
+// also tied to the device that registered it, which sessions attach to and revoking removes.
 type owner struct {
 	id    []byte
 	creds []webauthn.Credential
@@ -183,8 +182,8 @@ func (a *Auth) PasskeyLoginBegin(ctx context.Context) (*Options, error) {
 	return &Options{Ceremony: cid, PublicKey: assertion.Response}, nil
 }
 
-// PasskeyLoginFinish verifies the assertion and opens a full session for the device that
-// owns the passkey. It returns that device id.
+// PasskeyLoginFinish verifies the assertion and opens a full session for the passkey's
+// device, returning its id.
 func (a *Auth) PasskeyLoginFinish(ctx context.Context, w http.ResponseWriter, r *http.Request, ip, ceremonyID string) (string, error) {
 	if !a.limiter.allow(ip) {
 		return "", ErrRateLimited

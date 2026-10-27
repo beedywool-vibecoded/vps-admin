@@ -25,9 +25,8 @@ import (
 
 const githubSetting = "github.app"
 
-// manifestStates holds the one-time state values of pending GitHub App creations. The
-// callback arrives as a cross-site navigation from github.com, which does not carry the
-// SameSite=Strict session cookie, so the state is what proves the request is ours.
+// manifestStates holds one-time states for pending GitHub App creations. The callback is
+// a cross-site navigation without the SameSite=Strict cookie, so the state authenticates it.
 type manifestStates struct {
 	mu sync.Mutex
 	m  map[string]time.Time
@@ -135,7 +134,6 @@ func (s *Server) githubCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/apps?github=failed", http.StatusSeeOther)
 		return
 	}
-	// Next: pick the repositories the App may read.
 	http.Redirect(w, r, "https://github.com/apps/"+url.PathEscape(cr.Slug)+"/installations/new", http.StatusSeeOther)
 }
 
@@ -166,8 +164,7 @@ func githubStatusCode(err error) int {
 	return http.StatusBadGateway
 }
 
-// githubPublicRepo resolves a repository URL the user pasted, without requiring the
-// GitHub App. Only public repositories answer: private ones need the App connection.
+// githubPublicRepo resolves a pasted repository URL without the GitHub App (public only).
 func (s *Server) githubPublicRepo(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		URL string `json:"url"`
@@ -214,7 +211,6 @@ func (s *Server) githubDetect(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"detection": deploy.Detect(files, pkg, df), "files": files})
 }
 
-// githubBranches lists a repository's branches for the branch picker.
 func (s *Server) githubBranches(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	inst, _ := strconv.ParseInt(q.Get("installation"), 10, 64)
@@ -226,10 +222,8 @@ func (s *Server) githubBranches(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"branches": list})
 }
 
-// readRepo looks a repository up in what the GitHub App can read, returning its current
-// owner/name and installation. An empty name means the App has no access to it. GitHub
-// reports the name it has today, so a repository that moved to an organization is found
-// under its new owner.
+// readRepo finds a repository among those the GitHub App can read and returns its current
+// owner/name (it may have moved) and installation. Empty name means no access.
 func (s *Server) readRepo(ctx context.Context, name string) (string, int64, error) {
 	repos, err := s.GitHub.Repos(ctx)
 	if err != nil {
@@ -243,8 +237,8 @@ func (s *Server) readRepo(ctx context.Context, name string) (string, int64, erro
 	return "", 0, nil
 }
 
-// githubWebhook deploys apps that follow the pushed branch. Public, authenticated by the
-// HMAC signature GitHub computes with the App webhook secret.
+// githubWebhook deploys apps following the pushed branch. Authenticated by the HMAC
+// signature from the App webhook secret.
 func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 25<<20))
 	if err != nil {
@@ -295,8 +289,7 @@ type appView struct {
 	Live   *store.Deployment `json:"live,omitempty"`
 	Latest *store.Deployment `json:"latest,omitempty"`
 	Busy   bool              `json:"busy"`
-	// URL is where the app answers; AccessMode the effective mode (Access may be empty
-	// for apps made before access modes).
+	// AccessMode is the effective mode; Access is empty for older apps.
 	URL        string `json:"url,omitempty"`
 	AccessMode string `json:"accessMode"`
 }
@@ -354,12 +347,10 @@ type appInput struct {
 	Allow       string  `json:"allow"`
 	Env         []envIn `json:"env"`
 	Deploy      bool    `json:"deploy"`
-	// External marks a public repository entered by URL instead of one the GitHub App
-	// can read. It has no push webhook, so automatic deploys stay off. A pointer tells
-	// an update that leaves the source alone apart from an explicit switch.
+	// External marks a public repo entered by URL: no webhook, so no auto deploys.
+	// Pointers so an older panel can't wipe these settings.
 	External *bool `json:"external"`
-	// Optional: the variables can be written to a file in the app's folder instead of
-	// being handed to the app. Pointers so an older panel cannot wipe the setting.
+	// EnvFile writes the variables to a file in the app's folder.
 	EnvFile *bool   `json:"envFile"`
 	EnvPath *string `json:"envPath"`
 }
@@ -369,8 +360,7 @@ type envIn struct {
 	Value  string `json:"value"`
 	Secret bool   `json:"secret"`
 	Keep   bool   `json:"keep"` // secret left unchanged
-	// HasValue is read-only: the panel gets it from appGet and used to echo it back
-	// on save, which the strict JSON decoder rejected as an unknown field (400).
+	// HasValue is read-only but older panels echo it back; the strict decoder would 400.
 	HasValue *bool `json:"hasValue"`
 }
 
@@ -456,8 +446,7 @@ func (s *Server) accessError(ctx context.Context, in *appInput) string {
 	return ""
 }
 
-// publicSource checks a repository entered by URL. It is always read without the App
-// credentials, so a public repository works even when GitHub is not connected.
+// publicSource checks a repo entered by URL, always without App credentials.
 func (s *Server) publicSource(ctx context.Context, name string) (string, error) {
 	rp, err := s.GitHub.PublicRepo(ctx, name)
 	if err != nil {
@@ -469,8 +458,7 @@ func (s *Server) publicSource(ctx context.Context, name string) (string, error) 
 	return rp.FullName, nil
 }
 
-// resolveSource turns the repository field into a stored source. external reads it as a
-// public URL; otherwise the GitHub App must be able to see it.
+// resolveSource turns the repository field into a stored source.
 func (s *Server) resolveSource(ctx context.Context, raw string, external bool) (string, int64, error) {
 	name, err := github.ParseRepoURL(raw)
 	if err != nil {
@@ -647,10 +635,8 @@ func (s *Server) appUpdate(w http.ResponseWriter, r *http.Request) {
 		writeErrorMsg(w, http.StatusBadRequest, "invalid", msg)
 		return
 	}
-	// A repository can be renamed or moved to another account (for example from a user to
-	// an organization). Follow its new installation when the source changes, so pushes and
-	// deployments read the right repository. An external source is a public URL entered by
-	// the user, with no App installation behind it.
+	// The repository may have been renamed or moved: follow its new installation.
+	// External sources have no installation.
 	external := a.InstallationID == 0
 	requestedExternal := in.External != nil && *in.External
 	if in.Repo != "" && (!strings.EqualFold(in.Repo, a.Repo) || (in.External != nil && requestedExternal != external)) {
@@ -666,8 +652,7 @@ func (s *Server) appUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		a.Repo, a.InstallationID = repo, inst
 	}
-	// The build type is fixed once the app runs: switching between compose and a single
-	// container would leave the old one behind.
+	// Switching between compose and single container would leave the old one behind.
 	if a.Build != in.Build && a.Build != deploy.BuildAuto {
 		if _, err := s.Store.LiveDeployment(r.Context(), a.ID); err == nil {
 			writeErrorMsg(w, http.StatusBadRequest, "invalid", "delete and recreate the app to change its build type")
@@ -869,7 +854,7 @@ func (s *Server) deploymentStream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if cur.FinishedAt != nil {
-				// drain what the logger flushed last
+				// drain the logger's last flush
 				for {
 					select {
 					case chunk := <-ch:
@@ -886,8 +871,8 @@ func (s *Server) deploymentStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// composeFolder returns the working folder of a compose project running on this server.
-// Only such folders can be linked: the panel never touches arbitrary paths.
+// composeFolder returns the folder of a compose project running here. Only such folders
+// can be linked, never arbitrary paths.
 func (s *Server) composeFolder(ctx context.Context, project string) (string, error) {
 	list, err := s.Docker.Containers(ctx)
 	if err != nil {
@@ -916,7 +901,6 @@ func (s *Server) folderInspect(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"dir": dir, "folder": info})
 }
 
-// appLink makes an existing compose folder update from GitHub, like a panel app.
 func (s *Server) appLink(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Project    string `json:"project"`
@@ -985,8 +969,8 @@ func (s *Server) appCheck(w http.ResponseWriter, r *http.Request) {
 // rebuilding holds the containers being rebuilt, one rebuild at a time each.
 var rebuilding sync.Map
 
-// containerRebuild pulls or rebuilds the compose service of one container and recreates
-// it, streaming the output as plain text. It goes on if the browser leaves.
+// containerRebuild pulls or rebuilds one container's compose service, streaming output.
+// It continues if the browser leaves.
 func (s *Server) containerRebuild(w http.ResponseWriter, r *http.Request) {
 	list, err := s.Docker.Containers(r.Context())
 	if err != nil {
@@ -1013,8 +997,7 @@ func (s *Server) containerRebuild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rebuilding.Delete(c.Project + "/" + c.Service)
-	// The compose files it was started with, when they sit in its folder (the only
-	// folder the compose container sees).
+	// Only compose files inside its folder, the only folder the compose container sees.
 	var files []string
 	for _, f := range strings.Split(c.Labels["com.docker.compose.project.config_files"], ",") {
 		if f = strings.TrimSpace(f); f != "" && strings.HasPrefix(f, c.WorkDir+"/") {
@@ -1039,8 +1022,7 @@ func (s *Server) containerRebuild(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(out, "\n==> Done")
 }
 
-// flushWriter sends each write right away and ignores a gone client, so the command
-// it serves keeps running to the end.
+// flushWriter flushes each write and ignores a gone client so the command runs to the end.
 type flushWriter struct {
 	mu   sync.Mutex
 	w    io.Writer

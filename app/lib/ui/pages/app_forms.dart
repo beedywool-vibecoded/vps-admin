@@ -4,8 +4,7 @@ import '../../data/api.dart';
 import '../kit.dart';
 import '../widgets.dart';
 
-/// The panel's filled field (.tf): label in primary, value, hint, a bottom line.
-/// The explanation sits under the box, so a field is the same height with or without one.
+/// The panel's filled field (.tf). The hint sits under the box so heights stay equal.
 class FilledField extends StatelessWidget {
   const FilledField({
     super.key,
@@ -78,8 +77,7 @@ class FilledField extends StatelessWidget {
   }
 }
 
-/// The explanation under a field. It lives outside the box, so a row of fields lines
-/// up whatever each one has to say.
+/// The hint under a field, outside the box so a row of fields lines up.
 class FieldHelp extends StatelessWidget {
   const FieldHelp({super.key, required this.help, required this.child});
   final String? help;

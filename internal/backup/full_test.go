@@ -86,8 +86,7 @@ func TestFullBackupCarriesAppsBackgroundAndVolumes(t *testing.T) {
 		t.Fatalf("the volume entry came back as %q, %v", b, err)
 	}
 
-	// Restore stages the files; applying swaps them in and keeps the volumes for the
-	// second step, once Docker is up.
+	// Restore stages the files; applying swaps them in and leaves volumes for later.
 	if _, err := m.Restore(ctx, name, "a long enough passphrase"); err != nil {
 		t.Fatal(err)
 	}
@@ -112,8 +111,7 @@ func TestFullBackupCarriesAppsBackgroundAndVolumes(t *testing.T) {
 		t.Fatalf("the volumes must wait for the agent to start: %v", err)
 	}
 
-	// The import needs Docker in production; the test supplies the volume list and the
-	// unpack, so only the pause step is skipped.
+	// Volume list and unpack are stubbed; only the pause step is skipped.
 	if err := m.ApplyStagedVolumes(ctx); err != nil {
 		t.Fatal(err)
 	}

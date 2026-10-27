@@ -1,6 +1,5 @@
-// The widget bar on the right of wide screens. Whether it is open and which widgets it
-// shows are choices of this browser. While it shows, the Overview leaves out the cards
-// it would repeat.
+// The widget bar on wide screens; open state and widget choice are per browser. The
+// Overview hides the cards it would duplicate.
 import { computed, ref, watch } from 'vue'
 
 export const WIDGETS = [

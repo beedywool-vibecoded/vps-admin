@@ -10,9 +10,7 @@ import '../widgets.dart';
 import 'common.dart';
 import 'scripts.dart';
 
-/// ContainersView.vue: search, groups collapsed by default with their icon, the folder's
-/// scripts, and each container with its stats and actions (start, restart, stop,
-/// rebuild, logs).
+/// ContainersView.vue
 class ContainersPage extends StatefulWidget {
   const ContainersPage({super.key});
 
@@ -77,7 +75,7 @@ class _ContainersPageState extends State<ContainersPage> {
       final p = await api.containerRestartPolicies(ids);
       if (mounted) setState(() => policies = p);
     } catch (_) {
-      // The switch stays off; the list still works without Docker's answer.
+      // Switch stays off; the list works without it.
     }
   }
 
@@ -428,9 +426,8 @@ class _ContainersPageState extends State<ContainersPage> {
     final state = st != null
         ? '${(st['cpu'] as num).toStringAsFixed(1)}% · ${bytes((st['memUsed'] as num).toDouble())}'
         : c.status;
-    // A phone gives the name the width of the card: the state sits on its right, the image
-    // and its ports go under it, and the actions take a line of their own. Five things on
-    // one line left a long name squeezing everything else out of shape.
+    // Phone layout: name with state on the right, image and ports under it, actions on
+    // their own line.
     if (narrow) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -444,7 +441,7 @@ class _ContainersPageState extends State<ContainersPage> {
                 padding: const EdgeInsets.only(top: 5),
                 child: StatusDot(containerTone(c), label: c.health ?? c.state),
               ),
-              // The name gets the room; a long status gives way instead of pushing it out.
+              // A long status gives way to the name.
               Expanded(
                 flex: 2,
                 child: Column(
@@ -562,7 +559,6 @@ class _IconOption extends StatelessWidget {
   }
 }
 
-/// RebuildDialog.vue: explanation, then the live output with a done/failed chip.
 class _RebuildBody extends StatefulWidget {
   const _RebuildBody({
     required this.api,

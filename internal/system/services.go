@@ -26,8 +26,7 @@ var (
 	ErrSelfLockout = errors.New("stopping this service would cut your access to the server")
 )
 
-// lockout lists services that must never be stopped from the panel: losing them means
-// losing the way back in. Restarting them stays allowed.
+// lockout services can't be stopped from the panel (they're the way back in); restart is allowed.
 var lockout = []string{"ssh", "sshd", "vps-admin"}
 
 func (r *Runner) Services(ctx context.Context) ([]Service, error) {
@@ -67,7 +66,6 @@ func validUnit(name string) bool {
 	return unitName.MatchString(name) && !strings.HasPrefix(name, "-")
 }
 
-// ServiceAction starts, stops, restarts or reloads a service.
 func (r *Runner) ServiceAction(ctx context.Context, name, action string) error {
 	name = strings.TrimSuffix(name, ".service")
 	if !validUnit(name) {
@@ -83,8 +81,7 @@ func (r *Runner) ServiceAction(ctx context.Context, name, action string) error {
 	return err
 }
 
-// ServiceLogs returns the last lines of the unit journal. The agent user is in the
-// systemd-journal group, so no sudo is needed.
+// ServiceLogs reads the journal; the agent is in systemd-journal, so no sudo.
 func (r *Runner) ServiceLogs(ctx context.Context, name string, lines int) (string, error) {
 	name = strings.TrimSuffix(name, ".service")
 	if !validUnit(name) {

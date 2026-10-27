@@ -5,8 +5,7 @@ import '../live.dart';
 import '../widgets.dart';
 import 'common.dart';
 
-/// SecurityView.vue: the score, the tally, each check by group with its fix, and the
-/// listening ports split between all interfaces and local ones.
+/// SecurityView.vue
 class SecurityPage extends StatefulWidget {
   const SecurityPage({super.key});
 

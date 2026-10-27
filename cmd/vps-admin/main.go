@@ -51,8 +51,7 @@ func main() {
 		os.Exit(2)
 	}
 	cmd := os.Args[1]
-	// install hands its arguments to the installer untouched: it has no flags of its
-	// own, and --domain and friends are not flags this command parses.
+	// install passes its arguments straight to the installer.
 	if cmd == "install" {
 		args := os.Args[2:]
 		if len(args) > 0 && args[0] == "--" {
@@ -135,8 +134,7 @@ func serve(cfgPath string) error {
 	if err != nil {
 		return err
 	}
-	// A staged restore is installed before the store opens: the database and the key that
-	// decrypts it are swapped together.
+	// Install a staged restore before the store opens.
 	if err := backup.ApplyPending(cfg.DataDir); err != nil {
 		slog.Error("cannot apply the staged restore", "err", err)
 	}
@@ -172,7 +170,6 @@ func serve(cfgPath string) error {
 	if _, err := os.Stat(backup.HelperPath); err == nil {
 		backupMgr.Helper = backup.HelperPath
 	}
-	// The volumes of a restored full archive are unpacked before anything deploys.
 	if err := backupMgr.ApplyStagedVolumes(ctx); err != nil {
 		slog.Error("cannot restore the staged volumes", "err", err)
 	}
@@ -181,14 +178,12 @@ func serve(cfgPath string) error {
 	if v := os.Getenv("VPS_ADMIN_GITHUB_API"); v != "" {
 		gh.API = v
 	}
-	// One staged Caddy file at a time: two proxy actions must not overwrite each
-	// other's bytes between writing the stage and asking the helper to install it.
+	// Serialize staged Caddy writes so two actions don't overwrite each other's stage.
 	var caddyWrite sync.Mutex
 	engine := &deploy.Engine{
 		Store: st, Box: box, GitHub: gh, DataDir: cfg.DataDir, SitesDir: cfg.CaddySitesDir, NginxDir: cfg.NginxSitesDir,
 		ReloadCaddy: func(ctx context.Context) error { return reloadCaddy(ctx, runner) },
-		// The main Caddyfile and its imports are root-owned: the helper swaps them in
-		// with the same validation and rollback as the installer.
+		// Root-owned files: the helper swaps them in with validation and rollback.
 		WriteCaddy: func(ctx context.Context, path string, data []byte) error {
 			caddyWrite.Lock()
 			defer caddyWrite.Unlock()
@@ -212,7 +207,6 @@ func serve(cfgPath string) error {
 			return ""
 		},
 	}
-	// The root helper for nginx, certbot and tailscale serve (installed with the agent).
 	if _, err := os.Stat("/opt/vps-admin/proxy-helper"); err == nil {
 		engine.Helper = func(ctx context.Context, args ...string) (string, error) {
 			return runner.Sudo(ctx, 5*time.Minute, append([]string{"/opt/vps-admin/proxy-helper"}, args...)...)
@@ -237,7 +231,6 @@ func serve(cfgPath string) error {
 	}
 	asst.Init(ctx)
 
-	// Container and disk alerts, posted to the webhook set in the panel or the app.
 	alertWatcher := &alerts.Watcher{Store: st, Docker: dockerClient, Metrics: collector, Deploy: engine}
 	go alertWatcher.Run(ctx)
 
@@ -277,8 +270,7 @@ func serve(cfgPath string) error {
 	return httpSrv.Shutdown(shutdown)
 }
 
-// housekeeping confirms a fresh update once the agent has run for a minute, then prunes
-// the audit log daily.
+// housekeeping commits a fresh update after a minute, then prunes the audit log daily.
 func housekeeping(ctx context.Context, st *store.Store, up *update.Updater) {
 	select {
 	case <-ctx.Done():
@@ -317,8 +309,7 @@ func chownData(dir string) {
 	}
 }
 
-// scriptsCmd manages the script links. Linking needs root: the folder is root-owned so
-// the agent itself cannot add scripts.
+// scriptsCmd manages the script links. Linking needs root.
 func scriptsCmd(cmd, cfgPath string, args []string, name, folder string) error {
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
@@ -369,9 +360,8 @@ func scriptsCmd(cmd, cfgPath string, args []string, name, folder string) error {
 	}
 }
 
-// reloadCaddy applies the app snippets. A reload can fail while Caddy is busy (another
-// reload, certificates being obtained), so it is retried; the final error carries
-// Caddy's own message from the journal rather than systemctl's exit status.
+// reloadCaddy retries since a reload can fail while Caddy is busy; the error includes
+// Caddy's journal message rather than systemctl's exit status.
 func reloadCaddy(ctx context.Context, runner *system.Runner) error {
 	var err error
 	for attempt := 0; attempt < 3; attempt++ {

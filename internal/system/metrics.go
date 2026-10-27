@@ -141,8 +141,7 @@ func readUptime() float64 {
 	return v
 }
 
-// virtualIface skips loopback, containers, bridges and tunnels so the traffic shown is
-// what actually crosses the network card.
+// virtualIface skips loopback, containers, bridges and tunnels.
 func virtualIface(name string) bool {
 	for _, p := range []string{"lo", "docker", "br-", "veth", "virbr", "wg", "tun", "tap", "tailscale", "cni", "flannel", "kube"} {
 		if strings.HasPrefix(name, p) {

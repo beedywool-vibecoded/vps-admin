@@ -1,5 +1,5 @@
-// Package proxy reads the reverse proxy's configuration, so the panel can list every
-// domain this machine publishes: the ones it writes itself and the ones added by hand.
+// Package proxy reads the reverse proxy config so the panel can list every domain this
+// machine serves, including ones added by hand.
 package proxy
 
 import (
@@ -9,26 +9,22 @@ import (
 	"strings"
 )
 
-// Site is one published domain, or group of domains sharing a block, and where it sends
-// traffic.
+// Site is one domain, or group of domains sharing a block.
 type Site struct {
 	Domains []string `json:"domains"`
-	// Target is the upstream the site forwards to, like 127.0.0.1:8080. Empty for a site
-	// that only serves files or redirects.
+	// Target is the upstream, like 127.0.0.1:8080. Empty for static sites and redirects.
 	Target string `json:"target"`
 	File   string `json:"file"`
-	// Managed is set for the snippets VPS Admin writes, rewritten on every deploy.
+	// Managed is set for the snippets VPS Admin writes.
 	Managed bool   `json:"managed"`
 	ID      string `json:"id"` // app id of a managed site, empty when the app is gone
 	VPNOnly bool   `json:"vpnOnly"`
 	Scheme  string `json:"scheme"` // https or http
-	// Paused is set for an app's site that was turned off from the panel: the snippet is
-	// gone, the entry stays so it can be turned back on.
+	// Paused: the snippet was removed from the panel, the entry stays so it can be resumed.
 	Paused bool `json:"paused"`
 }
 
-// Report is the whole picture: which proxy answers, every site it serves, and the files
-// that exist but could not be read (the agent runs as vps-admin, not root).
+// Report lists the proxy's sites and the files it couldn't read (the agent isn't root).
 type Report struct {
 	Engine     string   `json:"engine"` // caddy, nginx, or "" when neither is installed
 	Root       string   `json:"root"`   // configuration directory of the proxy
@@ -36,9 +32,8 @@ type Report struct {
 	Unreadable []string `json:"unreadable"`
 }
 
-// Read reports what the machine's reverse proxy serves. caddySites and nginxSites are the
-// directories the panel writes its own snippets to; the proxy is the one that has them,
-// then the one installed on the machine.
+// Read reports what the reverse proxy serves. The engine is the one holding the panel's
+// snippet directory, else whichever is installed.
 func Read(caddySites, nginxSites string) Report {
 	caddyRoot, nginxRoot := parent(caddySites), parent(nginxSites)
 	switch {
@@ -50,9 +45,8 @@ func Read(caddySites, nginxSites string) Report {
 	return normalize(Report{})
 }
 
-// ReadFile parses one site file the way Read does. stored is where the bytes are (a file
-// kept aside while its site is paused), orig where it belongs: its name decides whether
-// the panel manages it, and that is the path the panel shows.
+// ReadFile parses one site file. stored is where the bytes are (paused sites are kept
+// aside), orig the path the panel shows.
 func ReadFile(stored, orig, engine, apps string) []Site {
 	src, err := os.ReadFile(stored)
 	if err != nil {
@@ -83,8 +77,7 @@ func ReadFile(stored, orig, engine, apps string) []Site {
 	return rep.Sites
 }
 
-// normalize gives every list a value, so the JSON says "sites": [] instead of null: a
-// client that walks it has nothing to guard against.
+// normalize replaces nil slices so the JSON has [] instead of null.
 func normalize(r Report) Report {
 	if r.Sites == nil {
 		r.Sites = []Site{}
@@ -111,8 +104,7 @@ func readCaddy(root, apps string) Report {
 	return rep
 }
 
-// readCaddyFile reads a Caddyfile and the files its import lines point at, so the sites of
-// the panel's snippets are listed exactly when Caddy loads them.
+// readCaddyFile reads a Caddyfile and the files it imports.
 func readCaddyFile(path, root, apps string, depth int, seen map[string]bool, rep *Report) {
 	if depth > 4 || seen[path] {
 		return
@@ -136,9 +128,8 @@ func readCaddyFile(path, root, apps string, depth int, seen map[string]bool, rep
 	}
 }
 
-// parseCaddy returns the sites of a Caddyfile and the import patterns it asks for. A site
-// block is an address list followed by braces; the global options block is the one with
-// no address.
+// parseCaddy returns the sites of a Caddyfile and its import patterns. The global
+// options block is the one with no address.
 func parseCaddy(src, file, apps string) ([]Site, []string) {
 	var sites []Site
 	var imports []string
@@ -198,8 +189,7 @@ func parseCaddy(src, file, apps string) ([]Site, []string) {
 	return sites, imports
 }
 
-// caddyAddresses splits a site block's header into domains and a scheme. Caddy answers
-// HTTPS for a name unless the address says otherwise; a bare port is plain HTTP.
+// caddyAddresses splits a site header into domains and a scheme. A bare port is plain HTTP.
 func caddyAddresses(head string) ([]string, string) {
 	scheme := "https"
 	var domains []string
@@ -226,13 +216,11 @@ func caddyAddresses(head string) ([]string, string) {
 // ---------------------------------------------------------------------------------
 // nginx
 
-// nginxServer is a server block while it is being read.
 type nginxServer struct {
-	site    Site
-	ssl     bool
-	allow   bool
-	denyAll bool
-	// redirect is set for the plain HTTP block that only sends visitors to the HTTPS one.
+	site     Site
+	ssl      bool
+	allow    bool
+	denyAll  bool
 	redirect bool
 }
 
@@ -243,8 +231,7 @@ func readNginx(root, apps string) Report {
 	var servers []*nginxServer
 
 	add := func(path string) {
-		// nginx never loads a backup copy: certbot and package upgrades leave them next
-		// to the real file, and naming tools write whatever variant they like.
+		// Skip backup copies left by certbot and package upgrades.
 		if backupFile(filepath.Base(path)) {
 			return
 		}
@@ -269,7 +256,6 @@ func readNginx(root, apps string) Report {
 		if len(s.site.Domains) == 0 {
 			continue
 		}
-		// proxy_pass names an upstream block more often than not.
 		if target, ok := upstreams[s.site.Target]; ok && target != "" {
 			s.site.Target = target
 		}
@@ -282,7 +268,6 @@ func readNginx(root, apps string) Report {
 			s.site.ID = strings.TrimSuffix(filepath.Base(s.site.File), ".conf")
 		}
 		if s.redirect && s.site.Scheme == "http" {
-			// A second block for the same name that only pushes visitors to HTTPS.
 			if servedOverTLS(servers, s.site.Domains) {
 				continue
 			}
@@ -293,8 +278,8 @@ func readNginx(root, apps string) Report {
 	return rep
 }
 
-// parseNginx returns the server blocks of an nginx file. Upstream names are collected so
-// proxy_pass http://name can be resolved once every file is read.
+// parseNginx returns the server blocks of an nginx file. Upstreams are collected so
+// proxy_pass http://name can be resolved after every file is read.
 func parseNginx(src, file, apps string, upstreams map[string]string) []*nginxServer {
 	var out []*nginxServer
 	managed := inside(file, apps)
@@ -384,8 +369,7 @@ func parseNginx(src, file, apps string, upstreams map[string]string) []*nginxSer
 	return out
 }
 
-// nginxNames returns the hostnames of a server_name line, without the catch-alls that
-// cannot be opened as a link.
+// nginxNames returns the hostnames of a server_name line, without catch-alls.
 func nginxNames(line string) []string {
 	line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "server_name"))
 	line = strings.TrimSuffix(line, ";")
@@ -400,7 +384,6 @@ func nginxNames(line string) []string {
 	return out
 }
 
-// servedOverTLS tells whether another block serves one of these names over HTTPS.
 func servedOverTLS(all []*nginxServer, domains []string) bool {
 	for _, s := range all {
 		if !s.ssl || len(s.site.Domains) == 0 {
@@ -427,7 +410,6 @@ func sameDomain(a, b []string) bool {
 // ---------------------------------------------------------------------------------
 // Shared
 
-// finish drops repeated entries, then orders the sites by their first domain.
 func finish(rep *Report) {
 	seen := map[string]bool{}
 	var kept []Site
@@ -449,8 +431,7 @@ func finish(rep *Report) {
 	})
 }
 
-// upstream keeps the host and port of a directive's target: the scheme, any path, and a
-// trailing semicolon are of no use in the list.
+// upstream keeps the host and port of a directive's target.
 func upstream(v string) string {
 	v = strings.TrimSpace(v)
 	v = strings.TrimSuffix(v, ";")
@@ -466,7 +447,6 @@ func upstream(v string) string {
 	return v
 }
 
-// hostOnly drops a port and the brackets of an IPv6 address.
 func hostOnly(addr string) string {
 	if strings.HasPrefix(addr, "[") {
 		if i := strings.Index(addr, "]"); i > 0 {
@@ -479,7 +459,6 @@ func hostOnly(addr string) string {
 	return addr
 }
 
-// comment removes an end-of-line comment.
 func comment(line string) string {
 	if i := strings.Index(line, "#"); i >= 0 {
 		return line[:i]
@@ -487,7 +466,6 @@ func comment(line string) string {
 	return line
 }
 
-// inside tells whether path is the directory dir or something under it.
 func inside(path, dir string) bool {
 	if dir == "" || path == "" {
 		return false
@@ -512,9 +490,8 @@ func isFile(p string) bool {
 	return p != "" && err == nil && !st.IsDir()
 }
 
-// backupFile reports a name that only marks a copy of a configuration file. The marker
-// is looked for anywhere in the name, not just at its end: shop.conf.bak, shop.conf.bak.1
-// and shop.bak.conf are all copies no proxy reads.
+// backupFile matches the marker anywhere in the name: shop.conf.bak.1 and shop.bak.conf
+// are copies too.
 func backupFile(name string) bool {
 	return strings.Contains(strings.ToLower(name), ".bak")
 }
@@ -529,8 +506,7 @@ func addDir(dir string, add func(string)) {
 		return
 	}
 	for _, e := range entries {
-		// certbot and the packaging leave .bak copies next to the real file: they are
-		// backups nginx never loads, not sites.
+		// Skip .bak copies left by certbot and packaging.
 		if e.IsDir() || backupFile(e.Name()) {
 			continue
 		}

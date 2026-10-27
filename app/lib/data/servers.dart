@@ -41,7 +41,7 @@ enum Seed {
 /// App-wide state: servers, the current one, appearance.
 class AppState extends ChangeNotifier {
   AppState._(this._prefs);
-  // null when the stored settings cannot be read: the app still works, without saving.
+  // null when stored settings can't be read; the app works without saving.
   final SharedPreferences? _prefs;
   static const _secure = FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
@@ -170,8 +170,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Plain HTTP is accepted only where the network itself is private: loopback, LAN
-  /// ranges, Tailscale (100.64.0.0/10, *.ts.net) and .local / .lan names.
+  /// Plain HTTP only for private networks: loopback, LAN, Tailscale, .local / .lan.
   static bool privateHost(String host) {
     if (host == 'localhost' ||
         host.endsWith('.local') ||

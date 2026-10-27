@@ -8,9 +8,7 @@ import '../live.dart';
 import '../widgets.dart';
 import 'app_forms.dart';
 
-/// AssistantView.vue's side panel: the AI provider (local, free online or Claude), its
-/// model, what the assistant may do, and the conversations. A conversation opens full
-/// screen.
+/// AssistantView.vue's side panel; a conversation opens full screen.
 class AssistantPage extends StatefulWidget {
   const AssistantPage({super.key});
 
@@ -134,9 +132,7 @@ class _AssistantPageState extends State<AssistantPage> {
     if (res == null) return;
     await _set({'apiKey': res});
     if (!mounted) return;
-    // A stored key is not a working provider: the server says why it is not ready (no
-    // claude command on this server, a check that did not answer), and that reason is the
-    // answer. "API key removed" is only true when the field was left empty.
+    // A saved key doesn't mean the provider is ready; the server's hint explains why.
     final hint = (settings?['hint'] as String?) ?? '';
     if (res.isEmpty) {
       showInfo(context, 'API key removed');
@@ -437,7 +433,7 @@ class _AssistantPageState extends State<AssistantPage> {
                           onPressed: _load,
                         ),
                       ),
-                    // Only once the provider answers: before that the list is a stand-in.
+                    // Only once the provider answers; before that the list is a placeholder.
                     if (models.isNotEmpty && configured)
                       SelectField<String>(
                         label: 'Model',

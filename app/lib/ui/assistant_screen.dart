@@ -428,10 +428,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
-/// The composer's action: filled with the primary colour, and muted rather than faded to
-/// almost nothing while it cannot be pressed, so the arrow keeps its contrast against the
-/// circle. Material dims a disabled filled button to 12% of the surface and 38% of the
-/// text colour, which reads as a smudge on a phone.
+/// The composer's send button. Material dims a disabled filled button to a smudge, so it
+/// uses a muted pair instead to keep the arrow readable.
 ButtonStyle composerButton(ColorScheme cs) => IconButton.styleFrom(
   backgroundColor: cs.primary,
   foregroundColor: cs.onPrimary,

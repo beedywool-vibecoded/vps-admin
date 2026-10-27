@@ -39,8 +39,7 @@ defineProps<{ label?: string; disabled?: boolean }>()
   height: 18px;
   margin: 11px;
   border-radius: 3px;
-  /* The ring is drawn inside the box: a border would leave 14 px for an 18 px tick, which
-     then spills out of the bottom right corner instead of sitting in the middle. */
+  /* Ring drawn inside: a border would leave 14px for the 18px tick. */
   box-shadow: inset 0 0 0 2px var(--on-sv);
   display: grid;
   place-items: center;

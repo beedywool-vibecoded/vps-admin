@@ -17,13 +17,11 @@ import (
 	"github.com/beedywool/vps-admin/internal/store"
 )
 
-// The Proxy page's own setting: the order the list was dragged into. Paused apps are
-// kept by internal/deploy, next to the snippet they removed.
+// Order the Proxy list was dragged into. Paused apps are tracked by internal/deploy.
 const proxyOrderSetting = "proxy.order"
 
-// proxySites lists every domain the machine's reverse proxy serves, with the upstream it
-// forwards to. A managed snippet whose app is gone comes back without its id, so the panel
-// shows it as left over instead of linking to a page that no longer exists.
+// proxySites lists every domain the reverse proxy serves. A managed snippet whose app is
+// gone loses its id so the panel shows it as left over.
 func (s *Server) proxySites(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.proxyView(r))
 }
@@ -52,8 +50,7 @@ func (s *Server) proxyView(r *http.Request) proxy.Report {
 		}
 		site.Paused = s.Deploy != nil && s.Deploy.Paused(ctx, site.ID)
 	}
-	// A site file kept aside while it is paused is gone from the proxy's directory: its
-	// row comes from the copy, parsed the same way as the files still in place.
+	// Paused site files are parsed from their kept-aside copy.
 	if s.Deploy != nil {
 		for _, p := range s.Deploy.PausedSites() {
 			dir := s.Cfg.CaddySitesDir
@@ -73,8 +70,7 @@ func (s *Server) proxyView(r *http.Request) proxy.Report {
 			}
 		}
 	}
-	// A paused app has no snippet left, but it still belongs in the list: that is where
-	// it is turned back on.
+	// Paused apps have no snippet but stay listed so they can be resumed.
 	if s.Deploy != nil {
 		for id, app := range apps {
 			if app.Domain == "" || !s.Deploy.Paused(ctx, id) {
@@ -98,9 +94,7 @@ func (s *Server) proxyView(r *http.Request) proxy.Report {
 			})
 		}
 	}
-	// nginx never loads a .bak copy, and the tab must not offer one either. The reads
-	// above already skip those files; this also drops a row from a paused copy kept by
-	// an older version, whose name the page would otherwise show.
+	// Drop .bak rows too, including paused copies kept by older versions.
 	if rep.Engine == "nginx" {
 		rep.Sites = slices.DeleteFunc(rep.Sites, func(site proxy.Site) bool {
 			return strings.Contains(strings.ToLower(filepath.Base(site.File)), ".bak")
@@ -110,7 +104,6 @@ func (s *Server) proxyView(r *http.Request) proxy.Report {
 	return rep
 }
 
-// snippetPath is where the panel's snippet of an app lives, whichever proxy is in use.
 func (s *Server) snippetPath(engine, id string) string {
 	if engine == "nginx" {
 		return filepath.Join(s.Cfg.NginxSitesDir, id+".conf")
@@ -118,8 +111,7 @@ func (s *Server) snippetPath(engine, id string) string {
 	return filepath.Join(s.Cfg.CaddySitesDir, id+".caddy")
 }
 
-// siteKey is what the saved order stores: the app for a managed site, the file and its
-// first domain otherwise.
+// siteKey is the app id for a managed site, else file and first domain.
 func siteKey(s proxy.Site) string {
 	if s.ID != "" {
 		return "app:" + s.ID
@@ -131,8 +123,7 @@ func siteKey(s proxy.Site) string {
 	return "file:" + s.File + "|" + d
 }
 
-// orderSites puts the list in the order dragged in the panel; sites never seen there
-// keep the domain order they came in, after the others.
+// orderSites applies the dragged order; unknown sites go last in domain order.
 func (s *Server) orderSites(ctx context.Context, sites []proxy.Site) {
 	if s.Store == nil {
 		return
@@ -183,8 +174,7 @@ func (s *Server) proxyPause(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal")
 		return
 	}
-	// Only an app served by the proxy has a URL to pause; a tailnet or local app has
-	// none, and pausing it would leave a flag nobody could clear.
+	// Only proxied apps have a URL to pause; otherwise the flag could never be cleared.
 	if a := deploy.Access(*app); app.Domain == "" || (a != deploy.AccessPublic && a != deploy.AccessVPN) {
 		writeErrorMsg(w, http.StatusBadRequest, "no_url", "this app has no proxy URL to pause")
 		return
@@ -198,7 +188,6 @@ func (s *Server) proxyPause(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.proxyView(r))
 }
 
-// proxyOrder remembers the order the Proxy list was dragged into.
 func (s *Server) proxyOrder(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Order []string `json:"order"`
@@ -223,9 +212,8 @@ func (s *Server) proxyOrder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.proxyView(r))
 }
 
-// proxySite pauses, resumes or deletes one site, whoever wrote it: the panel's snippet,
-// a block added by hand in a shared Caddyfile, a file left by an app that is gone. A
-// domain says which block of a shared file is meant.
+// proxySite pauses, resumes or deletes one site, whoever wrote it. Domain selects the
+// block in a shared Caddyfile.
 func (s *Server) proxySite(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		File   string `json:"file"`

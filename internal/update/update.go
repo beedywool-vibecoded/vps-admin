@@ -1,15 +1,11 @@
 // Package update installs new agent releases from GitHub.
 //
-// A release carries one binary per architecture, a SHA256SUMS file and SHA256SUMS.sig, an
-// ed25519 signature of that file made with the key whose public half is in pubkey.go.
-// A binary that does not match a signed checksum is never installed, even if GitHub or
-// the network is compromised.
+// Releases carry SHA256SUMS signed with the ed25519 key in pubkey.go; a binary that
+// doesn't match a signed checksum is never installed.
 //
-// Rollback: before swapping binaries the agent writes an attempt counter. The systemd
-// unit runs deploy/preflight.sh before each start; it increments the counter and puts the
-// previous binary back after three failed starts. A new agent that stays up clears the
-// counter with Commit. The rollback lives in that script because a broken binary cannot be
-// trusted to undo itself.
+// Rollback lives in deploy/preflight.sh, run by systemd before each start: it restores
+// the previous binary after three failed starts. A broken binary can't be trusted to
+// undo itself. Commit clears the counter once the new agent stays up.
 package update
 
 import (
@@ -71,15 +67,12 @@ type Status struct {
 }
 
 type Updater struct {
-	// Repo is where releases are read from, owner/name. Change it with SetSource.
 	Repo    string
 	DataDir string
-	// Binary is the path of the running executable, replaced in place.
-	Binary string
-	HTTP   *http.Client
-	API    string // GitHub API root, changed by tests
-	// Token authenticates against a private repository; assets are then fetched through
-	// the API instead of the public download links.
+	Binary  string
+	HTTP    *http.Client
+	API     string // GitHub API root, changed by tests
+	// Token is for private repositories; assets then go through the API.
 	Token string
 
 	mu      sync.Mutex
@@ -104,9 +97,8 @@ func New(dataDir string) (*Updater, error) {
 	return u, nil
 }
 
-// ParseRepo accepts a repository as owner/name or as a link to it on GitHub and returns
-// owner/name. Only github.com is accepted: releases are read through its API, so a
-// pasted link can never point the agent somewhere else.
+// ParseRepo accepts owner/name or a github.com link and returns owner/name. Other hosts
+// are refused so a pasted link can't point the agent elsewhere.
 func ParseRepo(s string) (string, error) {
 	errBad := errors.New("expected owner/name or https://github.com/owner/name")
 	s = strings.TrimSuffix(strings.TrimSpace(s), "/")
@@ -130,8 +122,7 @@ func ParseRepo(s string) (string, error) {
 	return owner + "/" + name, nil
 }
 
-// repoOwner follows the GitHub rule for users and organizations: letters, digits and
-// hyphens, never starting or ending with one.
+// repoOwner follows GitHub's naming rule: letters, digits and inner hyphens.
 func repoOwner(s string) bool {
 	if s == "" || s[0] == '-' || s[len(s)-1] == '-' {
 		return false
@@ -156,16 +147,13 @@ func repoName(s string) bool {
 	return true
 }
 
-// Source is the repository releases are read from, owner/name.
 func (u *Updater) Source() string {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return u.Repo
 }
 
-// SetSource changes the repository releases are read from and forgets the release found
-// in the previous one, so the panel never installs a build from a source it no longer
-// points at.
+// SetSource changes the repository and forgets the release found in the previous one.
 func (u *Updater) SetSource(repo string) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -187,7 +175,6 @@ func (u *Updater) Status() Status {
 	return s
 }
 
-// Check asks GitHub for the newest release that applies to this install.
 func (u *Updater) Check(ctx context.Context, prerelease bool) (Status, error) {
 	rel, err := u.latest(ctx, prerelease)
 	now := time.Now()
@@ -300,7 +287,6 @@ func (u *Updater) Apply(ctx context.Context, rel *Release) error {
 		os.Remove(newPath)
 		return err
 	}
-	// The new binary must at least run and report the expected version.
 	out, err := exec.CommandContext(ctx, newPath, "version").Output()
 	if err != nil || strings.TrimSpace(string(out)) != rel.Tag {
 		os.Remove(newPath)
@@ -328,8 +314,8 @@ func (u *Updater) Apply(ctx context.Context, rel *Release) error {
 	return nil
 }
 
-// headers sets the user agent and, when asked, the token. Asset requests through the
-// API need Accept: application/octet-stream to get the file itself.
+// headers sets the user agent and optionally the token. API asset downloads need
+// Accept: application/octet-stream.
 func (u *Updater) headers(req *http.Request, withToken bool) {
 	req.Header.Set("User-Agent", "vps-admin/"+buildinfo.Version)
 	req.Header.Set("Accept", "application/vnd.github+json")
@@ -350,10 +336,8 @@ func (u *Updater) send(ctx context.Context, url string, withToken bool) (*http.R
 	return u.HTTP.Do(req)
 }
 
-// get reads the release API and its assets. The panel can point the updates at another
-// repository, and the token saved for the old one then answers 403 (a fine-grained token
-// without access) or 401 (expired). A public repository must keep working, so such an
-// answer is retried once without the token; a private one still reports the token error.
+// get retries a 401/403 once without the token: after switching to a public repo the old
+// token may be refused. A private repo still reports the token error.
 func (u *Updater) get(ctx context.Context, url string) (*http.Response, error) {
 	res, err := u.send(ctx, url, true)
 	if err != nil || u.Token == "" || (res.StatusCode != http.StatusUnauthorized && res.StatusCode != http.StatusForbidden) {
@@ -374,9 +358,7 @@ func (u *Updater) get(ctx context.Context, url string) (*http.Response, error) {
 	return res, nil
 }
 
-// githubError turns a failed GitHub answer into something the panel can show: the API
-// message ("API rate limit exceeded", "Resource not accessible by personal access
-// token") is what tells the administrator what to change.
+// githubError includes GitHub's message, which tells the admin what to change.
 func githubError(res *http.Response, what string) error {
 	defer res.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(res.Body, 4<<10))
@@ -442,8 +424,7 @@ func (u *Updater) download(ctx context.Context, url, dst string, wantSum []byte)
 	return nil
 }
 
-// VerifySums checks the signature over a SHA256SUMS file and returns the hash listed
-// for asset.
+// VerifySums checks the signature over SHA256SUMS and returns the hash listed for asset.
 func VerifySums(sums, sig []byte, asset string) ([]byte, error) {
 	pub, err := base64.StdEncoding.DecodeString(PublicKey)
 	if err != nil || len(pub) != ed25519.PublicKeySize {
@@ -509,8 +490,7 @@ func parse(tag string) *version {
 	return v
 }
 
-// Newer reports whether tag a is a higher semantic version than b. Development builds
-// ("dev") are older than any release.
+// Newer reports whether tag a is a higher semver than b. "dev" is older than any release.
 func Newer(a, b string) bool {
 	va, vb := parse(a), parse(b)
 	if va == nil {
@@ -536,8 +516,7 @@ func Newer(a, b string) bool {
 	return comparePre(va.pre, vb.pre) > 0
 }
 
-// comparePre orders pre-release labels like semver: numeric parts numerically, so rc.10
-// comes after rc.9.
+// comparePre orders pre-release labels like semver, so rc.10 comes after rc.9.
 func comparePre(a, b string) int {
 	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
 	for i := 0; i < len(pa) && i < len(pb); i++ {
@@ -557,8 +536,8 @@ func comparePre(a, b string) int {
 	return len(pa) - len(pb)
 }
 
-// App release assets: the Android app is attached to the same GitHub releases. The
-// agent serves it to paired phones, which cannot read a private repository themselves.
+// The Android APK is attached to the same releases; the agent serves it to phones, which
+// can't read a private repository.
 const (
 	apkAsset     = "vps-admin.apk"
 	apkMetaAsset = "vps-admin-apk.json"
@@ -575,8 +554,7 @@ var (
 	appCached appCache
 )
 
-// AppLatest returns the metadata of the newest app build ({versionCode, versionName,
-// sha256, size}), cached for ten minutes. ErrNoRelease when no release carries one.
+// AppLatest returns the newest app build metadata, cached for ten minutes.
 func (u *Updater) AppLatest(ctx context.Context) ([]byte, *Release, error) {
 	appMu.Lock()
 	defer appMu.Unlock()

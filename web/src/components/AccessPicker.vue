@@ -1,7 +1,6 @@
 <script setup lang="ts">
-// How an app is reached, offered from what the server has: a public domain through the
-// reverse proxy found (Caddy, or nginx with certbot), the same domain limited to VPN
-// networks, the Tailscale name only, or nothing but 127.0.0.1.
+// How an app is reached, limited to what the server has: public domain via the proxy,
+// VPN-only, Tailscale, or 127.0.0.1.
 import { computed, onMounted, ref } from 'vue'
 import Icon from './Icon.vue'
 import { api, type AccessMode, type ServerSetup } from '@/lib/api'
@@ -16,7 +15,7 @@ onMounted(async () => {
   try {
     setup.value = await api.environment()
   } catch {
-    // without it every mode is offered, the server still checks
+    // offer every mode; the server still checks
   }
 })
 
@@ -175,7 +174,7 @@ const options = computed(() => {
   align-items: start;
   gap: 12px;
 }
-/* The explanation sits under the box, so every field in a row is exactly as tall. */
+/* Hint under the box, so fields in a row are the same height. */
 .ffield {
   display: flex;
   flex-direction: column;

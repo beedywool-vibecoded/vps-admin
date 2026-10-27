@@ -11,9 +11,9 @@ import (
 	"github.com/beedywool/vps-admin/internal/store"
 )
 
-// TestOllamaLive talks to a real Ollama on this machine. It is opt-in because it needs
-// a model pulled: VPS_ADMIN_OLLAMA_TEST=1 go test ./internal/assistant -run OllamaLive
-// The model defaults to qwen3:1.7b and the address to http://127.0.0.1:11434.
+// TestOllamaLive is opt-in since it needs a pulled model:
+// VPS_ADMIN_OLLAMA_TEST=1 go test ./internal/assistant -run OllamaLive
+// Defaults to qwen3:1.7b on http://127.0.0.1:11434.
 func TestOllamaLive(t *testing.T) {
 	if os.Getenv("VPS_ADMIN_OLLAMA_TEST") == "" {
 		t.Skip("set VPS_ADMIN_OLLAMA_TEST=1 to run against a real Ollama")

@@ -1,7 +1,6 @@
 <script setup lang="ts">
-// CPU and memory over time. Both are percentages, so they share one 0-100 axis.
-// Series colors come from --series-1/2, validated for color vision deficiency; the
-// memory line is also dashed and both lines are labeled, so color is never the only cue.
+// CPU and memory over time on one 0-100 axis. The memory line is also dashed and both are
+// labeled, so color is never the only cue.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { Point } from '@/lib/api'
 
@@ -44,7 +43,7 @@ const ticks = computed(() => {
   for (const f of [0, 0.25, 0.5, 0.75, 1]) {
     const i = Math.round(f * (n - 1))
     const label = new Date(props.points[i]!.t * 1000).toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' })
-    // A short history spans one minute; repeating the same time says nothing.
+    // Skip duplicate labels on short histories.
     if (!out.some((t) => t.label === label)) out.push({ x: x(i), label })
   }
   return out

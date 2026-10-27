@@ -1,7 +1,5 @@
-// Package github links a server to GitHub through a GitHub App created from the panel
-// with the manifest flow: one click, read-only access to the repositories the user picks,
-// and push webhooks for automatic deploys. Each server gets its own App, so nothing is
-// shared between installs.
+// Package github links a server to GitHub through an App created with the manifest flow:
+// read-only access to the picked repositories, plus push webhooks. One App per server.
 package github
 
 import (
@@ -74,8 +72,8 @@ var (
 	githubRepo  = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
 )
 
-// ParseRepoURL accepts the ways a public repository is usually copied: a full GitHub
-// URL, github.com/owner/repo, owner/repo, or the SSH clone URL. It returns owner/repo.
+// ParseRepoURL accepts a GitHub URL, github.com/owner/repo, owner/repo or an SSH clone URL
+// and returns owner/repo.
 func ParseRepoURL(raw string) (string, error) {
 	s := strings.TrimRight(strings.TrimSpace(raw), "/")
 	if s == "" {
@@ -118,8 +116,7 @@ func repoName(owner, name string) (string, error) {
 	return owner + "/" + name, nil
 }
 
-// PublicRepo checks a public repository without App credentials and returns its current
-// name, default branch and language. A private repository answers 404 here.
+// PublicRepo checks a public repository without App credentials. Private ones 404.
 func (c *Client) PublicRepo(ctx context.Context, name string) (*Repo, error) {
 	var raw struct {
 		FullName      string    `json:"full_name"`
@@ -167,9 +164,8 @@ func (c *Client) Creds() *Creds {
 	return c.creds
 }
 
-// Manifest describes the App GitHub creates for this server.
-// webhookURL is where GitHub can reach the server, which may differ from the panel's
-// own (private) address.
+// Manifest describes the App GitHub creates for this server. webhookURL may differ from
+// the panel's own (private) address.
 func Manifest(publicURL, webhookURL, name string) map[string]any {
 	if webhookURL == "" {
 		webhookURL = publicURL
@@ -184,9 +180,7 @@ func Manifest(publicURL, webhookURL, name string) map[string]any {
 		"redirect_url":    publicURL + "/api/github/manifest/callback",
 		"setup_url":       publicURL + "/apps?github=installed",
 		"setup_on_update": true,
-		// Public so the install page offers every account and organization the user
-		// belongs to. Installing grants this server read access; it cannot deploy
-		// anything that is not set up in this panel.
+		// Public so any of the user's accounts and orgs can install it.
 		"public":              true,
 		"default_permissions": map[string]string{"contents": "read", "metadata": "read"},
 		"default_events":      []string{"push"},
@@ -322,8 +316,8 @@ func (c *Client) call(ctx context.Context, method, path, auth string, body any) 
 	return io.ReadAll(io.LimitReader(res.Body, 16<<20))
 }
 
-// asInstallation reads an endpoint as the App installation. Installation 0 means a
-// repository used through its public URL: the same endpoints answer without a token.
+// asInstallation reads an endpoint as the App installation. Installation 0 means a public
+// repository, read without a token.
 func (c *Client) asInstallation(ctx context.Context, installation int64, path string, v any) error {
 	auth := ""
 	if installation != 0 {
@@ -492,9 +486,8 @@ func (c *Client) Branches(ctx context.Context, installation int64, repo string) 
 	return out, nil
 }
 
-// Tarball streams the gzipped source of repo at sha. The caller closes it. A public
-// repository (installation 0) is downloaded from codeload, which does not count against
-// the API rate limit.
+// Tarball streams the gzipped source of repo at sha. Public repos come from codeload,
+// which doesn't count against the API rate limit.
 func (c *Client) Tarball(ctx context.Context, installation int64, repo, sha string) (io.ReadCloser, error) {
 	if installation == 0 {
 		archive := c.Archive
@@ -548,7 +541,6 @@ type Push struct {
 	Deleted bool
 }
 
-// ParsePush reads a push event payload.
 func ParsePush(body []byte) (*Push, error) {
 	var p struct {
 		Ref        string `json:"ref"`

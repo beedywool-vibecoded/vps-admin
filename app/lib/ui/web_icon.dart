@@ -4,9 +4,8 @@ import 'package:flutter/widgets.dart';
 
 import 'icons_gen.dart';
 
-/// The panel's icons, drawn from the same SVG paths: the official Material Symbols
-/// Rounded ones on their 960 x 960 grid, and the glyphs Google still ships on the
-/// legacy 24 x 24 grid (plus the brand marks).
+/// The panel's icons from the same SVG paths: Material Symbols Rounded on the 960 grid,
+/// legacy glyphs and brand marks on the 24 grid.
 class WIcon extends StatelessWidget {
   const WIcon(this.name, {super.key, this.size = 22, this.color});
   final String name;

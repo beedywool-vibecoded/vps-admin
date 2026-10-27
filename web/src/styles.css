@@ -265,7 +265,7 @@ h3 {
   border-radius: 24px;
   font-size: 15px;
 }
-/* Icon-only buttons read as buttons: the outline is what makes them visible on a card */
+/* Outlined so icon-only buttons stay visible on a card */
 .icon-btn {
   width: 40px;
   height: 40px;
@@ -359,8 +359,7 @@ h3 {
   flex: 1;
 }
 
-/* Text field, filled style */
-/* M3 outlined text field: the outline marks the field, it thickens to primary on focus */
+/* M3 outlined text field */
 .field {
   display: flex;
   align-items: center;
@@ -382,7 +381,7 @@ h3 {
 }
 /* M3 search bar: filled pill */
 .field.search {
-  /* In a short flex column (the repository card) the list must scroll, not the bar squash. */
+  /* Don't shrink in a short flex column; the list scrolls instead. */
   flex: none;
   height: 56px;
   min-height: 56px;
@@ -404,14 +403,14 @@ h3 {
   font-size: 15px;
 }
 
-/* Loading placeholders (ShapeLoader): never a lone "Loading…" line, always a moving shape */
+/* Loading placeholders (ShapeLoader) */
 .loading-block {
   display: grid;
   place-items: center;
   padding: 36px 0;
 }
 
-/* Page transitions (App.vue): a short fade through, the next page rises into place */
+/* Page transitions (App.vue) */
 .page-enter-active {
   transition:
     opacity 0.2s var(--ease-decel),

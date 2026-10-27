@@ -1,5 +1,4 @@
-// Which container groups are expanded, shared by the Overview and Containers pages and
-// remembered in this browser. Collapsed by default.
+// Which container groups are expanded, persisted in this browser. Collapsed by default.
 import { ref } from 'vue'
 
 const KEY = 'vpsadmin.openGroups'

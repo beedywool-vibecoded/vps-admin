@@ -21,8 +21,7 @@ find_fuse() {
 	command -v fusermount3 2>/dev/null || command -v fusermount 2>/dev/null || true
 }
 
-# A volume name reaches tar and a path under /var/lib/docker: keep it to what Docker
-# itself accepts.
+# Volume names reach tar and /var/lib/docker paths: restrict to what Docker accepts.
 valid_volume() {
 	case "$1" in
 	'' | [!A-Za-z0-9]* | *[!A-Za-z0-9_.-]*) return 1 ;;

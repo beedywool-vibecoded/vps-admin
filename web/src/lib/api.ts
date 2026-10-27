@@ -95,7 +95,7 @@ export interface ProxySite {
   id: string
   vpnOnly: boolean
   scheme: 'http' | 'https'
-  /** An app's URL turned off from the panel: the snippet is gone, the app keeps running. */
+  /** URL turned off from the panel; the app keeps running. */
   paused: boolean
 }
 
@@ -351,9 +351,7 @@ export interface UpdateCheck {
 
 export type ProviderID = 'ollama' | 'gemini' | 'claude-code'
 
-// One AI the panel can talk to: local (Ollama), free online (Gemini), premium (Claude,
-// or the Claude Code CLI on a subscription). Ready means it can answer right now; hint
-// says what is missing.
+// Ready means it can answer right now; hint says what is missing.
 export interface AssistantProvider {
   id: ProviderID
   label: string
@@ -473,8 +471,7 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   const res = await fetch(path, { method, headers, body: payload, credentials: 'same-origin' })
   if (res.status === 204) return undefined as T
   if (res.status === 502 || res.status === 504) {
-    // The reverse proxy in front of the agent answered instead of the agent: usually a
-    // restart (an update) or a long request it gave up on.
+    // The reverse proxy answered instead of the agent, usually during a restart.
     throw new ApiError(res.status, 'agent_unreachable', 'The agent did not answer. Check that vps-admin is running, then try again.')
   }
   const data = await res.json().catch(() => ({}))
@@ -707,8 +704,7 @@ export function streamScript(name: string, on: { output: (chunk: string) => void
   return () => es.close()
 }
 
-// Rebuilds the compose service of a container and hands over its output as it comes. Resolves with
-// whether it succeeded; the server goes on if the page is closed.
+// Resolves with whether the rebuild succeeded; the server goes on if the page is closed.
 export async function rebuildContainer(id: string, output: (text: string) => void): Promise<boolean> {
   const res = await fetch(`/api/docker/containers/${encodeURIComponent(id)}/rebuild`, {
     method: 'POST',

@@ -199,8 +199,7 @@ class Api {
       AuditEntry(e as Map<String, dynamic>),
   ];
 
-  /// Pulls or rebuilds the compose service of a container and recreates it; the
-  /// output arrives as it is written.
+  /// Pulls or rebuilds a container's compose service, streaming the output.
   Stream<String> rebuildContainer(String id) async* {
     final req = http.Request(
       'POST',
@@ -301,7 +300,7 @@ class Api {
   Future<ToolCall> decide(String call, bool approve) async =>
       ToolCall(await post('/api/assistant/tools/$call', {'approve': approve}));
 
-  // Raw JSON endpoints used by the panel-style pages ------------------------------
+  // Raw JSON endpoints used by the panel-style pages
 
   Future<List<Map<String, dynamic>>> history(String span) async =>
       ((await get('/api/system/history?span=$span'))['points'] as List)
@@ -412,8 +411,7 @@ class Api {
     return data;
   }
 
-  /// Server-sent events from [path], as (event, data) pairs. Reconnects are left to
-  /// the caller, which reloads state anyway.
+  /// Server-sent events from [path] as (event, data). The caller handles reconnects.
   Stream<(String, dynamic)> events(String path) async* {
     final client = http.Client();
     try {

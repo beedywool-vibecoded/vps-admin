@@ -76,25 +76,24 @@ const accessText = computed(() => {
   return 'No domain'
 })
 const envCount = computed(() => env.value.filter((v) => v.key.trim()).length)
-// What the server found, worded as a fact rather than a status line.
+// What the server detected, worded as a fact.
 const detected = computed(() => {
   if (detecting.value) return 'Looking for a build file…'
   const b = detection.value?.build
   return b ? `${BUILD_LABEL[b]} detected` : 'No build file found'
 })
 
-// Each step is one card that scrolls inside itself: it stops where the window does instead
-// of running past the fold and pushing the page.
+// Each step card scrolls inside itself instead of pushing the page.
 const cardEl = ref<HTMLElement | null>(null)
 const cardMax = ref(0)
 function fitCard() {
   const el = cardEl.value
   if (!el) return
-  // The page keeps its own bottom padding, which is what the window shows below the card.
+  // The window shows the page's bottom padding below the card.
   const shell = el.closest('.main-col')
   const below = shell ? parseFloat(getComputedStyle(shell).paddingBottom) || 0 : 24
   const avail = Math.round(window.innerHeight - el.getBoundingClientRect().top - below)
-  // A scroll box too short to show a field is worse than the page scrolling: then no cap.
+  // Too short to show a field: let the page scroll instead.
   cardMax.value = avail < 240 ? 0 : avail
 }
 watch(step, async () => {
@@ -108,7 +107,7 @@ function go(n: 1 | 2 | 3) {
 }
 
 function pick(r: Repo) {
-  // Coming back to the step keeps the settings of the repository already chosen.
+  // Keep the settings when the same repository is chosen again.
   if (repo.value?.fullName === r.fullName) {
     step.value = 2
     return
@@ -130,8 +129,7 @@ function pick(r: Repo) {
   detect()
 }
 
-// Public URLs are read without the GitHub App, so they work on a panel that has no
-// connection. The app is rebuilt from its branch when the user deploys it by hand.
+// Public URLs are read without the GitHub App. No webhook, so deploys are manual.
 async function usePublic() {
   if (!publicUrl.value.trim()) return
   resolving.value = true
@@ -511,7 +509,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
 .step:disabled {
   cursor: default;
 }
-/* Only the step being filled keeps its name: the others are just a number. */
+/* Inactive steps show only their number */
 .lbl {
   max-width: 0;
   margin-left: 0;
@@ -544,7 +542,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
     background-color 0.2s var(--ease),
     color 0.2s var(--ease);
 }
-/* A step replaces the previous one: short fade and rise, like a page */
+/* Step transition: short fade and rise */
 .step-enter-active {
   transition:
     opacity 0.16s var(--ease-decel),
@@ -578,12 +576,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
   flex-direction: column;
   gap: 14px;
 }
-/* The card scrolls inside itself, so the page keeps still whatever the step holds. */
 .source,
 .config {
   overflow: auto;
 }
-/* Blocks keep their height while the card scrolls, instead of being squashed to fit. */
 .source > *,
 .config > * {
   flex-shrink: 0;
@@ -690,8 +686,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
   align-items: start;
   gap: 12px;
 }
-/* A field keeps the same height whether or not it has an explanation: that one sits
-   under the box, not inside it. */
+/* Same height with or without a hint; the hint sits under the box. */
 .ffield {
   display: flex;
   flex-direction: column;
@@ -764,12 +759,9 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
   border: 1px solid var(--outline);
   background: var(--sc);
   color: var(--on-surface);
-}
-.num {
   width: 100%;
   text-align: center;
 }
-/* One readable block per idea: a title, a line that says what it is for, then its fields. */
 .group {
   display: flex;
   flex-direction: column;
@@ -788,7 +780,6 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
   align-items: center;
   gap: 16px;
 }
-/* One control column: the switch and the number end on the same edge as the buttons. */
 .ctl {
   flex: none;
   display: flex;
@@ -818,7 +809,6 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
   font-size: 15px;
   overflow-wrap: anywhere;
 }
-/* The notes read as one block: no paragraph margin, a tight line gap. */
 .notes {
   display: flex;
   flex-direction: column;
@@ -827,7 +817,6 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
 .notes p {
   margin: 0;
 }
-/* Same size on both ends of the row, centred on the same line. */
 .actions {
   display: flex;
   align-items: center;

@@ -51,8 +51,7 @@ const busy = computed(() => conv.value?.state === 'running')
 const providers = computed<AssistantProvider[]>(() => settings.value?.providers ?? [])
 const active = computed(() => providers.value.find((p) => p.id === settings.value?.provider) ?? null)
 const label = computed(() => active.value?.label ?? 'The assistant')
-// The sidebar keeps its provider state folded away, so the chat says out loud why
-// nothing can answer.
+// The sidebar hides provider state, so the chat says why nothing can answer.
 const banner = computed(() =>
   active.value?.needsKey
     ? `${label.value} is not connected, so the assistant cannot answer yet.`
@@ -69,8 +68,7 @@ interface Item {
   tools?: ToolCall[]
 }
 
-// Turns the stored API messages into what the chat shows. Tool results are not shown
-// as messages: they live on the tool cards.
+// Tool results are shown on the tool cards, not as messages.
 const items = computed<Item[]>(() => {
   const out: Item[] = []
   for (const m of messages.value) {
@@ -223,9 +221,7 @@ async function saveKey() {
     settings.value = res.settings
     newKey.value = ''
     keyOpen.value = false
-    // A stored key is not a working provider. The server says why it is not ready (no
-    // claude command on this server, a check that did not answer), and that reason is the
-    // answer; "API key removed" is only true when the field was left empty.
+    // A saved key doesn't mean the provider is ready; the server's hint explains why.
     if (key === '') toast('API key removed')
     else if (res.settings.configured) toast(`${label.value} connected`)
     else toast(res.settings.hint || `${label.value} saved, but it cannot answer yet`, true)
@@ -249,8 +245,7 @@ async function saveURL() {
   }
 }
 
-// The prompt offered before the administrator writes one: a starting point that already
-// matches what this panel can and cannot do, so it is true from the first save.
+// Default persona offered before the admin writes one.
 function suggestPersona() {
   const host = session.host?.hostname ?? 'this server'
   return `You are the VPS agent of ${host}. Your job is to keep it healthy, explain what is happening in plain words, and make one safe change at a time.
@@ -318,8 +313,7 @@ const effort = computed({
   get: () => settings.value?.effort ?? 'high',
   set: (v) => setOption({ effort: v }),
 })
-// A provider with nothing to list, or an agent that answers without the field, must leave
-// the menu empty rather than throw: a render error took the whole settings card with it.
+// Guard against a missing list: a render error here took down the whole settings card.
 const modelOptions = computed(() =>
   (active.value?.models ?? models.value ?? []).map((m) => ({ value: m.id, label: m.label, hint: m.hint })),
 )
@@ -422,8 +416,7 @@ onBeforeUnmount(() => {
 
             <p v-if="active?.hint" class="small muted">{{ active.hint }}</p>
 
-            <!-- Only once the provider answers: before that the list is a stand-in, and
-                 choosing a model for something that cannot run reads as noise. -->
+            <!-- Only once the provider answers; before that the list is a placeholder. -->
             <M3Select v-if="modelOptions.length && active?.ready" v-model="model" label="Model" :options="modelOptions" :disabled="!settings" />
 
             <div v-if="active?.needsKey" class="key">
@@ -749,8 +742,7 @@ onBeforeUnmount(() => {
   border-radius: 16px;
   background: var(--sch);
 }
-/* The address is the one value that can be long: it truncates instead of running
-   under the button next to it. */
+/* Long addresses truncate instead of running under the button. */
 .key > * {
   min-width: 0;
 }
@@ -803,10 +795,8 @@ onBeforeUnmount(() => {
   color: var(--error);
   font-size: 12px;
 }
-/* A settings row, like the provider and address rows above it. `flex: none` and the
-   min-height matter: the settings column scrolls with a max-height, and `overflow:
-   hidden` on the state layer zeroed the button's automatic minimum size, so the column
-   shrank it to nothing. It was in the DOM, just 0px tall. */
+/* flex: none and min-height matter: the column scrolls with a max-height, and the state
+   layer's overflow: hidden zeroed the button's min size, so it collapsed to 0px. */
 .persona-open {
   display: flex;
   align-items: center;
@@ -834,13 +824,11 @@ onBeforeUnmount(() => {
   flex: none;
   color: var(--on-sv);
 }
-/* A scrolling column of fixed rows: nothing in it may shrink. The state layer and the
-   select both hide their overflow, which zeroed their automatic minimum size; a
-   column that overflows shrank them before it scrolled. */
+/* overflow: hidden on the state layer and select zeroes their min size, so prevent shrinking. */
 .settings-body > * {
   flex: none;
 }
-/* The personality prompt is a paragraph, not a line: the shared field grows with it. */
+/* Multi-line field for the personality prompt */
 .field.area {
   height: auto;
   align-items: stretch;
@@ -864,8 +852,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 4px;
 }
-/* The list owns the column's spare height and scrolls on its own, so a long history
-   never hides the settings below it, and the settings never hide the list. */
+/* The list takes the spare height and scrolls on its own. */
 .conv-list {
   flex: 1;
   min-height: 120px;
@@ -884,8 +871,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  /* Whatever the window height, the open card must leave the list and its own
-     summary on screen; past that it scrolls. */
+  /* Keep the list and the summary on screen; scroll past that. */
   max-height: clamp(160px, calc(100dvh - 420px), 40dvh);
   overflow-y: auto;
   padding: 6px 6px 4px;
@@ -923,11 +909,9 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  /* The delete button keeps the card's edge at arm's length. */
   padding: 2px 8px 2px 2px;
   border-radius: 16px;
 }
-/* The state layer covers the whole card, trailing button included. */
 .conv::after {
   content: '';
   position: absolute;
@@ -1230,9 +1214,7 @@ onBeforeUnmount(() => {
   place-items: center;
   flex-shrink: 0;
 }
-/* An empty composer leaves the button disabled, and the half opacity every disabled button
-   gets in the panel washed the arrow into its own circle (3.1:1). The muted pair keeps the
-   shape and still reads as not ready yet. */
+/* Disabled opacity made the arrow unreadable (3.1:1); use the muted pair instead. */
 .send:disabled {
   opacity: 1;
   background: var(--sch);

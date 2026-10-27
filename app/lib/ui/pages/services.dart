@@ -7,8 +7,7 @@ import '../live.dart';
 import '../widgets.dart';
 import 'common.dart';
 
-/// ServicesView.vue: search, Running / Failed / Inactive / All filters with counts,
-/// and each unit with start, restart, stop and logs.
+/// ServicesView.vue
 class ServicesPage extends StatefulWidget {
   const ServicesPage({super.key, this.filter = 'running'});
   final String filter;

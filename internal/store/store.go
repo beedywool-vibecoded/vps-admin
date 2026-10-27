@@ -154,8 +154,7 @@ var migrations = []string{
 	);
 	CREATE INDEX script_runs_script ON script_runs(script, started);`,
 
-	// dir: an existing compose folder on the server, updated with git instead of being
-	// built from a tarball. The commands override the generated Dockerfile steps.
+	// dir: an existing compose folder, updated with git instead of a tarball.
 	`ALTER TABLE apps ADD COLUMN dir TEXT NOT NULL DEFAULT '';
 	ALTER TABLE apps ADD COLUMN install_cmd TEXT NOT NULL DEFAULT '';
 	ALTER TABLE apps ADD COLUMN build_cmd TEXT NOT NULL DEFAULT '';
@@ -241,13 +240,13 @@ func (s *Store) DeleteSetting(ctx context.Context, key string) error {
 	return err
 }
 
-// Snapshot writes a consistent copy of the database to path, for backups. VACUUM INTO
-// reads under its own transaction, so the panel can keep serving while it runs.
+// Snapshot writes a consistent copy of the database with VACUUM INTO, which doesn't block
+// the panel.
 func (s *Store) Snapshot(ctx context.Context, path string) error {
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	// VACUUM INTO takes an expression: quote the literal rather than bind it.
+	// VACUUM INTO takes an expression, not a bound parameter.
 	q := `VACUUM INTO '` + strings.ReplaceAll(path, "'", "''") + `'`
 	_, err := s.db.ExecContext(ctx, q)
 	return err

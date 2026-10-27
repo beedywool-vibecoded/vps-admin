@@ -44,8 +44,8 @@ type Security struct {
 	Checked time.Time `json:"checked"`
 }
 
-// Audit runs every check concurrently. Each one degrades to "unknown" instead of failing
-// the whole report, since distributions differ in what is installed.
+// Audit runs every check concurrently. A failing check reports "unknown" since distros
+// differ in what is installed.
 func (r *Runner) Audit(ctx context.Context) Security {
 	var (
 		mu     sync.Mutex
@@ -165,8 +165,7 @@ func (r *Runner) firewallCheck(ctx context.Context) Check {
 	if has("ufw") {
 		if out, err := r.Sudo(ctx, 10*time.Second, "ufw", "status"); err == nil && strings.Contains(out, "Status: active") {
 			c.Status, c.Detail = OK, "ufw is active"
-			// A native nftables table with its own drop policy filters on top of ufw: a port
-			// opened in ufw alone stays closed, which is easy to miss.
+			// A native nftables drop table filters on top of ufw, so ufw-only openings stay closed.
 			if rules, err := r.Sudo(ctx, 10*time.Second, "nft", "list", "ruleset"); err == nil && nativeDropTable(rules) {
 				c.Status = Warn
 				c.Detail = "ufw is active, and a separate nftables table also drops input: open new ports in both"
@@ -324,8 +323,8 @@ func (r *Runner) llmnrCheck(ctx context.Context) Check {
 	return c
 }
 
-// listening lists TCP and UDP sockets. Process names need root, so it falls back to
-// plain ss when sudo is not allowed.
+// listening lists TCP and UDP sockets, falling back to plain ss without sudo (no
+// process names).
 func (r *Runner) listening(ctx context.Context) []Port {
 	out, err := r.Sudo(ctx, 10*time.Second, "ss", "-tulnpH")
 	if err != nil {

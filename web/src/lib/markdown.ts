@@ -1,6 +1,5 @@
-// A small Markdown subset for assistant replies: code fences, inline code, bold,
-// italics, headings, lists and links. Text is escaped first, so the output only
-// contains the tags added here.
+// A small Markdown subset for assistant replies. Text is escaped first, so the output
+// only contains the tags added here.
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 function inline(s: string): string {

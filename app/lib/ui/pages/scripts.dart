@@ -175,8 +175,7 @@ class _RunBodyState extends State<_RunBody> {
   }
 }
 
-/// ScriptsView.vue: each linked script with arguments and Run or Stop, the output
-/// panel, the history, and renaming.
+/// ScriptsView.vue
 class ScriptsPage extends StatefulWidget {
   const ScriptsPage({super.key});
 

@@ -1,5 +1,4 @@
-// v-tip: M3 plain tooltip on hover and keyboard focus, in place of the browser's
-// title tooltip. One shared element, positioned above (or below) the target.
+// v-tip: M3 plain tooltip on hover and focus, replacing title tooltips. One shared element.
 import type { Directive } from 'vue'
 
 let el: HTMLDivElement | null = null

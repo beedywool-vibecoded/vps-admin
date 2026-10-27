@@ -1,5 +1,5 @@
-// The M3 Expressive loading shapes, copied from Pelote (components/bundle.js, computed by
-// porting androidx.graphics.shapes.RoundedPolygon): exact cubic paths in a 100-unit box.
+// M3 Expressive loading shapes copied from Pelote (components/bundle.js, ported from
+// androidx.graphics.shapes.RoundedPolygon): cubic paths in a 100-unit box.
 export const LOADER_SHAPES = {
   cookie9:
     'M39.8 6C45.6 0.8 54.4 0.8 60.2 6C63.1 8.7 67 10.1 71 9.9C78.8 9.6 85.5 15.3 86.6 23C87.1 27 89.2 30.5 92.3 33C98.5 37.7 100 46.4 95.8 53C93.7 56.4 93 60.4 93.8 64.3C95.5 71.9 91.1 79.6 83.7 82C79.9 83.2 76.7 85.8 74.9 89.3C71.2 96.2 63 99.2 55.7 96.3C52.1 94.8 47.9 94.8 44.3 96.3C37 99.2 28.8 96.2 25.1 89.3C23.3 85.8 20.1 83.2 16.3 82C8.9 79.6 4.5 71.9 6.2 64.3C7 60.4 6.3 56.4 4.2 53C0 46.4 1.5 37.7 7.7 33C10.8 30.5 12.9 27 13.4 23C14.5 15.3 21.2 9.6 29 9.9C33 10.1 36.9 8.7 39.8 6Z',
@@ -17,7 +17,6 @@ export const LOADER_SHAPES = {
 
 export type LoaderShape = keyof typeof LOADER_SHAPES
 
-// Pelote's sequence: the shape changes, and each step turns a little further.
 export const LOADER_SEQUENCE: LoaderShape[] = ['cookie9', 'pentagon', 'pill', 'sunny', 'cookie4', 'oval']
 export const LOADER_STEP_MS = 700
 export const LOADER_TURN_DEG = 140

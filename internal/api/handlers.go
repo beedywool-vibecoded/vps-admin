@@ -306,7 +306,7 @@ func (s *Server) containerAction(w http.ResponseWriter, r *http.Request) {
 		writeErrorMsg(w, statusFor(err), "action_failed", err.Error())
 		return
 	}
-	// A stop from here is deliberate: the alert watcher must not report it as an outage.
+	// Deliberate stop: don't alert on it.
 	if action == "stop" && s.Alerts != nil {
 		s.Alerts.StoppedFromPanel(id)
 	}
@@ -322,9 +322,8 @@ func (s *Server) containerLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"logs": out})
 }
 
-// A group of containers has one switch in the panel: either all of them start with the
-// server, or none does. Docker keeps the policy in each container, which is also what
-// runs it after a reboot.
+// A container group has one restart switch: all of its containers start with the server,
+// or none does.
 
 func (s *Server) containerRestartPolicies(w http.ResponseWriter, r *http.Request) {
 	ids, err := cleanContainerIDs(strings.Split(r.URL.Query().Get("ids"), ","))
@@ -407,7 +406,7 @@ func cleanContainerIDs(ids []string) ([]string, error) {
 type updateView struct {
 	update.Status
 	Auto bool `json:"auto"`
-	// Repo is where updates come from, owner/name; the panel can point it at a fork.
+	// Repo is where updates come from, owner/name.
 	Repo        string `json:"repo"`
 	DefaultRepo string `json:"defaultRepo"`
 	Prerelease  bool   `json:"prerelease"`
@@ -526,8 +525,8 @@ func (s *Server) appAPK(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, res.Body)
 }
 
-// systemEnvironment describes what the server offers for publishing (proxies,
-// certificates, private networks, firewall) and how the panel itself is reached.
+// systemEnvironment describes what the server offers for publishing and how the panel is
+// reached.
 func (s *Server) systemEnvironment(w http.ResponseWriter, r *http.Request) {
 	env := s.Runner.DetectEnvironment(r.Context())
 	panel := map[string]any{"url": s.Cfg.PublicURL, "webhookUrl": s.Cfg.WebhookURL, "access": "public"}

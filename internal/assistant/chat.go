@@ -16,12 +16,9 @@ import (
 	"github.com/beedywool/vps-admin/internal/store"
 )
 
-// The panel keeps every conversation in the Anthropic block format, because that is
-// where it started. The OpenAI-compatible providers (Gemini, Ollama) are translated
-// on the way in and out, so the approval cards, the audit and the stored history stay
-// exactly the same whichever model answers.
+// Conversations are stored in Anthropic block format; OpenAI-compatible providers are
+// translated on the way in and out.
 
-// turnBlock is one content block of a model answer, normalized.
 type turnBlock struct {
 	Type             string // text | thinking | tool_use
 	Text             string
@@ -31,8 +28,7 @@ type turnBlock struct {
 	ThoughtSignature string // Google's thought signature of a function call
 }
 
-// turn is one model answer: the message to store, the blocks to walk for tool calls,
-// and why the model stopped.
+// turn is one model answer.
 type turn struct {
 	raw    json.RawMessage
 	blocks []turnBlock
@@ -50,8 +46,7 @@ type storedBlock struct {
 	ToolUseID string          `json:"tool_use_id"`
 	Content   json.RawMessage `json:"content"`
 	IsError   bool            `json:"is_error"`
-	// ThoughtSignature is Google's signature for a function call: the compatible
-	// endpoint refuses a later request that does not carry it back on the same call.
+	// ThoughtSignature must be sent back on the same call or Gemini refuses the request.
 	ThoughtSignature string `json:"thought_signature,omitempty"`
 }
 
@@ -80,7 +75,6 @@ func (b storedBlock) resultText() string {
 	return strings.Join(parts, "\n")
 }
 
-// oaMsg is one message of the OpenAI chat protocol.
 type oaMsg struct {
 	Role       string   `json:"role"`
 	Content    string   `json:"content,omitempty"`
@@ -98,9 +92,8 @@ type oaCall struct {
 	Extra *extraContent `json:"extra_content,omitempty"`
 }
 
-// extraContent is where Google's compatible endpoint carries a function call's thought
-// signature. The OpenAI protocol has no field for it, so Gemini adds one of its own and
-// answers a later request that omits it with a 400 about the missing signature.
+// extraContent carries Gemini's thought signature, which the OpenAI protocol has no
+// field for. Omitting it gets a 400.
 type extraContent struct {
 	Google *googleExtra `json:"google,omitempty"`
 }
@@ -133,9 +126,8 @@ type oaTool struct {
 	} `json:"function"`
 }
 
-// toOpenAI rewrites a stored conversation for an OpenAI-compatible model. Thinking
-// blocks are dropped: they carry Anthropic signatures that no other model accepts,
-// and the panel still shows them when it replays the stored answer.
+// toOpenAI rewrites a stored conversation for an OpenAI-compatible model. Thinking blocks
+// are dropped: their Anthropic signatures aren't accepted elsewhere.
 func toOpenAI(history []store.ConvMessage) []oaMsg {
 	var out []oaMsg
 	pushUser := func(text string) {
@@ -159,7 +151,7 @@ func toOpenAI(history []store.ConvMessage) []oaMsg {
 		var blocks []storedBlock
 		var text string
 		if json.Unmarshal(sm.Content, &blocks) != nil {
-			// A plain string content: the format used before tools existed.
+			// Plain string content, from before tools existed.
 			if json.Unmarshal(sm.Content, &text) != nil {
 				continue
 			}
@@ -207,9 +199,8 @@ func toOpenAI(history []store.ConvMessage) []oaMsg {
 	return out
 }
 
-// openAITools flattens the panel tools into function definitions. The schema is kept
-// plain (no strict mode, no additionalProperties): the Gemini compatible endpoint
-// refuses what it does not know, and every input is validated again after parsing.
+// openAITools flattens the panel tools into function definitions. No strict mode: Gemini
+// refuses unknown schema fields, and inputs are validated after parsing anyway.
 func openAITools() []oaTool {
 	out := make([]oaTool, 0, len(defs))
 	for _, d := range defs {
@@ -233,7 +224,6 @@ func openAITools() []oaTool {
 	return out
 }
 
-// providerError is an HTTP answer from a provider, kept so the panel can explain it.
 type providerError struct {
 	Status int
 	Msg    string
@@ -273,7 +263,6 @@ type chatChunk struct {
 	} `json:"error"`
 }
 
-// chatEndpoint is where a provider's OpenAI-compatible API lives.
 func (e *Engine) chatEndpoint(ctx context.Context, id string) string {
 	if id == ProviderGemini {
 		if e.GeminiURL != "" {
@@ -291,7 +280,6 @@ func (e *Engine) chatMaxTokens(id string) int {
 	return 8192
 }
 
-// chat calls an OpenAI-compatible model and streams text and reasoning as they come.
 func (e *Engine) chat(ctx context.Context, id, model, key string, history []store.ConvMessage,
 	onText, onThinking func(string)) (*turn, error) {
 	req := chatRequest{
@@ -417,8 +405,7 @@ func (e *Engine) chat(ctx context.Context, id, model, key string, history []stor
 			"type": "tool_use", "id": c.ID, "name": c.Function.Name, "input": json.RawMessage(args),
 		}
 		tb := turnBlock{Type: "tool_use", ID: c.ID, Name: c.Function.Name, Input: args}
-		// The signature is stored with the call, because the provider it came from is the
-		// one that will ask for it again.
+		// Stored with the call; the provider will ask for it again.
 		if sig := c.thoughtSignature(); sig != "" {
 			block["thought_signature"] = sig
 			tb.ThoughtSignature = sig
@@ -446,9 +433,8 @@ func (e *Engine) chat(ctx context.Context, id, model, key string, history []stor
 	return t, nil
 }
 
-// errorBodyMessage reads the message out of a provider's error body. The native APIs
-// wrap it in an object, Google's OpenAI-compatible door in an array, so both are read
-// instead of showing the JSON to the administrator.
+// errorBodyMessage reads the message from an error body: an object on native APIs, an
+// array on Gemini's OpenAI-compatible one.
 func errorBodyMessage(body []byte) string {
 	var one struct {
 		Error *struct {
@@ -473,8 +459,8 @@ func errorBodyMessage(body []byte) string {
 	return ""
 }
 
-// geminiModelGone reports whether Google refused the model itself rather than the key,
-// the quota or the request: a family it has retired, or closed to keys like this one.
+// geminiModelGone reports whether Google refused the model itself (retired or closed to
+// this key) rather than the key or quota.
 func geminiModelGone(err error) bool {
 	var pe *providerError
 	if !errors.As(err, &pe) {
@@ -489,7 +475,6 @@ func geminiModelGone(err error) bool {
 			strings.Contains(low, "unsupported model") || strings.Contains(low, "is not supported"))
 }
 
-// errorText turns a provider's error body into one readable sentence.
 func errorText(id string, status int, body []byte) string {
 	msg := errorBodyMessage(body)
 	if msg == "" {
@@ -518,17 +503,13 @@ func errorText(id string, status int, body []byte) string {
 	return msg
 }
 
-// errBadKey is the only answer that condemns a key: the provider itself said it does not
-// know it.
+// errBadKey: the provider explicitly rejected the key.
 var errBadKey = errors.New("the provider rejected this key")
 
-// checkGemini makes the smallest possible request. A valid key that is out of quota
-// is still a valid key, so only an authentication answer rejects it. The call is kept
-// short: the panel saves the key through the same request, and a slow Google must not
-// hold that answer long enough for a reverse proxy to give up and return 502.
+// checkGemini makes the smallest possible request; only an auth error rejects the key.
+// Kept short so a slow Google doesn't make the reverse proxy return 502.
 func (e *Engine) checkGemini(ctx context.Context, key string) error {
-	// The model the panel will actually use, not a name hardcoded here that Google may
-	// have retired since.
+	// Use the panel's model; a hardcoded one may be retired.
 	body, _ := json.Marshal(chatRequest{
 		Model:     e.model(ctx, ProviderGemini),
 		Messages:  []oaMsg{{Role: "user", Content: "ping"}},
@@ -552,8 +533,7 @@ func (e *Engine) checkGemini(ctx context.Context, key string) error {
 		return nil
 	}
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	// Google answers a wrong key with 400 "Please pass a valid API key", not 401, so the
-	// body decides.
+	// Google answers a wrong key with 400, not 401, so the body decides.
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return fmt.Errorf("%w: Gemini", errBadKey)
 	}

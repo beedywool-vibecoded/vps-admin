@@ -48,8 +48,7 @@ async function check() {
   }
 }
 
-// Point updates at another repository: the official one, a fork, or a link copied from
-// the browser. An empty repo goes back to the repository the build was configured with.
+// Empty repo resets to the build's default repository.
 async function setSource(repo: string) {
   sourceSaving.value = true
   try {

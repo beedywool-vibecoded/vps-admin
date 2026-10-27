@@ -7,7 +7,6 @@ import (
 	"testing"
 )
 
-// write creates a file under root, making the directories it needs.
 func write(t *testing.T, root, name, body string) {
 	t.Helper()
 	path := filepath.Join(root, name)
@@ -19,7 +18,6 @@ func write(t *testing.T, root, name, body string) {
 	}
 }
 
-// find returns the site whose first domain is want.
 func find(t *testing.T, rep Report, want string) Site {
 	t.Helper()
 	for _, s := range rep.Sites {
@@ -137,8 +135,7 @@ func TestNginxSites(t *testing.T) {
 	}
 }
 `)
-	// The snippet the panel writes for an app, the copy certbot leaves behind, and the
-	// backup a package upgrade writes: only the first is a site.
+	// Only the first is a site; the others are certbot and package-upgrade backups.
 	write(t, root, "etc/nginx/vps-admin-apps/shop.conf.bak", `server {
 	listen 80;
 	server_name old-shop.example.com;
@@ -241,8 +238,7 @@ func TestNoProxy(t *testing.T) {
 	}
 }
 
-// The API sends these lists as JSON: nil would come out as null, which blanks a client
-// that walks them.
+// nil lists would encode as null and break clients.
 func TestEmptyListsAreNotNil(t *testing.T) {
 	root := t.TempDir()
 	rep := Read(filepath.Join(root, "etc/caddy/vps-admin-apps"), filepath.Join(root, "etc/nginx/vps-admin-apps"))

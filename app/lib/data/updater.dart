@@ -21,13 +21,11 @@ class AppRelease {
   final int? size;
 }
 
-/// Self-update through the connected server: the agent reads the APK from the GitHub
-/// release (it has the token for a private repository) and serves it to paired devices.
-/// Android refuses an APK signed with another key, which is the final check.
+/// Self-update through the connected server, which fetches the APK from the GitHub
+/// release (it has the token). Android rejecting a different signing key is the final check.
 class Updater extends ChangeNotifier {
   static const _channel = MethodChannel('fr.beedy.vps_admin/updater');
 
-  /// Opens a link in the browser (GitHub pages, the panel).
   static Future<void> openUrl(String url) =>
       _channel.invokeMethod('openUrl', {'url': url});
 

@@ -10,8 +10,8 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
-// Self-update: the Dart side downloads the APK through the paired server, this hands it
-// to the system installer. Android only accepts it if it is signed with the same key.
+// Self-update: hands the downloaded APK to the system installer. Android only accepts the
+// same signing key.
 class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -49,8 +49,7 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    // The server background: the system picker returns a content URI, read here so the
-    // app needs no storage permission.
+    // Background picker: read the content URI here so no storage permission is needed.
     private var pending: MethodChannel.Result? = null
 
     private fun pickImage(result: MethodChannel.Result) {

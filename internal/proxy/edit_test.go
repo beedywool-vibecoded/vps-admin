@@ -38,7 +38,7 @@ func TestCaddyBlockEditing(t *testing.T) {
 	if !strings.Contains(commented, "\nshop.example.com {\n") || !strings.Contains(commented, "email admin@example.com") {
 		t.Fatalf("editing the blog touched another block:\n%s", commented)
 	}
-	// The comment attached to the block travels with it, and comes back untouched.
+	// The attached comment travels with the block and comes back untouched.
 	if !strings.Contains(commented, "## The blog") {
 		t.Fatalf("the comment above the block was left behind:\n%s", commented)
 	}
@@ -83,7 +83,7 @@ func TestCaddyBlockEditingRefusesUnknownSites(t *testing.T) {
 	}
 }
 
-// The Proxy tab gets a paused row from the markers, without a file kept aside.
+// Paused rows are read from the markers.
 func TestPausedCaddyBlockIsRead(t *testing.T) {
 	root := t.TempDir()
 	sites := filepath.Join(root, "vps-admin-apps")

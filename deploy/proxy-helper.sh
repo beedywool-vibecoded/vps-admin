@@ -1,7 +1,6 @@
 #!/bin/sh
-# Publishing actions the agent needs root for, with checked arguments and fixed command
-# lines, so sudo can allow this helper without allowing certbot or tailscale as a whole
-# (certbot hooks, for one, would run anything as root).
+# Publishing actions that need root, with checked arguments and fixed command lines so
+# sudo doesn't have to allow certbot or tailscale as a whole (certbot hooks run anything).
 # Installed root-owned in /opt/vps-admin; sudoers lets the agent call it.
 #
 #   proxy-helper nginx-reload          test the nginx config, then reload it
@@ -27,7 +26,7 @@ certbot)
 	printf '%s' "$domain" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$' ||
 		{ echo "invalid domain: $domain" >&2; exit 64; }
 	set -- --nginx -d "$domain" --non-interactive --agree-tos --keep-until-expiring --redirect
-	# Without an account yet, register one without email (the panel cannot ask).
+	# Register an account without email on first use (the panel can't ask).
 	if [ -z "$(ls -A /etc/letsencrypt/accounts 2>/dev/null)" ]; then
 		set -- "$@" --register-unsafely-without-email
 	fi
@@ -45,7 +44,7 @@ caddy-write)
 	stage=/var/lib/vps-admin/caddy-edit.new
 	[ -f "$stage" ] || { echo "no staged Caddy configuration" >&2; exit 66; }
 	[ -f "$target" ] || { echo "no such Caddy file: $target" >&2; exit 66; }
-	# Same directory, so the replacement is a rename: Caddy never reads half a file.
+	# Same directory so the swap is an atomic rename.
 	tmp=$(mktemp "/etc/caddy/.vps-admin.XXXXXX") || exit 69
 	trap 'rm -f "$tmp"' EXIT
 	cp "$stage" "$tmp"

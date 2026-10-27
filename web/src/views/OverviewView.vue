@@ -66,7 +66,6 @@ interface Group {
 const groups = computed<Group[]>(() => {
   const map = new Map<string, Container[]>()
   for (const c of containers.value ?? []) {
-    // Deployed apps group under their name; compose stacks under their project.
     const key = c.app || c.project || 'Standalone'
     map.set(key, [...(map.get(key) ?? []), c])
   }

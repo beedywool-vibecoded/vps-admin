@@ -1,8 +1,7 @@
 <script setup lang="ts">
-// Direct port of Pelote's loading indicator (components/bundle.js): on the same 700 ms beat the
-// path takes the next shape and turns 140°, with the 650 ms spring. The first turn comes 20 ms
-// after it appears, so it never looks frozen at the start. It pauses off screen and in a hidden
-// tab, and stays on the first shape under prefers-reduced-motion.
+// Port of Pelote's loading indicator (components/bundle.js): every 700 ms the path morphs
+// to the next shape and turns 140° with a 650 ms spring. The first step comes after 20 ms.
+// Paused off screen and in hidden tabs; static under prefers-reduced-motion.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { LOADER_SEQUENCE, LOADER_SHAPES, LOADER_STEP_MS, LOADER_TURN_DEG } from '@/lib/loaderShapes'
 
@@ -34,7 +33,6 @@ onMounted(() => {
     })
     observer.observe(host.value)
   }
-  // First step after 20 ms, then Pelote's 700 ms beat
   start = setTimeout(() => {
     beat()
     timer = setInterval(beat, LOADER_STEP_MS)

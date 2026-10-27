@@ -1,7 +1,6 @@
 // Package backup writes the panel state to an encrypted archive on Google Drive (through
-// rclone) and restores it. The archive is self-contained: the database snapshot and the
-// key that decrypts the values it holds travel together, protected by a passphrase the
-// administrator chooses. Nothing readable by Google is ever uploaded.
+// rclone) and restores it. The database and its key travel together, protected by the
+// admin's passphrase.
 package backup
 
 import (
@@ -23,9 +22,8 @@ import (
 	"golang.org/x/crypto/scrypt"
 )
 
-// File layout: magic, salt, nonce prefix, then the payload encrypted in fixed chunks,
-// each AEAD-sealed with nonce prefix || counter. A wrong passphrase fails on the first
-// chunk, so it is reported as such instead of as a corrupt file.
+// File layout: magic, salt, nonce prefix, then the payload in fixed chunks, each sealed
+// with nonce prefix || counter. A wrong passphrase fails on the first chunk.
 const (
 	magic          = "VPSADMIN-BACKUP\x01"
 	saltLen        = 16
@@ -36,15 +34,13 @@ const (
 	scryptP        = 1
 	keyLen         = 32
 
-	// MaxArchive bounds what restore will read into a temporary folder. It has to fit a
-	// full archive: every app source and every volume of a small server.
+	// MaxArchive bounds what restore will read; a full archive includes every volume.
 	MaxArchive = 64 << 30
 
 	manifestName = "manifest.json"
 )
 
-// Header describes an archive without decrypting the rest of it. It travels as the first
-// entry, so a restore can check the kind and the server before touching anything.
+// Header is the first entry, so a restore can check kind and host before anything else.
 type Header struct {
 	Version   int       `json:"version"`
 	Kind      string    `json:"kind"` // settings | full
@@ -54,9 +50,7 @@ type Header struct {
 	PublicURL string    `json:"publicUrl,omitempty"`
 }
 
-// Entry is one file written into the payload. Data carries small values (secret.key,
-// config); Path streams a file from disk (the database snapshot, the app sources, the
-// volume tarballs), which keeps a large backup out of memory.
+// Entry is one file in the payload: Data for small values, Path to stream from disk.
 type Entry struct {
 	Name string
 	Mode int64
@@ -66,14 +60,12 @@ type Entry struct {
 
 var ErrBadPassphrase = errors.New("wrong passphrase, or the archive is damaged")
 
-// ArchiveName is the file name of a backup: fixed prefix, kind and UTC timestamp, so the
-// names sort in chronological order.
+// ArchiveName is prefix, kind and UTC timestamp, so names sort chronologically.
 func ArchiveName(kind string, t time.Time) string {
 	return fmt.Sprintf("vps-admin-%s-%s.vpb", kind, t.UTC().Format("20060102T150405"))
 }
 
-// Write seals entries into dest. It writes to a temporary file first: a backup in
-// progress must never look like a complete archive on the remote.
+// Write seals entries into dest, via a temp file so a partial backup never looks complete.
 func Write(dest, passphrase string, h Header, entries []Entry) (err error) {
 	if len(passphrase) < minPassphrase {
 		return fmt.Errorf("the passphrase must be at least %d characters", minPassphrase)
@@ -194,9 +186,7 @@ func writeEntry(tw *tar.Writer, e Entry) error {
 	return err
 }
 
-// Extract decrypts path into dir and returns its header with the entry names it wrote.
-// Entries keep their base names (and one level of folder for volumes), never absolute
-// paths or ..
+// Extract decrypts path into dir and returns its header and the entry names it wrote.
 func Extract(path, passphrase, dir string) (Header, []string, error) {
 	var h Header
 	f, err := os.Open(path)
@@ -350,8 +340,7 @@ func open(dst io.Writer, aead cipher.AEAD, prefix []byte, src io.Reader) error {
 		}
 		pt, err := aead.Open(nil, nonce(prefix, n), buf[:read], nil)
 		if err != nil {
-			// The first chunk failing means the key is wrong; a later one means the file
-			// was cut or altered. Both are reported the same way on purpose.
+			// Wrong key or truncated file: reported the same way on purpose.
 			return ErrBadPassphrase
 		}
 		if _, err := dst.Write(pt); err != nil {
@@ -364,9 +353,8 @@ func open(dst io.Writer, aead cipher.AEAD, prefix []byte, src io.Reader) error {
 	}
 }
 
-// safeName accepts a relative path with at most sixteen folder levels
-// (apps/<app>/src/compose.yaml), never an absolute path or a traversal. Dot files are
-// allowed: a compose app keeps its variables in a .env next to its compose file.
+// safeName accepts a relative path up to sixteen levels deep, no traversal. Dot files are
+// allowed (.env).
 func safeName(name string) bool {
 	if name == "" || len(name) > 512 || strings.HasPrefix(name, "/") || strings.Contains(name, "\\") || strings.Contains(name, "\x00") {
 		return false

@@ -19,10 +19,8 @@ import (
 	"github.com/beedywool/vps-admin/internal/system"
 )
 
-// TestClaudeCodeLive drives the real `claude` binary against a fake Anthropic endpoint:
-// the CLI parses the panel's MCP tools, calls one, and the call goes through the panel's
-// policy, its approval card, and its audit: the whole subscription path, without an
-// account.
+// TestClaudeCodeLive drives the real `claude` binary against a fake Anthropic endpoint,
+// through the panel's MCP tools, policy, approval and audit.
 //
 //	VPS_ADMIN_CLAUDE_TEST=1 go test ./internal/assistant -run ClaudeCodeLive -v
 func TestClaudeCodeLive(t *testing.T) {
@@ -82,9 +80,7 @@ func TestClaudeCodeLive(t *testing.T) {
 		assertAnswerStored(t, e, conv)
 	})
 
-	// Connecting a token asks the CLI whether it still works, so "Connected" is not just a
-	// string that starts with sk-ant. A token the subscription no longer accepts must be
-	// refused, and not stored.
+	// Connecting asks the CLI whether the token works; a revoked one isn't stored.
 	t.Run("a revoked token is refused", func(t *testing.T) {
 		revoked := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -137,8 +133,7 @@ func TestClaudeCodeLive(t *testing.T) {
 	})
 }
 
-// fakeAnthropic answers like the Messages API: one tool call, then the final text once
-// the tool result is in the conversation.
+// fakeAnthropic answers like the Messages API: one tool call, then the final text.
 type fakeAnthropic struct {
 	tool string
 	args string
@@ -230,8 +225,7 @@ func textEvents(text string) []map[string]any {
 	}
 }
 
-// claudeEngine builds an engine on the subscription provider, with the CLI pointed at an
-// endpoint of the test's choosing.
+// claudeEngine builds an engine on the subscription provider pointed at url.
 func claudeEngine(t *testing.T, url string) (*Engine, context.Context) {
 	t.Helper()
 	dir := t.TempDir()
@@ -252,8 +246,7 @@ func claudeEngine(t *testing.T, url string) (*Engine, context.Context) {
 	return e, ctx
 }
 
-// claudeConversation builds an engine on the subscription provider, pointed at the fake
-// endpoint, and sends one message.
+// claudeConversation sends one message to an engine pointed at the fake.
 func claudeConversation(t *testing.T, fake *fakeAnthropic) (*Engine, string) {
 	t.Helper()
 	srv := httptest.NewServer(fake)
@@ -269,8 +262,8 @@ func claudeConversation(t *testing.T, fake *fakeAnthropic) (*Engine, string) {
 	return e, conv.ID
 }
 
-// waitIdle waits for the turn to start, then for it to end: a conversation is idle when
-// its message is stored, before the model is even called.
+// waitIdle waits for the turn to start, then end: the conversation is briefly idle
+// before the model is called.
 func waitIdle(t *testing.T, e *Engine, convID string) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Minute)

@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-/// Lets pages switch the main section (like RouterLink in the panel) and know whether
-/// the widget bar is showing the resource cards.
+/// Lets pages switch sections and know whether the widget bar shows the resource cards.
 class Nav extends InheritedWidget {
   const Nav({
     super.key,

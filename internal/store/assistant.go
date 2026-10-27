@@ -89,8 +89,8 @@ func (s *Store) DeleteConversation(ctx context.Context, id string) error {
 	return err
 }
 
-// AppendMessage adds a message at the end of the history and returns its seq. The
-// history is append-only: thinking blocks are only valid in an unchanged conversation.
+// AppendMessage appends to the history and returns its seq. Append-only: thinking blocks
+// are only valid in an unchanged conversation.
 func (s *Store) AppendMessage(ctx context.Context, convID, role, content string) (int64, error) {
 	ctx = context.WithoutCancel(ctx)
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -158,8 +158,8 @@ func (s *Store) FinishToolCall(ctx context.Context, id, status, result string, i
 	return err
 }
 
-// ClaimToolCall moves a pending call to running; false if it was not pending, which
-// makes approving twice harmless.
+// ClaimToolCall moves a pending call to running; false if it wasn't pending, so double
+// approvals are harmless.
 func (s *Store) ClaimToolCall(ctx context.Context, id, deviceID string) (bool, error) {
 	r, err := s.db.ExecContext(ctx, `UPDATE tool_calls SET status = 'running', device_id = ? WHERE id = ? AND status = 'pending'`, deviceID, id)
 	if err != nil {

@@ -17,8 +17,7 @@ import (
 	"github.com/beedywool/vps-admin/internal/store"
 )
 
-// fakeGitHub answers the App endpoints the panel reads: one organization install and
-// one repository in it.
+// fakeGitHub serves one organization install with one repository.
 func fakeGitHub(t *testing.T, repo string) *github.Client {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -47,8 +46,7 @@ func fakeGitHub(t *testing.T, repo string) *github.Client {
 	return c
 }
 
-// fakePublicGitHub answers the unauthenticated repository endpoint used for public
-// URLs. It has no App credentials at all.
+// fakePublicGitHub serves the unauthenticated repository endpoint, without App credentials.
 func fakePublicGitHub(t *testing.T, repo string) *github.Client {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -101,7 +99,7 @@ func TestAppCreateFromPublicURL(t *testing.T) {
 	if a.Repo != "navidrome/navidrome" || a.InstallationID != 0 {
 		t.Fatalf("stored source = %s on %d", a.Repo, a.InstallationID)
 	}
-	// A public URL has no push webhook: asking for automatic deploys must not keep them on.
+	// Public URLs have no webhook, so auto deploy must be off.
 	if a.AutoDeploy {
 		t.Fatal("a public repository was stored with automatic deploys on")
 	}
@@ -197,7 +195,7 @@ func TestEnvFileSetting(t *testing.T) {
 		t.Fatalf("saved = %+v, err = %v", a, err)
 	}
 
-	// A path that would write outside the app folder is refused, and nothing changes.
+	// Paths escaping the app folder are refused.
 	if rec := call(`{"env":[],"envPath":"../etc/passwd"}`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("escape status = %d, want 400", rec.Code)
 	}
@@ -205,7 +203,7 @@ func TestEnvFileSetting(t *testing.T) {
 		t.Fatalf("a refused path was written: %q", a.EnvPath)
 	}
 
-	// An older panel that only knows about variables leaves the file settings alone.
+	// Older panels that omit the file settings leave them alone.
 	if rec := call(`{"env":[]}`); rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d", rec.Code)
 	}

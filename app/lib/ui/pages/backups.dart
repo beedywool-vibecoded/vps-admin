@@ -8,8 +8,7 @@ import '../kit.dart';
 import '../live.dart';
 import '../widgets.dart';
 
-/// BackupCard.vue: the Google Drive connection, the daily archive, the manual runs and
-/// the archives to restore. Works from the phone like from the panel.
+/// BackupCard.vue
 class BackupsPage extends StatefulWidget {
   const BackupsPage({super.key});
 
@@ -74,7 +73,7 @@ class _BackupsPageState extends State<BackupsPage> {
     }
   }
 
-  // The panel reports its progress; ask again while a run is writing.
+  // Poll while a run is writing.
   void _poll() {
     timer?.cancel();
     timer = Timer(const Duration(seconds: 2), () {
@@ -94,7 +93,7 @@ class _BackupsPageState extends State<BackupsPage> {
         passphrase.clear();
       });
       showInfo(context, done);
-      // A first connection has nothing to prefill yet: read the defaults now.
+      // First connection: load the defaults.
       if (!_filled) await _load(archives: true);
     } catch (e) {
       if (mounted) showError(context, e);
@@ -248,7 +247,7 @@ class _BackupsPageState extends State<BackupsPage> {
         'Restoring: the panel restarts with the backup in a few seconds',
       );
       timer?.cancel();
-      // The agent is unreachable while it swaps the files; wait, then ask again.
+      // The agent is down while it swaps the files; retry.
       for (var i = 0; i < 8; i++) {
         await Future<void>.delayed(const Duration(seconds: 2));
         try {

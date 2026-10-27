@@ -12,9 +12,8 @@ import (
 	"time"
 )
 
-// Environment is what the server offers for publishing apps: reverse proxies and
-// certificates, private networks, firewall. Shown in the settings and used to offer
-// the right access modes for each app.
+// Environment is what the server offers for publishing apps, used to offer the right
+// access modes.
 type Environment struct {
 	Caddy     Tool       `json:"caddy"`
 	Nginx     Tool       `json:"nginx"`
@@ -112,9 +111,8 @@ func (r *Runner) DetectEnvironment(ctx context.Context) *Environment {
 // versionIn matches a release number inside a tool's output.
 var versionIn = regexp.MustCompile(`\bv?\d+\.\d+(?:\.\d+)*\b`)
 
-// toolVersion reads a release number out of a tool's output. The first word is not
-// enough: caddy prints its warnings on the same stream as its version, and nginx
-// prefixes it ("nginx version: nginx/1.24.0").
+// toolVersion finds the release number in a tool's output: caddy mixes in warnings and
+// nginx prefixes it.
 func toolVersion(out string) string {
 	var first string
 	for _, line := range strings.Split(out, "\n") {

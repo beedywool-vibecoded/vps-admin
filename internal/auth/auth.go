@@ -1,9 +1,8 @@
 // Package auth implements device pairing, app tokens, web sessions and passkeys.
 //
-// Trust model: whoever can run `vps-admin pair` as root on the server can enroll a device.
-// The code is single use, expires after 10 minutes and only the newest one is valid.
-// An app device then gets a long-lived bearer token. A browser gets a short "enroll"
-// session that can only register a passkey; every later web login needs that passkey.
+// Whoever can run `vps-admin pair` as root can enroll a device. Codes are single use,
+// expire after 10 minutes, and only the newest is valid. Apps get a long-lived bearer
+// token; browsers get an enroll session that can only register a passkey.
 package auth
 
 import (
@@ -118,15 +117,13 @@ type PairResult struct {
 	Token    string `json:"token,omitempty"` // app devices only, shown once
 }
 
-// Pair redeems a code. For an app it returns a bearer token; for a browser it sets an
-// enroll session cookie on w.
-// Pair trades a pairing code for a device. owner, the person using it, is required so
-// the devices and the activity log tell admins apart.
+// Pair redeems a code: a bearer token for an app, an enroll session cookie for a browser.
+// owner is required so the activity log tells admins apart.
 func (a *Auth) Pair(ctx context.Context, w http.ResponseWriter, ip, code, name, owner, kind string) (*PairResult, error) {
 	if !a.limiter.allow(ip) {
 		return nil, ErrRateLimited
 	}
-	// Checked before the code is used, so a missing name does not burn it.
+	// Checked first so a missing name doesn't burn the code.
 	if owner = CleanName(owner, ""); owner == "" {
 		return nil, ErrNoOwner
 	}
@@ -234,8 +231,7 @@ func (a *Auth) Identify(r *http.Request) *Identity {
 }
 
 // Require wraps h so it only runs for an identity with the given scope. Cookie-based
-// requests that change state must also carry the X-VPS-Admin header: a cross-site form
-// cannot set it, which closes CSRF on top of SameSite=Strict.
+// state changes must also carry X-VPS-Admin, which a cross-site form can't set (CSRF).
 func (a *Auth) Require(scope string, ip func(*http.Request) string, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := a.Identify(r)

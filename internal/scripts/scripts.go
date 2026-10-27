@@ -1,7 +1,6 @@
-// Package scripts runs the administrator's own scripts from the panel. Scripts are
-// symlinked by root with `sudo vps-admin link FILE` into a root-owned folder: the agent
-// can run them but cannot add or change them. They run as the vps-admin user, which
-// has Docker access but no root.
+// Package scripts runs the admin's own scripts from the panel. Root symlinks them with
+// `sudo vps-admin link FILE` into a root-owned folder, so the agent can run them but not
+// add or change them.
 package scripts
 
 import (
@@ -42,8 +41,7 @@ type Script struct {
 	Executable  bool   `json:"executable"`
 	Missing     bool   `json:"missing"` // the target was moved or deleted
 	Running     bool   `json:"running"`
-	// Dir is the compose folder the script belongs to, so the panel shows it with
-	// those containers. Found at link time, or given with -dir.
+	// Dir is the compose folder the script belongs to, found at link time or set with -dir.
 	Dir string `json:"dir,omitempty"`
 }
 
@@ -51,8 +49,7 @@ const metaFile = ".meta.json"
 
 var composeNames = []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"}
 
-// composeDirOf walks up from the script folder (four levels at most) to the first folder
-// with a compose file.
+// composeDirOf walks up at most four levels to the first folder with a compose file.
 func composeDirOf(file string) string {
 	dir := filepath.Dir(file)
 	for i := 0; i < 4 && dir != "/"; i++ {
@@ -80,8 +77,7 @@ func writeMeta(dir string, m map[string]string) error {
 	return os.WriteFile(filepath.Join(dir, metaFile), append(b, '\n'), 0o644)
 }
 
-// Link creates (or replaces) name -> file in dir. Run as root by the CLI. folder ties
-// the script to a compose folder; empty means "find it from the file location".
+// Link creates or replaces name -> file in dir (as root). Empty folder means detect it.
 func Link(dir, file, name, folder string) (string, error) {
 	abs, err := filepath.Abs(file)
 	if err != nil {
@@ -234,8 +230,8 @@ func (r *Runner) List() ([]Script, error) {
 	return out, nil
 }
 
-// Start runs a script in the background. args are passed as-is, without a shell.
-// onStart runs before the process starts (to record the run), onDone after it ends.
+// Start runs a script in the background, args passed without a shell. onStart runs
+// before the process starts, onDone after it ends.
 func (r *Runner) Start(name string, args []string, onStart, onDone func(*Run)) (*Run, error) {
 	if !nameRe.MatchString(name) {
 		return nil, ErrNotFound
@@ -255,8 +251,7 @@ func (r *Runner) Start(name string, args []string, onStart, onDone func(*Run)) (
 	r.running[name] = run
 	r.mu.Unlock()
 
-	// As root (development, containers) the script runs directly; otherwise the
-	// root-owned helper runs it as the owner of the file.
+	// As root (dev, containers) run directly; otherwise the helper runs it as the file owner.
 	var cmd *exec.Cmd
 	if os.Geteuid() != 0 && r.Helper != "" {
 		cmd = exec.CommandContext(ctx, "sudo", append([]string{"-n", "--", r.Helper, name}, args...)...)
@@ -317,15 +312,13 @@ func (run *Run) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// Output returns what the script printed so far.
 func (run *Run) Output() string {
 	run.mu.Lock()
 	defer run.mu.Unlock()
 	return run.output.String()
 }
 
-// Follow returns the output so far and a channel of what comes next; the channel
-// stays open until cancel. Done tells when the run ended.
+// Follow returns the output so far and a channel of new output, open until cancel.
 func (run *Run) Follow() (string, <-chan string, func()) {
 	ch := make(chan string, 256)
 	run.mu.Lock()
@@ -341,7 +334,6 @@ func (run *Run) Follow() (string, <-chan string, func()) {
 
 func (run *Run) Done() <-chan struct{} { return run.done }
 
-// Current returns the run in progress for a script, if any.
 func (r *Runner) Current(name string) *Run {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -356,8 +348,7 @@ func (r *Runner) Stop(name string) bool {
 	return false
 }
 
-// SplitArgs splits an argument line like a shell would for simple cases: spaces
-// separate, single or double quotes group. No expansion of any kind.
+// SplitArgs splits on spaces with single/double quote grouping. No expansion.
 func SplitArgs(s string) ([]string, error) {
 	var out []string
 	var cur strings.Builder

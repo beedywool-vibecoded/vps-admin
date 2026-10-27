@@ -64,8 +64,7 @@ func TestCaddySiteVPN(t *testing.T) {
 	}
 }
 
-// A URL paused from the Proxy tab stays off: a deployment neither brings it back nor
-// stops the app.
+// A paused URL stays off across deployments, and the app keeps running.
 func TestPausedSiteIsNotRepublished(t *testing.T) {
 	st, err := store.Open(t.TempDir())
 	if err != nil {
@@ -97,7 +96,7 @@ func TestPausedSiteIsNotRepublished(t *testing.T) {
 	}
 }
 
-// Deleting an app takes its snippet with it, and drops its paused flag.
+// Deleting an app removes its snippet and paused flag.
 func TestRemoveWithdrawsTheSite(t *testing.T) {
 	root := t.TempDir()
 	st, err := store.Open(filepath.Join(root, "data"))
@@ -110,7 +109,7 @@ func TestRemoveWithdrawsTheSite(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	// A linked folder skips the docker CLI, which a test machine may not have.
+	// Linked folder: skips the docker CLI.
 	app := store.App{ID: "blog", Dir: "/tmp/blog", Domain: "blog.example.com", Access: AccessPublic}
 	if err := st.AddApp(ctx, &app); err != nil {
 		t.Fatal(err)
@@ -217,8 +216,7 @@ func TestPauseSiteKeepsTheFile(t *testing.T) {
 	}
 }
 
-// A site written in the main Caddyfile is paused, resumed and deleted block by block:
-// the other sites and the global options stay exactly as they were.
+// Caddyfile blocks are paused, resumed and deleted individually; the rest is untouched.
 func TestCaddyfileBlocksPauseResumeAndDelete(t *testing.T) {
 	root := t.TempDir()
 	sites := filepath.Join(root, "vps-admin-apps")
@@ -290,8 +288,7 @@ shop.example.com {
 	}
 }
 
-// Caddy keeps its old configuration when the new one is refused: the file must match it
-// again, or the next restart would load the broken version.
+// When Caddy refuses the new config, the file must be restored or a restart would load it.
 func TestCaddyfilePauseRollsBack(t *testing.T) {
 	root := t.TempDir()
 	sites := filepath.Join(root, "vps-admin-apps")
@@ -322,7 +319,7 @@ func TestAllowList(t *testing.T) {
 	}
 }
 
-// A certificate is asked for from the panel, on any nginx site; Caddy never needs it.
+// HTTPS is requested via certbot on nginx sites only.
 func TestEnableHTTPS(t *testing.T) {
 	root := t.TempDir()
 	sites := filepath.Join(root, "nginx")

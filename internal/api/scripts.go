@@ -36,8 +36,7 @@ func (s *Server) scriptTitles(ctx context.Context) map[string]string {
 	return m
 }
 
-// scriptRename sets the display name of a script; an empty title goes back to the link
-// name. The link itself keeps its name, so the CLI and the history are unchanged.
+// scriptRename sets a script's display name (empty resets it). The link keeps its name.
 func (s *Server) scriptRename(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Title string `json:"title"`
@@ -116,8 +115,7 @@ func (s *Server) scriptRunOutput(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"output": out})
 }
 
-// scriptStream follows the run in progress of a script: output so far, then live
-// chunks, then an "end" event with the exit code.
+// scriptStream follows a running script: output so far, live chunks, then an "end" event.
 func (s *Server) scriptStream(w http.ResponseWriter, r *http.Request) {
 	run := s.Scripts.Current(r.PathValue("name"))
 	if run == nil {
@@ -164,7 +162,7 @@ func (s *Server) scriptStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// reboot restarts the whole server, after a short delay so the answer gets out.
+// reboot restarts the server after a short delay so the response gets out.
 func (s *Server) reboot(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Confirm string `json:"confirm"`

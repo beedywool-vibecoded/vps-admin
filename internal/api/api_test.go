@@ -48,8 +48,7 @@ func TestCSPAllowsGitHubForm(t *testing.T) {
 	}
 }
 
-// The Proxy page is the panel's own view of the reverse proxy: it must come from the
-// configuration, with each domain's upstream.
+// The Proxy page reads the proxy config with each domain's upstream.
 func TestProxySitesReadsTheConfig(t *testing.T) {
 	cfg, err := config.Load("/nonexistent")
 	if err != nil {
@@ -97,7 +96,7 @@ func TestProxySitesReadsTheConfig(t *testing.T) {
 	}
 }
 
-// Lists go out as [] and never as null: the panel walks them without a guard.
+// Lists are sent as [], never null.
 func TestProxySitesSendsEmptyLists(t *testing.T) {
 	cfg, err := config.Load("/nonexistent")
 	if err != nil {

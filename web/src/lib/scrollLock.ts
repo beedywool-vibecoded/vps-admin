@@ -1,5 +1,5 @@
-// Locks page scrolling while at least one modal is open. Counted, so nested dialogs
-// unlock only when the last one closes. The scrollbar gutter is kept to avoid a jump.
+// Locks page scrolling while any modal is open (ref-counted for nested dialogs), keeping
+// the scrollbar gutter to avoid a jump.
 let count = 0
 
 export function lockScroll() {

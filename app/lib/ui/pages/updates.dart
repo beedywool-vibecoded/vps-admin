@@ -7,8 +7,7 @@ import '../live.dart';
 import '../widgets.dart';
 import 'common.dart';
 
-/// UpdatesView.vue: the agent (check, install, last result, release notes, automatic
-/// updates, pre-releases) and the system packages with the restart.
+/// UpdatesView.vue
 class UpdatesPage extends StatefulWidget {
   const UpdatesPage({super.key});
 
@@ -75,7 +74,7 @@ class _UpdatesPageState extends State<UpdatesPage> {
     }
   }
 
-  // After installing, the agent restarts; poll until the new version answers.
+  // The agent restarts after installing; poll until the new version answers.
   Future<void> _install() async {
     final tag = (st?['latest'] as Map?)?['tag'] as String?;
     if (!await wConfirm(

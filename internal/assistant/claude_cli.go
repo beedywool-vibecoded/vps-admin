@@ -16,11 +16,9 @@ import (
 	"github.com/beedywool/vps-admin/internal/store"
 )
 
-// The subscription provider runs the official `claude` binary, the way Anthropic
-// documents for a machine with no browser: a long-lived token from `claude setup-token`
-// in CLAUDE_CODE_OAUTH_TOKEN, one turn per message, stream-json on stdout. The binary is
-// left untouched and its own tools are disabled, so every action still goes through the
-// panel's policy and approval cards.
+// The subscription provider runs the official `claude` binary headless: a token from
+// `claude setup-token` in CLAUDE_CODE_OAUTH_TOKEN, one turn per message, stream-json on
+// stdout. Its own tools are disabled so every action goes through the panel's policy.
 
 var (
 	errCLIMissing = errors.New("the claude command is not installed on this server")
@@ -31,8 +29,7 @@ const claudeInstall = `curl -fsSL https://claude.ai/install.sh | bash
 # or, with Node.js installed:
 npm install -g @anthropic-ai/claude-code`
 
-// claudeInfo reports where the CLI is and which version it is, cached for a few
-// seconds: the settings panel asks after every change.
+// claudeInfo reports the CLI's path and version, cached briefly.
 func (e *Engine) claudeInfo(ctx context.Context) (path, version string, err error) {
 	e.cmu.Lock()
 	if time.Since(e.cat) < 30*time.Second {
@@ -59,8 +56,7 @@ func (e *Engine) claudeInfo(ctx context.Context) (path, version string, err erro
 	return
 }
 
-// findClaude looks where an installer would have put it. The agent's PATH is minimal on
-// purpose, so the usual install locations are tried instead of trusting it.
+// findClaude checks the usual install locations; the agent's PATH is minimal on purpose.
 func findClaude(dataDir string) (string, error) {
 	if p, err := exec.LookPath("claude"); err == nil {
 		return p, nil
@@ -85,9 +81,8 @@ func findClaude(dataDir string) (string, error) {
 	return "", errCLIMissing
 }
 
-// claudeEnv is deliberately small: the CLI only needs its token, a writable home of its
-// own (sessions live there) and a PATH. Nothing else from the agent's environment leaks
-// into a process that can reach the model.
+// claudeEnv is deliberately minimal: token, its own writable home and PATH. Nothing else
+// from the agent's environment leaks to the model.
 func (e *Engine) claudeEnv(path, token string) ([]string, error) {
 	home := filepath.Join(e.DataDir, "claude-home")
 	if err := os.MkdirAll(home, 0o700); err != nil {
@@ -106,7 +101,7 @@ func (e *Engine) claudeEnv(path, token string) ([]string, error) {
 		"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
 		key + "=" + token,
 	}
-	if e.ClaudeURL != "" { // tests: the CLI talks to a fake Anthropic endpoint
+	if e.ClaudeURL != "" { // tests
 		env = append(env, "ANTHROPIC_BASE_URL="+e.ClaudeURL)
 	}
 	return env, nil
@@ -137,8 +132,7 @@ func (e *Engine) claudeTurn(ctx context.Context, convID string, tgt target, prom
 
 	t, newSession, err := e.runClaude(ctx, path, env, b, tgt, prompt, session, onText, onThinking)
 	if err != nil && session != "" && isMissingSession(err) {
-		// The CLI forgot this conversation (a wiped home, a pruned session): start a new
-		// one and hand it the last exchanges in the prompt instead.
+		// The CLI lost the session: start a new one with a transcript in the prompt.
 		history := e.transcript(ctx, convID)
 		t, newSession, err = e.runClaude(ctx, path, env, b, tgt, history+prompt, "", onText, onThinking)
 	}
@@ -151,11 +145,8 @@ func (e *Engine) claudeTurn(ctx context.Context, convID string, tgt target, prom
 	return t, nil
 }
 
-// checkClaudeCode runs the smallest possible turn: one word, the cheapest family, no
-// tools. A token from `claude setup-token` is an OAuth credential for the CLI, so the CLI
-// is the only thing that can say whether it still works; and only an authentication
-// answer condemns it, so a subscription that is rate limited or a network that is down
-// does not cost the administrator what they pasted.
+// checkClaudeCode runs the smallest possible turn. The token is a CLI OAuth credential,
+// so only the CLI can check it; only an auth failure rejects it.
 func (e *Engine) checkClaudeCode(ctx context.Context, token string) error {
 	path, _, err := e.claudeInfo(ctx)
 	if err != nil {
@@ -233,7 +224,6 @@ func isMissingSession(err error) bool {
 		strings.Contains(m, "could not find session")
 }
 
-// runClaude starts the binary, streams its events, and returns the turn it produced.
 func (e *Engine) runClaude(ctx context.Context, path string, env []string, b *bridge, tgt target,
 	prompt, session string, onText, onThinking func(string)) (*turn, string, error) {
 	args := []string{
@@ -377,7 +367,6 @@ func (e *Engine) runClaude(ctx context.Context, path string, env []string, b *br
 	return t, sessionID, nil
 }
 
-// cliReason turns the CLI's own complaint into the sentence the panel shows.
 func cliReason(msg string) string {
 	low := strings.ToLower(msg)
 	switch {
@@ -397,8 +386,7 @@ func cliReason(msg string) string {
 	return "Claude Code failed: " + msg
 }
 
-// panelPrompt replaces what the CLI would say about itself with what the assistant is
-// here: the administrator of one server, and the approval rule.
+// panelPrompt replaces the CLI's system prompt with the panel's role and approval rule.
 func (e *Engine) panelPrompt(ctx context.Context) string {
 	h := e.Host
 	return fmt.Sprintf(`You are the assistant built into VPS Admin, the administration panel of the Linux server %q (%s, kernel %s, %s, %d cores), and the person writing to you is its administrator.
@@ -411,8 +399,7 @@ Answer in the language the administrator writes in, concisely, with commands in 
 		h.Hostname, h.OS, h.Kernel, h.Arch, h.Cores)
 }
 
-// toolNames is the explicit allowlist handed to the CLI: its own tools are disabled and
-// only these MCP tools are permitted, so no shell escapes the policy.
+// toolNames is the allowlist handed to the CLI: only these MCP tools, no shell.
 func toolNames() []string {
 	out := make([]string, 0, len(defs))
 	for _, d := range defs {
@@ -421,8 +408,7 @@ func toolNames() []string {
 	return out
 }
 
-// transcript is the compact retelling of the conversation, used when the CLI lost its
-// session: enough context to go on without replaying every tool result.
+// transcript is a compact retelling of the conversation for when the CLI lost its session.
 func (e *Engine) transcript(ctx context.Context, convID string) string {
 	msgs, err := e.Store.Messages(ctx, convID)
 	if err != nil {
@@ -464,7 +450,6 @@ func (e *Engine) transcript(ctx context.Context, convID string) string {
 	return "Earlier in this conversation, before a restart:\n\n" + b.String() + "Continue from here.\n\n"
 }
 
-// lastUserText is the message the CLI answers on this turn.
 func (e *Engine) lastUserText(ctx context.Context, convID string) (string, error) {
 	msgs, err := e.Store.Messages(ctx, convID)
 	if err != nil {

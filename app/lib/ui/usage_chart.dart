@@ -4,8 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'kit.dart';
 
-/// CPU and memory over time (UsageChart.vue): one 0 to 100 % axis, the memory line
-/// dashed, both labeled at their end, a crosshair with values on touch, and a table view.
+/// CPU and memory over time (UsageChart.vue), with a touch crosshair and a table view.
 class UsageChart extends StatefulWidget {
   const UsageChart({super.key, required this.points, required this.span});
   final List<Map<String, dynamic>> points; // t, cpu, mem, load
@@ -282,7 +281,6 @@ class _ChartPainter extends CustomPainter {
       ..strokeWidth = 2
       ..strokeJoin = StrokeJoin.round
       ..strokeCap = StrokeCap.round;
-    // Memory, dashed 6 4
     final memPath = line('mem');
     for (final m in memPath.computeMetrics()) {
       for (var d = 0.0; d < m.length; d += 10) {

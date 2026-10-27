@@ -14,8 +14,7 @@ import (
 	"github.com/beedywool/vps-admin/internal/store"
 )
 
-// fakeRclone stands in for the real binary: copyto, lsf, deletefile and lsd work on a
-// folder, so the whole backup path runs without a Google account.
+// fakeRclone implements copyto, lsf, deletefile and lsd on a local folder.
 func fakeRclone(t *testing.T) string {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "bin")
@@ -173,7 +172,7 @@ func TestManagerBacksUpAndRestores(t *testing.T) {
 		t.Fatalf("the key must be staged with the database: %v", err)
 	}
 
-	// Restoring means the panel is restarted: close the store, then apply.
+	// Restoring means a restart: close the store, then apply.
 	st.Close()
 	if err := ApplyPending(dir); err != nil {
 		t.Fatal(err)

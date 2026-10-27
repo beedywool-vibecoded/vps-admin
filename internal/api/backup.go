@@ -7,8 +7,7 @@ import (
 	"github.com/beedywool/vps-admin/internal/backup"
 )
 
-// Backup to Google Drive. The settings page configures the rclone remote, mounts it
-// through the root helper, and starts or restores an encrypted archive.
+// Backup to Google Drive through rclone and the root helper.
 
 func (s *Server) backupReady(w http.ResponseWriter) bool {
 	if s.Backup == nil {
@@ -99,8 +98,7 @@ func (s *Server) backupRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]bool{"started": true})
 }
 
-// backupDelete removes one archive from the Drive, then answers with the refreshed
-// status so the list drops it without another round trip.
+// backupDelete removes one archive and returns the refreshed status.
 func (s *Server) backupDelete(w http.ResponseWriter, r *http.Request) {
 	if !s.backupReady(w) {
 		return
@@ -121,8 +119,8 @@ func (s *Server) backupDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.Backup.Status(r.Context(), true))
 }
 
-// backupRestore stages an archive's database and restarts the agent, which swaps the
-// files in before opening the store. The panel is unreachable for a few seconds.
+// backupRestore stages an archive and restarts the agent, which swaps the files in on
+// start. The panel is down for a few seconds.
 func (s *Server) backupRestore(w http.ResponseWriter, r *http.Request) {
 	if !s.backupReady(w) {
 		return

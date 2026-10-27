@@ -1,6 +1,5 @@
 <script setup lang="ts">
-// Google Drive backups: connect the Drive once (rclone token), mount it, and let the
-// panel write an encrypted archive of its state on a schedule.
+// Google Drive backups: rclone token, mount, and scheduled encrypted archives.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import Icon from '@/components/Icon.vue'
 import M3Dialog from '@/components/M3Dialog.vue'
@@ -43,8 +42,7 @@ const tone = computed(() => {
   if (st.value.running) return 'warn' as const
   return st.value.last?.error ? 'bad' : st.value.last?.ok ? 'ok' : 'idle'
 })
-// The newest archive first, even when a status cached before the agent sorted the list
-// arrives: a restore almost always wants the last backup.
+// Newest first even if an older cached status arrives unsorted.
 const archives = computed(() =>
   [...(st.value?.archives ?? [])].sort((a, b) => {
     const ta = Date.parse(a.time) || 0
@@ -133,8 +131,7 @@ async function setMount(on: boolean) {
   }
 }
 
-// Mount at boot is a setting, not a mount command: save it as soon as the switch moves,
-// like the app does.
+// Mount at boot is a setting, saved as soon as the switch moves.
 function setMountBoot(on: boolean) {
   mountOn.value = on
   save({ mount: on }, on ? 'Drive mounts at boot' : 'No mount at boot')

@@ -13,9 +13,8 @@ import (
 
 const maxOutput = 4 << 20
 
-// Runner executes host commands. The agent runs as an unprivileged user; commands that
-// need root go through `sudo -n`, which only allows what deploy/sudoers lists. When the
-// agent itself runs as root (development, containers) sudo is skipped.
+// Runner executes host commands. Root commands go through `sudo -n`, limited to the
+// sudoers allowlist; sudo is skipped when already root.
 type Runner struct {
 	root bool
 }

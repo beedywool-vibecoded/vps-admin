@@ -309,8 +309,7 @@ class _AppsPageState extends State<AppsPage> {
   }
 }
 
-/// AppDetailView.vue: header with actions, update check, then deployments (with the live
-/// build log), environment and settings tabs.
+/// AppDetailView.vue
 class AppDetailPage extends StatefulWidget {
   const AppDetailPage({super.key, required this.id});
   final String id;
@@ -327,14 +326,12 @@ class _AppDetailPageState extends State<AppDetailPage> {
   int? selected;
   String log = '';
   bool busy = false, checking = false, deleteVolumes = false;
-  // The list shows the latest deployments; older ones are one tap away.
   static const deployLimit = 5;
   bool showAllDeps = false;
   Map<String, dynamic>? check;
   StreamSubscription<(String, dynamic)>? _stream;
   Timer? _timer;
   final _logScroll = ScrollController();
-  // Settings form
   final f = <String, TextEditingController>{
     for (final k in [
       'rootDir',
@@ -353,7 +350,6 @@ class _AppDetailPageState extends State<AppDetailPage> {
   };
   String branch = '', buildType = 'auto', access = 'public';
   bool autoDeploy = true, formDirty = false, envDirty = false;
-  // The variables go to the app's environment, or to a file compose reads.
   bool envFile = false;
   final _envPath = TextEditingController();
 
@@ -809,7 +805,7 @@ class _AppDetailPageState extends State<AppDetailPage> {
 
   void _toggleDeps() {
     setState(() => showAllDeps = !showAllDeps);
-    // Collapsing hides the older rows, so keep the log on a deployment that stays listed.
+    // Keep the log on a deployment that stays listed after collapsing.
     if (!showAllDeps &&
         selected != null &&
         deployments.isNotEmpty &&
@@ -969,7 +965,7 @@ class _AppDetailPageState extends State<AppDetailPage> {
     ];
   }
 
-  // Only a compose stack reads a file: another build gets the variables directly.
+  // Only compose reads an env file.
   bool get composeApp {
     final persisted = app?['build'] as String? ?? '';
     final live =

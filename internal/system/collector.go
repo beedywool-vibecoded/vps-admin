@@ -23,8 +23,8 @@ type Point struct {
 	Load  float64 `json:"load"`
 }
 
-// Collector samples the host every 5 seconds and keeps two ring buffers: the last hour
-// at full resolution and the last day as 5 minute averages.
+// Collector samples the host every 5 seconds into two ring buffers: the last hour at full
+// resolution and the last day as 5 minute averages.
 type Collector struct {
 	mu     sync.RWMutex
 	latest Snapshot
@@ -86,7 +86,7 @@ func (c *Collector) Run(ctx context.Context) {
 		})
 		prevCPU, prevRx, prevTx, prevT = cpu, rx, tx, now
 	}
-	// A first sample after one second, so the dashboard has data right after a restart.
+	// First sample after one second so the dashboard has data right after a restart.
 	select {
 	case <-ctx.Done():
 		return

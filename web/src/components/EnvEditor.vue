@@ -1,6 +1,5 @@
 <script setup lang="ts">
-// Environment variables. Secrets never come back from the server: an existing secret
-// shows as "unchanged" until the user types a new value.
+// Secrets never come back from the server; existing ones show as "unchanged" until retyped.
 import Icon from './Icon.vue'
 import M3Checkbox from './M3Checkbox.vue'
 import type { EnvVar } from '@/lib/api'

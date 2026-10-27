@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-// M3 Expressive wavy progress, ported from Pelote (src/previews/bundle.js): a wave in primary up
-// to the value, a 6px gap, a flat track in secondary container and a stop dot. The phase slides
-// one wavelength every 1.6 s; it pauses off screen, when the tab is hidden, and it stops under
+// M3 Expressive wavy progress, ported from Pelote (src/previews/bundle.js). The phase
+// slides one wavelength every 1.6 s; paused off screen and in hidden tabs, static under
 // prefers-reduced-motion.
 const props = defineProps<{ percent: number }>()
 

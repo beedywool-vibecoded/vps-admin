@@ -66,9 +66,8 @@ class _ShapePainter extends CustomPainter {
       old.color != color || old.shape != shape;
 }
 
-/// Pelote's indeterminate loader: an M3 Expressive shape that changes and turns a little further
-/// every 700 ms, like the one on the web panel. The first step comes 20 ms after it appears.
-/// Reduced motion keeps the first shape still.
+/// Pelote's indeterminate loader: the shape morphs and turns every 700 ms, first step
+/// after 20 ms. Reduced motion keeps it still.
 class PeloteLoader extends StatefulWidget {
   const PeloteLoader({
     super.key,
@@ -108,7 +107,6 @@ class _PeloteLoaderState extends State<PeloteLoader> {
     _start?.cancel();
     _timer?.cancel();
     if (reduce) return;
-    // First step after 20 ms, then Pelote's 700 ms beat
     _start = Timer(const Duration(milliseconds: 20), () {
       _advance();
       _timer = Timer.periodic(
@@ -203,7 +201,6 @@ Path _svgPath(String d) {
   return path;
 }
 
-/// A centred Pelote loader for a section whose content is still on its way.
 class LoadingBlock extends StatelessWidget {
   const LoadingBlock({super.key, this.label = 'Loading'});
   final String label;
@@ -217,10 +214,8 @@ class LoadingBlock extends StatelessWidget {
   );
 }
 
-/// M3 Expressive wavy progress, as in Pelote: a wave in primary up to [value], a 6dp gap, a flat
-/// track in secondary container and a stop dot. The phase slides one wavelength every 1.6 s; the
-/// ticker follows TickerMode (a screen that is not showing stops it), and reduced motion freezes
-/// the wave at its resting shape.
+/// M3 Expressive wavy progress, as in Pelote. The phase slides one wavelength every 1.6 s;
+/// it pauses with TickerMode and freezes under reduced motion.
 class WaveProgress extends StatefulWidget {
   const WaveProgress(this.value, {super.key});
   final double value; // 0..1
@@ -503,7 +498,7 @@ String pct(double n) => '${n.round()}%';
 String imageName(String ref) =>
     ref.startsWith('sha256:') ? ref.substring(7, 19) : ref;
 
-/// Commands sit on a dark surface in both themes, so they stand apart from prose.
+/// Commands use a dark surface in both themes.
 TextStyle cmdStyle(BuildContext context, {double? fontSize}) {
   final dark = Theme.of(context).brightness == Brightness.dark;
   final cs = Theme.of(context).colorScheme;
@@ -515,7 +510,6 @@ TextStyle cmdStyle(BuildContext context, {double? fontSize}) {
   );
 }
 
-/// A command on its own line, in a dark selectable block.
 class Cmd extends StatelessWidget {
   const Cmd(this.command, {super.key});
   final String command;
@@ -614,7 +608,6 @@ Future<bool> confirmAction(
       false;
 }
 
-/// Loads data with pull-to-refresh, an error view with retry, and a spinner.
 class Loader<T> extends StatefulWidget {
   const Loader({
     super.key,
@@ -738,7 +731,6 @@ class LogsPage extends StatelessWidget {
   );
 }
 
-/// Output of a long command that streams (a rebuild), shown as it arrives.
 class StreamPage extends StatefulWidget {
   const StreamPage({super.key, required this.title, required this.start});
   final String title;

@@ -1,7 +1,7 @@
 package deploy
 
-// A folder set up by hand, linked to GitHub: pushes fast-forward it and compose
-// rebuilds, local changes stop the update, rollbacks reset it.
+// Linked folder: pushes fast-forward and rebuild, local changes stop the update,
+// rollbacks reset it.
 //
 //	VPSADMIN_DOCKER_TEST=1 go test ./internal/deploy -run Folder -v
 
@@ -45,13 +45,11 @@ func TestDockerFolderUpdate(t *testing.T) {
 		return strings.TrimSpace(string(out))
 	}
 
-	// A free port for the published service.
 	ln, _ := net.Listen("tcp", "127.0.0.1:0")
 	port := ln.Addr().(*net.TCPAddr).Port
 	ln.Close()
 
-	// The "GitHub" side: a work tree pushing to a bare repo that lives inside the linked
-	// folder, so the git container (which only mounts that folder) can fetch from it.
+	// The bare "GitHub" repo lives inside the linked folder so the git container can reach it.
 	project := fmt.Sprintf("ftest-%d", time.Now().Unix()%100000)
 	folder := filepath.Join(root, project)
 	work := filepath.Join(root, "work")
@@ -152,7 +150,6 @@ func TestDockerFolderUpdate(t *testing.T) {
 		t.Fatalf("before linking: %q", got)
 	}
 
-	// A push.
 	head, msg = commit("version two"), "version two"
 	r2 := wait(must(e.Deploy(ctx, app, "push", "", "", "")))
 	if r2.Status != "live" || r2.SHA != head || get() != "version two" {

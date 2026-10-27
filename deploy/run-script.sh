@@ -1,7 +1,6 @@
 #!/bin/sh
-# Runs a script linked with `sudo vps-admin link`, as the owner of the script file, so a
-# script in someone's project folder has that person's rights (root's when root owns it).
-# Only links in the root-owned folder can run: the agent cannot add any.
+# Runs a script linked with `sudo vps-admin link` as the owner of the file, so it gets
+# that person's rights. Only links in the root-owned folder can run.
 # Installed root-owned in /opt/vps-admin; sudoers lets the agent call it.
 set -eu
 dir=/etc/vps-admin/scripts

@@ -7,9 +7,8 @@ import (
 	"testing"
 )
 
-// Saving a key goes through a check against the provider in the same request. A provider
-// that answers 5xx, or not at all, must not cost the administrator the key they pasted;
-// only an authentication answer refuses it.
+// A provider that fails or doesn't answer must not cost the admin the key; only an auth
+// error refuses it.
 func TestKeyIsSavedWhenTheProviderFails(t *testing.T) {
 	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
@@ -41,8 +40,7 @@ func TestKeyIsSavedWhenTheProviderFails(t *testing.T) {
 	}
 }
 
-// The check is capped: a provider that never answers must not hold the request long
-// enough for a reverse proxy in front of the panel to give up.
+// The check is capped so a reverse proxy doesn't time out first.
 func TestKeyCheckDoesNotHang(t *testing.T) {
 	block := make(chan struct{})
 	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +49,7 @@ func TestKeyCheckDoesNotHang(t *testing.T) {
 		case <-r.Context().Done():
 		}
 	}))
-	// Cleanups run last in, first out: release the handler before closing its server.
+	// Cleanups run LIFO: release the handler before closing its server.
 	t.Cleanup(slow.Close)
 	t.Cleanup(func() { close(block) })
 	e := testEngine(t)

@@ -116,7 +116,7 @@ void main() {
       findsOneWidget,
     );
 
-    // Each idea has its own heading and a line that says what it is for.
+    // Each group has a heading and a description line.
     expect(
       find.text(
         'The name it gets here, the branch to deploy and the folder to build.',
@@ -134,7 +134,7 @@ void main() {
       findsOneWidget,
     );
 
-    // The explanation sits under the box, so every field in the row is as tall.
+    // Hints sit under the box, so fields in a row are the same height.
     final nameField = find.byType(TextField).first;
     expect(
       tester.getTopLeft(find.text('Also the container name')).dy,

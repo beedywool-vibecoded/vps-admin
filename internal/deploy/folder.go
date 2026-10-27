@@ -14,10 +14,8 @@ import (
 	"github.com/beedywool/vps-admin/internal/store"
 )
 
-// Existing folders: a git checkout with a compose file, set up by hand before VPS Admin
-// (or by anything else). Pushes update it in place: git fast-forwards to the pushed
-// commit, then compose rebuilds. Both run in throwaway containers, so the agent needs no
-// rights on the folder beyond Docker, and files keep their owner.
+// Linked folders: an existing git checkout with a compose file. Pushes fast-forward git,
+// then compose rebuilds, both in throwaway containers so files keep their owner.
 
 const (
 	gitImage     = "alpine/git:2.45.2"
@@ -39,7 +37,6 @@ func owner(dir string) (string, error) {
 	return fmt.Sprintf("%d:%d", sys.Uid, sys.Gid), nil
 }
 
-// git runs a git command in dir, inside a container, as the folder owner.
 func (e *Engine) git(ctx context.Context, out io.Writer, dir string, args ...string) error {
 	own, err := owner(dir)
 	if err != nil {
@@ -56,8 +53,8 @@ func (e *Engine) gitOut(ctx context.Context, dir string, args ...string) (string
 	return strings.TrimSpace(b.String()), err
 }
 
-// compose runs docker compose for a folder from a container that sees the folder at the
-// same path, so relative bind mounts and env files resolve as they would on the host.
+// compose runs docker compose from a container that sees dir at the same path, so
+// relative bind mounts resolve as on the host.
 func (e *Engine) compose(ctx context.Context, out io.Writer, app store.App, dir string, args ...string) error {
 	full := []string{"run", "--rm", "-v", "/var/run/docker.sock:/var/run/docker.sock", "-v", dir + ":" + dir, "-w", dir, composeImage,
 		"docker", "compose", "-p", e.projectName(app)}
@@ -67,8 +64,7 @@ func (e *Engine) compose(ctx context.Context, out io.Writer, app store.App, dir 
 	return e.docker(ctx, out, "", nil, append(full, args...)...)
 }
 
-// projectName keeps the existing compose project of a linked folder, so its containers
-// are updated instead of duplicated.
+// projectName keeps a linked folder's existing compose project so containers aren't duplicated.
 func (e *Engine) projectName(app store.App) string {
 	if app.Dir != "" {
 		return app.ID
@@ -78,7 +74,6 @@ func (e *Engine) projectName(app store.App) string {
 
 var ghRemote = regexp.MustCompile(`github\.com[:/]([^/\s]+/[^/\s]+?)(\.git)?/?$`)
 
-// FolderInfo describes a folder before it is linked.
 type FolderInfo struct {
 	Repo   string `json:"repo"`   // owner/name when the origin is on GitHub
 	Branch string `json:"branch"` // current branch
@@ -114,8 +109,8 @@ func (e *Engine) CurrentCommit(ctx context.Context, app store.App) string {
 	return ""
 }
 
-// updateFolder brings a linked folder to sha: fast-forward for normal pushes, a hard
-// reset for rollbacks (asked for explicitly), then compose up.
+// updateFolder fast-forwards a linked folder to sha (hard reset for rollbacks), then
+// runs compose up.
 func (e *Engine) updateFolder(ctx context.Context, l *logger, app store.App, d *store.Deployment, env []string) error {
 	if d.SHA == "" {
 		c, err := e.GitHub.Commit(ctx, app.InstallationID, app.Repo, app.Branch)
@@ -154,8 +149,7 @@ func (e *Engine) updateFolder(ctx context.Context, l *logger, app store.App, d *
 	}
 	args := []string{"up", "-d", "--build", "--remove-orphans"}
 	if app.EnvFile {
-		// A linked folder keeps its own files: the variables go where it expects them,
-		// and compose gets them from that file only.
+		// Linked folders keep their own env file; compose reads only that.
 		rel, err := e.writeEnvFile(root, app, env)
 		if err != nil {
 			return err
@@ -167,10 +161,8 @@ func (e *Engine) updateFolder(ctx context.Context, l *logger, app store.App, d *
 	return e.compose(ctx, l, app, root, args...)
 }
 
-// RebuildService refreshes one service of a compose stack in place: a newer image if
-// it uses one, a rebuild if it has a build section, then it is recreated alone (its
-// dependencies are left as they are). files are the compose files the stack was started
-// with; empty lets compose find them in dir.
+// RebuildService pulls or rebuilds one compose service and recreates it alone. Empty
+// files lets compose find them in dir.
 func (e *Engine) RebuildService(ctx context.Context, out io.Writer, project, dir string, files []string, service string) error {
 	full := []string{"run", "--rm", "-v", "/var/run/docker.sock:/var/run/docker.sock", "-v", dir + ":" + dir, "-w", dir, composeImage,
 		"docker", "compose", "-p", project}

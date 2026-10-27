@@ -17,12 +17,9 @@ import (
 	"github.com/beedywool/vps-admin/internal/store"
 )
 
-// The Claude Code CLI is the model runtime for the subscription provider. It ships its
-// own tools (Bash, Edit, Read…), which would run outside the panel's policy, so they are
-// switched off when it starts. The panel's tools are handed to it through a small MCP
-// server on loopback, created for the duration of one turn and reachable with a token
-// that only this turn knows. A change waits inside the tool call until the administrator
-// answers the card in the panel, exactly like a tool call made through the API.
+// The Claude Code CLI's own tools (Bash, Edit...) would bypass the panel's policy, so
+// they're disabled and the panel's tools are served over a per-turn loopback MCP server
+// with a token only this turn knows. Changes wait inside the tool call for approval.
 
 // bridge serves one conversation's tools to one CLI process.
 type bridge struct {
@@ -96,8 +93,7 @@ func (b *bridge) handle(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 	case http.MethodGet, http.MethodDelete:
-		// No server-initiated stream and no session to delete: the endpoint lives as long
-		// as the turn.
+		// No server-initiated stream or session: the endpoint lives for one turn.
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	default:
@@ -164,8 +160,7 @@ func writeRPCError(w http.ResponseWriter, id json.RawMessage, code int, msg stri
 	})
 }
 
-// mcpTools describes the panel tools in the MCP dialect: same names, same arguments,
-// plain JSON Schema.
+// mcpTools describes the panel tools as plain JSON Schema.
 func mcpTools() []map[string]any {
 	out := make([]map[string]any, 0, len(defs))
 	for _, d := range defs {
@@ -187,8 +182,7 @@ func mcpTools() []map[string]any {
 	return out
 }
 
-// call runs one panel tool for the CLI, recording it so the panel shows the same card
-// and the same audit line as a tool call made through the API.
+// call runs one panel tool for the CLI, recorded like an API tool call.
 func (b *bridge) call(ctx context.Context, name string, args json.RawMessage) (string, bool) {
 	d, c, err := parse(name, string(args))
 	if err != nil {
@@ -248,9 +242,7 @@ func (b *bridge) call(ctx context.Context, name string, args json.RawMessage) (s
 	return res, tc.IsError
 }
 
-// waitForDecision blocks until the administrator answers the card in the panel, the
-// conversation is stopped, or the wait times out. The CLI process simply waits: its
-// turn cannot go on without the tool result.
+// waitForDecision blocks until the admin answers, the conversation stops, or it times out.
 func (e *Engine) waitForDecision(ctx context.Context, callID string) (bool, error) {
 	ch := make(chan bool, 1)
 	e.mu.Lock()
@@ -274,15 +266,14 @@ func (e *Engine) waitForDecision(ctx context.Context, callID string) (bool, erro
 	}
 }
 
-// waiting reports whether a CLI turn is blocked on this call.
 func (e *Engine) waiting(callID string) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.waiters[callID] != nil
 }
 
-// signalDecision hands the administrator's answer to a waiting tool call. It reports
-// whether a CLI turn owns that call.
+// signalDecision hands the admin's answer to a waiting tool call, reporting whether a
+// CLI turn owns it.
 func (e *Engine) signalDecision(callID string, approve bool) bool {
 	e.mu.Lock()
 	ch := e.waiters[callID]

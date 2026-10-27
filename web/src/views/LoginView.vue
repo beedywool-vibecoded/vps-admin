@@ -54,7 +54,7 @@ function done() {
   router.replace(next)
 }
 
-// Formats as XXX-XXX-XXX while typing, keeping only the characters codes use.
+// Formats as XXX-XXX-XXX while typing.
 function onCodeInput(e: Event) {
   const raw = (e.target as HTMLInputElement).value.toUpperCase().replace(/[^23456789ABCDEFGHJKMNPQRSTUVWXYZ]/g, '').slice(0, 9)
   code.value = raw.replace(/(.{3})(?=.)/g, '$1-')

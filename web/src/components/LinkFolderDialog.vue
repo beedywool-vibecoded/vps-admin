@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Ties an existing compose folder to its GitHub repository: from then on a push (or the
-// Update button) fast-forwards the folder and runs docker compose up.
+// Ties an existing compose folder to its GitHub repo; pushes then fast-forward it and
+// run docker compose up.
 import { computed, ref, watch } from 'vue'
 import M3Dialog from './M3Dialog.vue'
 import M3Select from './M3Select.vue'

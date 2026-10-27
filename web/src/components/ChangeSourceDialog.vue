@@ -1,6 +1,5 @@
 <script setup lang="ts">
-// Points an existing app at another repository, for example one that moved from a user
-// to an organization. The App's installation follows the repository automatically.
+// Points an existing app at another repository, e.g. after a move to an organization.
 import { computed, ref, watch } from 'vue'
 import M3Dialog from './M3Dialog.vue'
 import M3Select from './M3Select.vue'
@@ -41,8 +40,7 @@ const shown = computed(() => {
     .sort((a, b) => b.pushedAt.localeCompare(a.pushedAt))
 })
 const branchOptions = computed(() => [...new Set([branch.value, ...branches.value].filter(Boolean))].map((b) => ({ value: b, label: b })))
-// A transferred repository keeps its commits but changes owner: the stored name then
-// no longer appears in what the App can read.
+// A transferred repo changes owner, so the stored name no longer shows up in the App's list.
 const missing = computed(
   () => !props.external && !!props.repo && !repos.value.some((r) => r.fullName.toLowerCase() === props.repo.toLowerCase()),
 )

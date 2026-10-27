@@ -8,8 +8,7 @@ import (
 	"github.com/beedywool/vps-admin/internal/alerts"
 )
 
-// Alerts: the webhook that receives what breaks on the server. The watching itself is
-// in internal/alerts; here are only the settings and the test button.
+// Alert webhook settings and the test button; the watcher lives in internal/alerts.
 
 func (s *Server) alertsGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.alertsView(r))
@@ -67,15 +66,14 @@ func (s *Server) alertsPut(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal")
 		return
 	}
-	// A new URL starts clean: the old failure belonged to the old address.
+	// A new URL clears the old failure.
 	if body.Webhook != nil && s.Alerts != nil {
 		s.Alerts.ClearError()
 	}
 	writeJSON(w, http.StatusOK, s.alertsView(r))
 }
 
-// alertsTest posts a sample to the stored webhook, or to the one being typed, so the
-// settings page can prove the URL before anyone relies on it.
+// alertsTest posts a sample to the stored webhook, or to the one being typed.
 func (s *Server) alertsTest(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Webhook string `json:"webhook"`

@@ -8,8 +8,7 @@ import '../live.dart';
 import '../widgets.dart';
 import 'apps.dart';
 
-/// ProxyView.vue: the domains Caddy or nginx publishes on this machine, the upstream each
-/// one forwards to, and the ones the panel wrote itself.
+/// ProxyView.vue
 class ProxyPage extends StatefulWidget {
   const ProxyPage({super.key});
 
@@ -46,9 +45,8 @@ class _ProxyPageState extends State<ProxyPage> {
     }
   }
 
-  // An app's URL is paused through the app, which knows how to write it again. Any other
-  // site is paused in its file: a snippet is moved aside, a Caddyfile block is commented
-  // out so the other sites sharing that file keep answering.
+  // App URLs are paused through the app. Other sites are paused in their file: a snippet
+  // is moved aside, a shared Caddyfile block is commented out.
   Future<void> _pause(ProxySite s) async {
     final name = s.domains.isEmpty ? s.file : s.domains.first;
     setState(() => busy = _key(s));
@@ -75,8 +73,7 @@ class _ProxyPageState extends State<ProxyPage> {
     }
   }
 
-  // nginx only: certbot edits the server block and reloads nginx, so this works on a
-  // hand-written site too. Caddy gets its certificates by itself.
+  // nginx only; Caddy handles certificates itself.
   Future<void> _addHTTPS(ProxySite s) async {
     final domain = s.domains.isEmpty ? '' : s.domains.first;
     if (domain.isEmpty) return;
@@ -103,7 +100,6 @@ class _ProxyPageState extends State<ProxyPage> {
     }
   }
 
-  // Any site in the list can go, including a block added by hand.
   Future<void> _removeSite(ProxySite s) async {
     final name = s.domains.isEmpty ? s.file : s.domains.first;
     if (!await wConfirm(
@@ -136,7 +132,7 @@ class _ProxyPageState extends State<ProxyPage> {
     }
   }
 
-  /// Names served by more than one site: what makes a deploy fail on "domain already used".
+  /// Names served by more than one site (deploys fail with "domain already used").
   Set<String> _shared(List<ProxySite> sites) {
     final seen = <String, int>{};
     for (final s in sites) {

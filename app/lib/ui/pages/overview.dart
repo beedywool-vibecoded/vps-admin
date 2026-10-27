@@ -10,8 +10,7 @@ import '../usage_chart.dart';
 import '../widgets.dart';
 import 'common.dart';
 
-/// OverviewView.vue: alert banner, resource cards (unless the widget bar shows them),
-/// usage chart, security and updates, failed services, container groups.
+/// OverviewView.vue
 class OverviewPage extends StatefulWidget {
   const OverviewPage({super.key});
 

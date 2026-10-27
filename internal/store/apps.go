@@ -20,8 +20,7 @@ type App struct {
 	Keep           int       `json:"keep"`
 	MemoryMB       int       `json:"memoryMb"`
 	CreatedAt      time.Time `json:"createdAt"`
-	// Dir is an existing folder (a git checkout with a compose file) that this app keeps
-	// up to date in place. Empty for apps the panel builds itself.
+	// Dir is an existing compose checkout updated in place; empty for apps the panel builds.
 	Dir         string `json:"dir"`
 	InstallCmd  string `json:"installCmd"`
 	BuildCmd    string `json:"buildCmd"`
@@ -33,8 +32,7 @@ type App struct {
 	Access string `json:"access"`
 	Allow  string `json:"allow"`
 	TSPort int    `json:"tsPort"`
-	// EnvFile writes the variables into a file in the app's folder (compose reads it)
-	// instead of handing them to the app; EnvPath is where, relative to that folder.
+	// EnvFile writes the variables to EnvPath in the app's folder instead of the environment.
 	EnvFile bool   `json:"envFile"`
 	EnvPath string `json:"envPath"`
 }

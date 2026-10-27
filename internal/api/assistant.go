@@ -44,8 +44,7 @@ func (s *Server) assistantUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// The key always belongs to the provider that is active after the switch above, so
-	// the panel can send "switch to Gemini and use this key" in one request.
+	// The key applies to the provider active after the switch, so both fit one request.
 	if body.APIKey != nil {
 		provider := s.Assistant.ProviderID(ctx)
 		err := s.Assistant.SetKey(ctx, provider, *body.APIKey)
@@ -169,8 +168,7 @@ func (s *Server) conversationDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// toolDecide approves or denies an action the assistant asked for. Every decision is
-// in the audit log with the device that made it.
+// toolDecide approves or denies an assistant action; each decision is audited.
 func (s *Server) toolDecide(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Approve bool `json:"approve"`
@@ -208,8 +206,7 @@ func firstLine(s string) string {
 	return s
 }
 
-// conversationStream pushes text, thinking, tool and state events while the
-// conversation is open in the panel.
+// conversationStream pushes conversation events while the panel has it open.
 func (s *Server) conversationStream(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if _, err := s.Store.Conversation(r.Context(), id); err != nil {

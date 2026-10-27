@@ -1,6 +1,5 @@
 <script setup lang="ts">
-// Reboots the server. Typing the server name guards against a misclick on the wrong
-// server; afterwards the dialog waits for the agent to answer again.
+// Typing the server name guards against rebooting the wrong one; then wait for the agent.
 import { ref } from 'vue'
 import M3Dialog from './M3Dialog.vue'
 import ShapeLoader from './ShapeLoader.vue'

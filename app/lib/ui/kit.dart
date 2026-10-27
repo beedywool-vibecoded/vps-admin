@@ -254,7 +254,6 @@ ThemeData webTheme(ColorScheme cs) {
   );
 }
 
-// ---------------------------------------------------------------------------------
 // Layout
 
 /// A page: scrolls, 16 px gaps between sections, like .page.
@@ -445,7 +444,6 @@ class Muted extends StatelessWidget {
   );
 }
 
-// ---------------------------------------------------------------------------------
 // Small parts
 
 /// .chip and .chip-outline.
@@ -791,8 +789,7 @@ class Seg<T> extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return Container(
       height: 40,
-      // The outline sits above the segments: behind them, the selected one paints over the
-      // border on its rounded end and the pill looks cut there.
+      // Outline above the segments, or the selected one paints over its rounded end.
       decoration: const BoxDecoration(
         borderRadius: BorderRadius.all(Radius.circular(20)),
       ),
@@ -934,7 +931,6 @@ class AlertBanner extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------------
 // Dialogs and sheets
 
 /// M3Dialog: title, close button, content and actions on surface-container-high.
@@ -1022,7 +1018,6 @@ Future<bool> wConfirm(
     ) ??
     false;
 
-// ---------------------------------------------------------------------------------
 // Metrics
 
 /// MetricCard.vue: a spinning decorative shape, the label, a 48 px value, the wavy

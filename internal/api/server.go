@@ -48,8 +48,7 @@ type Server struct {
 	Alerts    *alerts.Watcher
 	Backup    *backup.Manager
 	Host      system.Host
-	// Restart is called after an update is installed; the process exits and systemd
-	// starts the new binary.
+	// Restart exits after an update so systemd starts the new binary.
 	Restart func()
 
 	secMu    sync.Mutex
@@ -191,8 +190,8 @@ func securityHeaders(h http.Handler) http.Handler {
 	})
 }
 
-// clientIP trusts X-Forwarded-For only from configured proxies, reading it right to
-// left so a client cannot spoof its address by sending the header itself.
+// clientIP trusts X-Forwarded-For only from configured proxies, read right to left so
+// clients can't spoof it.
 func (s *Server) clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -262,8 +261,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": buildinfo.Version})
 }
 
-// Update settings live in the database so the panel can change them; the config file
-// only gives the defaults.
+// Update settings live in the database; the config file only gives defaults.
 func (s *Server) autoUpdate(ctx context.Context) bool {
 	return s.Store.Setting(ctx, "update.auto", strconv.FormatBool(s.Cfg.Update.Auto)) == "true"
 }
@@ -272,9 +270,7 @@ func (s *Server) prerelease(ctx context.Context) bool {
 	return s.Store.Setting(ctx, "update.prerelease", strconv.FormatBool(s.Cfg.Update.Prerelease)) == "true"
 }
 
-// updateRepo is the repository releases are read from, owner/name. The panel can point
-// it at a fork; the compiled default applies when nothing is saved or the value is not a
-// repository.
+// updateRepo is the release repository, owner/name, falling back to the compiled default.
 func (s *Server) updateRepo(ctx context.Context) string {
 	repo := buildinfo.Repo
 	if s.Store != nil {
@@ -293,8 +289,8 @@ func (s *Server) LoadUpdateSource(ctx context.Context) {
 	}
 }
 
-// setUpdateRepo saves a new source, or restores the default for an empty value. It writes
-// the error response itself and reports whether the change went through.
+// setUpdateRepo saves a new source (empty restores the default), writing the error
+// response itself.
 func (s *Server) setUpdateRepo(w http.ResponseWriter, r *http.Request, repo string) bool {
 	ctx := r.Context()
 	if repo != "" {
@@ -321,8 +317,7 @@ func (s *Server) setUpdateRepo(w http.ResponseWriter, r *http.Request, repo stri
 	return true
 }
 
-// AutoUpdateLoop checks GitHub every 6 hours and installs new releases when enabled. A
-// version that preflight.sh had to roll back is never retried automatically.
+// AutoUpdateLoop checks every 6 hours. Versions preflight.sh rolled back are skipped.
 func (s *Server) AutoUpdateLoop(ctx context.Context) {
 	timer := time.NewTimer(2 * time.Minute)
 	defer timer.Stop()

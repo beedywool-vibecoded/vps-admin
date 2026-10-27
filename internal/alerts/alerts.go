@@ -1,7 +1,5 @@
-// Package alerts watches the containers and the disks and posts what breaks to a
-// webhook: a container that stops, crashes or turns unhealthy, and a disk that fills
-// up. It stays quiet while a deployment runs, since that stops and recreates
-// containers on purpose, and it reports when things come back.
+// Package alerts posts container failures and full disks to a webhook. It stays quiet
+// while a deployment runs and reports recoveries.
 package alerts
 
 import (
@@ -24,27 +22,22 @@ import (
 	"github.com/beedywool/vps-admin/internal/system"
 )
 
-// Settings keys, kept in the settings table next to the others.
 const (
 	SettingEnabled = "alerts.enabled"
 	SettingWebhook = "alerts.webhook"
 	SettingDisk    = "alerts.disk"
 
 	DefaultDisk = 90
-	// What the settings page accepts: below half full, nothing to watch; above 99 %, the
-	// alert would come after the disk is already full.
+	// Below 50% there's nothing to watch; above 99% the alert comes too late.
 	DiskMin = 50
 	DiskMax = 99
 
-	// A container has to stay bad for two checks: a restart, a rebuild from the panel
-	// or someone typing `docker compose restart` must not wake anybody.
+	// Two bad checks in a row are needed, so restarts don't alert.
 	every   = 30 * time.Second
 	strikes = 2
-	// A container created moments ago that never came up is a failed start, not an app
-	// somebody stopped for good months ago.
+	// A container created recently that never came up is a failed start.
 	fresh = 10 * time.Minute
-	// The disk has to fall this far below the threshold before it is said to be fine
-	// again, or a server sitting at 90 % would alert twice an hour.
+	// Hysteresis so a disk hovering at the threshold doesn't alert repeatedly.
 	hysteresis = 5
 
 	postTimeout = 10 * time.Second
@@ -58,21 +51,18 @@ type Event struct {
 	Name   string `json:"name,omitempty"`
 	Title  string `json:"title"`
 	Body   string `json:"body"`
-	// Text and Content repeat the title and the body on one line: Slack reads text,
-	// Discord reads content, ntfy takes the body and the Title header.
+	// Slack reads text, Discord content, ntfy the body and the Title header.
 	Text    string `json:"text"`
 	Content string `json:"content"`
 }
 
-// Config is what the watcher reads back from the settings on every pass, so a change
-// in the panel or the app applies without a restart.
+// Config is re-read on every pass, so changes apply without a restart.
 type Config struct {
 	Enabled bool
 	Webhook string
 	Disk    int
 }
 
-// What the watcher needs from the rest of the agent; the real types satisfy them.
 type (
 	ContainerLister interface {
 		Containers(ctx context.Context) ([]docker.Container, error)
@@ -103,8 +93,8 @@ type Watcher struct {
 	lastAt  time.Time
 }
 
-// Run checks every 30 seconds until ctx ends. The first pass only learns the current
-// state: whatever is already down when the agent starts is not an outage.
+// Run checks every 30 seconds. The first pass only learns the state: whatever is already
+// down at startup is not an outage.
 func (w *Watcher) Run(ctx context.Context) {
 	w.init()
 	w.Check(ctx)
@@ -134,11 +124,10 @@ func (w *Watcher) init() {
 	}
 }
 
-// StoppedFromPanel marks a container an administrator stopped on purpose. Being down
-// is then what was asked for, not an outage: no alert, and no "back up" either when
-// it is started again.
+// StoppedFromPanel marks a container stopped on purpose: no alert, and no recovery
+// notice when it starts again.
 func (w *Watcher) StoppedFromPanel(id string) {
-	// Containers are tracked by the short id Docker gives the list.
+	// Docker's list uses short ids.
 	if len(id) > 12 {
 		id = id[:12]
 	}
@@ -151,10 +140,9 @@ func (w *Watcher) StoppedFromPanel(id string) {
 	w.mu.Unlock()
 }
 
-// Config reads the settings, falling back to the defaults when they are unset.
 func (w *Watcher) Config(ctx context.Context) Config { return ReadConfig(ctx, w.Store) }
 
-// ReadConfig is the same outside the watcher, for the API.
+// ReadConfig is Config for callers without a watcher.
 func ReadConfig(ctx context.Context, st *store.Store) Config {
 	c := Config{
 		Enabled: st.Setting(ctx, SettingEnabled, "true") != "false",
@@ -167,21 +155,19 @@ func ReadConfig(ctx context.Context, st *store.Store) Config {
 	return c
 }
 
-// LastError is the last webhook failure, for the settings page.
 func (w *Watcher) LastError() (string, time.Time) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.lastErr, w.lastAt
 }
 
-// ClearError forgets the last failure: the URL was fixed, or a test went through.
 func (w *Watcher) ClearError() {
 	w.mu.Lock()
 	w.lastErr = ""
 	w.mu.Unlock()
 }
 
-// Check runs one pass. Exported so the tests can drive it tick by tick.
+// Check runs one pass. Exported for tests.
 func (w *Watcher) Check(ctx context.Context) {
 	w.init()
 	cfg := w.Config(ctx)
@@ -190,8 +176,7 @@ func (w *Watcher) Check(ctx context.Context) {
 	}
 	var events []Event
 	events = append(events, w.checkDisks(cfg)...)
-	// Deployments stop and recreate containers on purpose: no alert while one runs,
-	// and the half-restarted state that follows must not count either.
+	// Deployments recreate containers on purpose; skip while one runs.
 	if w.Deploy != nil && w.Deploy.AnyBusy() {
 		w.mu.Lock()
 		for _, e := range w.seen {
@@ -226,7 +211,6 @@ func (w *Watcher) checkContainers(list []docker.Container, now time.Time) []Even
 		}
 		bad, title, body := trouble(c)
 		if bad && w.stopped[c.ID] {
-			// Stopped from the panel or the app: exactly what was asked for.
 			continue
 		}
 		if !bad {
@@ -294,7 +278,6 @@ func (w *Watcher) checkDisks(cfg Config) []Event {
 	return events
 }
 
-// Send posts one event and remembers the failure for the settings page.
 func (w *Watcher) Send(ctx context.Context, hook string, ev Event) {
 	err := post(ctx, w.Client, hook, ev)
 	w.mu.Lock()
@@ -305,7 +288,6 @@ func (w *Watcher) Send(ctx context.Context, hook string, ev Event) {
 		w.lastErr = ""
 	}
 	w.mu.Unlock()
-	// The Activity log keeps what went out, and what could not go out.
 	entry := store.AuditEntry{Action: "alert.sent", Target: ev.Title, OK: err == nil}
 	if err != nil {
 		entry.Action, entry.Detail = "alert.failed", err.Error()
@@ -318,7 +300,7 @@ func (w *Watcher) Send(ctx context.Context, hook string, ev Event) {
 	w.log().Info("alerts: sent", "kind", ev.Kind, "status", ev.Status, "name", ev.Name)
 }
 
-// Test posts a sample, so the settings page can prove the webhook before trusting it.
+// Test posts a sample event.
 func Test(ctx context.Context, client *http.Client, hook string) error {
 	return post(ctx, client, hook, Event{
 		Kind: "test", Status: "test",
@@ -391,7 +373,6 @@ func running(c docker.Container) bool {
 	return c.State == "running" || c.State == "restarting"
 }
 
-// trouble says whether a container needs an alert, and what to say about it.
 func trouble(c docker.Container) (bool, string, string) {
 	status := strings.TrimSpace(c.Status)
 	if status == "" {

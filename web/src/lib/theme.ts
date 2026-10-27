@@ -82,7 +82,7 @@ export function applyTheme() {
   for (const [name, role] of Object.entries(ROLES)) {
     root.style.setProperty(name, hexFromArgb((role as { getArgb(s: unknown): number }).getArgb(scheme)))
   }
-  // Commands always sit on a dark surface, in light mode too, so they stand out from prose.
+  // Commands use a dark surface in light mode too.
   const night = dark ? scheme : new SchemeTonalSpot(Hct.fromInt(argbFromHex(seed.value)), true, 0)
   const tone = (role: unknown) => hexFromArgb((role as { getArgb(s: unknown): number }).getArgb(night))
   root.style.setProperty('--code-bg', tone(C.surfaceContainerLowest))

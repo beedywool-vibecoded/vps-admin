@@ -17,10 +17,8 @@ const (
 	Blocked Kind = "blocked" // never runs, even approved
 )
 
-// neverAllowed matches what the assistant must not do whatever the user approves:
-// destroy data volumes, change how the server is reached (SSH, firewall), or read
-// secrets. These are the actions that are hard to undo or that could lock the owner
-// out; a person does them over SSH, knowingly.
+// neverAllowed is refused even when approved: destroying volumes, changing how the server
+// is reached (SSH, firewall) or reading secrets. Those are done over SSH, knowingly.
 var neverAllowed = []struct {
 	re     *regexp.Regexp
 	reason string
@@ -77,8 +75,7 @@ var (
 	}
 )
 
-// Classify decides how a shell command is handled. The command runs with `sh -c` as
-// the agent user, so even "read" commands cannot do more than that user.
+// Classify decides how a shell command is handled. It runs as the agent user via `sh -c`.
 func Classify(command string) (Kind, string) {
 	c := strings.TrimSpace(command)
 	if c == "" {

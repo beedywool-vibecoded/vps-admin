@@ -84,8 +84,7 @@ class _NewAppPageState extends State<NewAppPage> {
           gh = g;
           access = g['domains'] == true ? 'public' : 'local';
         });
-        // A public URL needs no GitHub App: the repository list is only offered when
-        // the App is connected.
+        // The repository list needs the GitHub App; public URLs don't.
         if (g['connected'] == true) {
           try {
             final r = await api.repos();
@@ -136,7 +135,7 @@ class _NewAppPageState extends State<NewAppPage> {
   }
 
   void _pick(Map<String, dynamic> r) {
-    // Coming back to the step keeps the settings of the repository already chosen.
+    // Keep the settings when the same repository is chosen again.
     if (repo?['fullName'] == r['fullName']) {
       setState(() => step = 2);
       return;
@@ -171,8 +170,7 @@ class _NewAppPageState extends State<NewAppPage> {
     _detect();
   }
 
-  // Reads a public repository without the GitHub App. It works on a panel that has no
-  // connection, and keeps automatic deploys off because there is no push webhook.
+  // Reads a public repository without the GitHub App; no webhook, so no auto deploys.
   Future<void> _usePublic() async {
     final url = _publicUrl.text.trim();
     if (url.isEmpty || resolvingPublic) return;
@@ -603,15 +601,14 @@ class _NewAppPageState extends State<NewAppPage> {
     );
   }
 
-  /// Both deploy controls sit in the same column: same width, same right edge, same
-  /// height, so the switch, the number and the buttons below line up.
+  /// Same width and right edge for the switch, the number and the buttons below.
   Widget _deployControl(Widget child) => SizedBox(
     width: 90,
     height: FilledField.height,
     child: Align(alignment: Alignment.centerRight, child: child),
   );
 
-  /// One readable block per idea: a title, a line that says what it is for, then fields.
+  /// A titled block with a one-line description, then its fields.
   Widget _group(
     BuildContext context,
     String title,
@@ -811,7 +808,7 @@ class _NewAppPageState extends State<NewAppPage> {
             'Values passed to the app when it starts. Secrets stay hidden in the panel.',
             [
               EnvEditor(vars: env, onChanged: (v) => setState(() => env = v)),
-              // Only a compose stack reads a file: another build gets the variables directly.
+              // Only compose reads an env file.
               if (effectiveBuild == 'compose') ...[
                 Row(
                   children: [
@@ -1037,8 +1034,7 @@ class _NewAppPageState extends State<NewAppPage> {
   }
 }
 
-/// A step's card: it fills the window and scrolls its own content, so going back and forth
-/// between steps never resizes the page.
+/// A step's card fills the window and scrolls its own content.
 class _StepCard extends StatelessWidget {
   const _StepCard({required this.child});
   final Widget child;

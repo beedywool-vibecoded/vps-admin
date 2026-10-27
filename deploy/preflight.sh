@@ -1,7 +1,6 @@
 #!/bin/sh
-# Runs before every start of the agent (ExecStartPre). After a self-update the agent leaves
-# an attempt counter; if the new binary fails to come up three times, put the previous one
-# back. This lives outside the binary because a broken build cannot undo itself.
+# ExecStartPre: if a self-updated binary fails to start three times, restore the previous
+# one. Lives outside the binary because a broken build can't undo itself.
 # Installed root-owned so the agent cannot rewrite it.
 set -eu
 bin=/opt/vps-admin/bin/vps-admin

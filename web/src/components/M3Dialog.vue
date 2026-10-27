@@ -13,7 +13,6 @@ function sync() {
   if (!el.value) return
   if (open.value && !el.value.open) el.value.showModal()
   if (!open.value && el.value.open) el.value.close()
-  // The page behind a modal must not scroll.
   if (open.value && !locked) {
     lockScroll()
     locked = true
@@ -59,9 +58,6 @@ dialog.wide {
 dialog::backdrop {
   background: rgba(0, 0, 0, 0.5);
 }
-.body {
-  overscroll-behavior: contain;
-}
 dialog[open] {
   animation: pop 0.3s var(--ease-decel);
 }
@@ -77,6 +73,7 @@ dialog[open] {
   gap: 16px;
   padding: 20px 24px 24px;
   max-height: calc(100vh - 48px);
+  overscroll-behavior: contain;
 }
 header {
   display: flex;
@@ -87,8 +84,7 @@ header h2 {
   flex: 1;
   font-size: 22px;
 }
-/* The close button sits against the dialog's own surface, so it reads as a button from
-   its icon and its hover, not from an outline. */
+/* No outline: the close button reads as a button from its icon and hover. */
 header .icon-btn {
   border: none;
 }

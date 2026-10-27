@@ -1,6 +1,5 @@
 <script setup lang="ts">
-// Overrides of the generated build: commands for Node and static sites, file paths for
-// Dockerfile and Compose. Empty fields keep the defaults shown as placeholders.
+// Overrides of the generated build. Empty fields keep the placeholder defaults.
 import { computed } from 'vue'
 import M3Expand from './M3Expand.vue'
 
@@ -83,7 +82,7 @@ const node = computed(() => props.build === 'node' || props.build === 'static')
   gap: 12px;
   padding: 10px 10px 8px;
 }
-/* Explanations go under the box: the fields themselves keep one height. */
+/* Hint under the box, so fields keep one height. */
 .ffield {
   display: flex;
   flex-direction: column;

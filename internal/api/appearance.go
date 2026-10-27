@@ -13,8 +13,7 @@ import (
 	"github.com/beedywool/vps-admin/internal/auth"
 )
 
-// The server background: one image chosen by an administrator, shown to everyone on
-// the panel and in the app, with an opacity. Without one the background stays plain.
+// Server background: one image for everyone, with an opacity.
 
 const maxBackground = 8 << 20
 
@@ -45,8 +44,7 @@ func (s *Server) groupMap(r *http.Request, key string) map[string]string {
 	return m
 }
 
-// setGroupTitle names a container group for everyone; the compose project keeps its
-// name, which the panel shows next to the title.
+// setGroupTitle names a container group for everyone; the compose name is still shown.
 func (s *Server) setGroupTitle(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Project string `json:"project"`

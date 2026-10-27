@@ -6,8 +6,7 @@ import 'package:flutter/widgets.dart';
 import '../data/api.dart';
 import '../data/models.dart';
 
-/// What every page shares for the current server, like the panel's session: the host,
-/// the agent version, the latest system snapshot (streamed) and the appearance.
+/// Shared per-server state: host, agent version, streamed snapshot and appearance.
 class LiveSession extends ChangeNotifier {
   LiveSession(this.api) {
     _start();
@@ -26,7 +25,6 @@ class LiveSession extends ChangeNotifier {
   Map<String, String> groupIcons = {};
   Map<String, String> groupTitles = {};
 
-  /// The name shown for a compose project: its title if one was given.
   String groupTitle(String project) => groupTitles[project] ?? project;
 
   StreamSubscription<(String, dynamic)>? _sub;
@@ -82,7 +80,7 @@ class LiveSession extends ChangeNotifier {
     } catch (_) {}
   }
 
-  /// Takes an appearance answer from the server (after a change) without refetching.
+  /// Applies an appearance response without refetching.
   void applyAppearance(Map<String, dynamic> a) {
     opacity = (a['opacity'] as num?)?.toDouble() ?? 0.35;
     groupIcons = {

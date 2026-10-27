@@ -19,7 +19,7 @@ import (
 	"github.com/beedywool/vps-admin/internal/store"
 )
 
-const maxSteps = 30 // model calls per user message, so a confused loop cannot run up a bill
+const maxSteps = 30 // per user message, caps the bill of a confused loop
 
 var (
 	ErrNoKey   = errors.New("connect an AI first, in the assistant settings")
@@ -35,9 +35,7 @@ type Event struct {
 type Engine struct {
 	Deps
 	Box *secret.Box
-	// BaseURL overrides the Anthropic endpoint, GeminiURL the Gemini one, GeminiModelsURL
-	// the native API that lists Gemini models, and ClaudeURL the endpoint the Claude Code
-	// CLI talks to; all are for tests and never set in production.
+	// Test-only endpoint overrides.
 	BaseURL         string
 	GeminiURL       string
 	GeminiModelsURL string
@@ -46,18 +44,15 @@ type Engine struct {
 	mu      sync.Mutex
 	running map[string]context.CancelFunc
 	subs    map[string]map[chan Event]struct{}
-	// waiters are the tool calls a Claude Code turn is blocked on, waiting for the
-	// administrator's answer in the panel. Guarded by mu, like running.
+	// waiters are Claude Code tool calls blocked on the admin's answer. Guarded by mu.
 	waiters map[string]chan bool
 
-	// The claude binary is looked up, and asked its version, now and then.
 	cmu   sync.Mutex
 	cpath string
 	cver  string
 	cerr  error
 	cat   time.Time
 
-	// Ollama discovery is cached for a few seconds; see ollamaModels.
 	pmu      sync.Mutex
 	tagsKey  string
 	tagsAt   time.Time
@@ -65,8 +60,7 @@ type Engine struct {
 	tagsOK   bool
 	tagsHint string
 
-	// Gemini's model list is cached too, for longer: it costs a round trip to Google and
-	// only changes when Google ships models. See geminiModelsFor.
+	// Gemini's model list is cached longer: it only changes when Google ships models.
 	gmu     sync.Mutex
 	gemKey  string
 	gemAt   time.Time
@@ -114,7 +108,6 @@ func (e *Engine) Settings(ctx context.Context) Settings {
 	return s
 }
 
-// SetKey checks the key against its provider before saving it, encrypted.
 func (e *Engine) SetKey(ctx context.Context, provider, key string) error {
 	key = strings.TrimSpace(key)
 	name := e.keyName(provider)
@@ -124,9 +117,8 @@ func (e *Engine) SetKey(ctx context.Context, provider, key string) error {
 	if key == "" {
 		return e.Store.SetSetting(ctx, name, "")
 	}
-	// Only an authentication answer condemns a key. A provider that is slow, unreachable
-	// or having a bad day must not cost the administrator what they just pasted: the key
-	// is saved, and the first message reports the real problem.
+	// Only an auth failure rejects a key; anything else saves it and the first message
+	// reports the problem.
 	switch provider {
 	case ProviderGemini:
 		if err := e.checkGemini(ctx, key); err != nil {
@@ -136,9 +128,7 @@ func (e *Engine) SetKey(ctx context.Context, provider, key string) error {
 			slog.Warn("gemini key not verified, saved anyway", "err", err)
 		}
 	case ProviderClaudeCode:
-		// The token is an OAuth credential for the CLI, not an API key the panel can
-		// present, so the shape is checked here and the CLI is asked whether it works:
-		// a token that no longer does should not read as connected.
+		// An OAuth token for the CLI, not an API key: check the shape, then ask the CLI.
 		if !strings.HasPrefix(key, "sk-ant-") {
 			return errors.New("paste the token printed by claude setup-token (it starts with sk-ant-oat), or an Anthropic API key (sk-ant-api)")
 		}
@@ -172,12 +162,11 @@ func (e *Engine) SetOptions(ctx context.Context, model, effort string, autoRead 
 	return nil
 }
 
-// maxPersona bounds the personality prompt: it rides on every model call, and a whole
-// document there would cost more than it helps.
+// maxPersona bounds the personality prompt, which rides on every call.
 const maxPersona = 8000
 
-// SetPersona stores the personality prompt the administrator wrote. Every provider gets
-// it, but it is added below the panel's own rules: it cannot lift an approval or a block.
+// SetPersona stores the personality prompt. It goes below the panel's own rules, so it
+// can't lift an approval or a block.
 func (e *Engine) SetPersona(ctx context.Context, text string) error {
 	text = strings.TrimSpace(text)
 	if len([]rune(text)) > maxPersona {
@@ -186,8 +175,7 @@ func (e *Engine) SetPersona(ctx context.Context, text string) error {
 	return e.Store.SetSetting(ctx, personaKey, text)
 }
 
-// personaInstructions is the administrator's personality prompt, framed so the model
-// knows where it comes from and that the panel's rules outrank it.
+// personaInstructions frames the persona so the model knows the panel's rules outrank it.
 func (e *Engine) personaInstructions(ctx context.Context) string {
 	p := strings.TrimSpace(e.Store.Setting(ctx, personaKey, ""))
 	if p == "" {
@@ -271,7 +259,7 @@ func (e *Engine) NewConversation(ctx context.Context, text, deviceID string) (*s
 }
 
 // Send adds a user message and runs the model. Calls still waiting for approval are
-// denied: their results and the new text go in the same user turn.
+// denied in the same user turn.
 func (e *Engine) Send(ctx context.Context, convID, text, deviceID string) error {
 	if strings.TrimSpace(text) == "" {
 		return errors.New("empty message")
@@ -320,8 +308,7 @@ func (e *Engine) appendParam(ctx context.Context, convID string, p anthropic.Bet
 	return e.appendRaw(ctx, convID, raw)
 }
 
-// appendRaw stores one message in the Anthropic block format, whichever provider wrote
-// it, and pushes it to the open panel.
+// appendRaw stores a message in Anthropic block format, whatever the provider.
 func (e *Engine) appendRaw(ctx context.Context, convID string, raw json.RawMessage) error {
 	var head struct {
 		Role string `json:"role"`
@@ -334,8 +321,8 @@ func (e *Engine) appendRaw(ctx context.Context, convID string, raw json.RawMessa
 	return err
 }
 
-// closeOpenBatch answers every tool call of the last assistant turn that has no result
-// yet, so the history stays valid (each tool_use needs its tool_result).
+// closeOpenBatch answers unanswered tool calls of the last turn: each tool_use needs a
+// tool_result.
 func (e *Engine) closeOpenBatch(ctx context.Context, convID, deviceID, reason string) ([]anthropic.BetaContentBlockParamUnion, error) {
 	msgs, err := e.Store.Messages(ctx, convID)
 	if err != nil || len(msgs) == 0 || msgs[len(msgs)-1].Role != "assistant" {
@@ -361,15 +348,14 @@ func (e *Engine) closeOpenBatch(ctx context.Context, convID, deviceID, reason st
 	return out, nil
 }
 
-// Decide approves or denies a pending call. Once the whole batch is answered, the
-// results go back to the model.
+// Decide approves or denies a pending call; once the batch is answered the results go
+// back to the model.
 func (e *Engine) Decide(ctx context.Context, callID string, approve bool, deviceID string) (*store.ToolCall, error) {
 	tc, err := e.Store.ToolCall(ctx, callID)
 	if err != nil {
 		return nil, err
 	}
-	// A Claude Code turn is blocked inside the tool call itself: hand it the answer and
-	// let it execute and record the result, instead of running the call here.
+	// Claude Code is blocked inside the tool call: hand it the answer instead.
 	if e.waiting(callID) {
 		ok, err := e.Store.ClaimToolCall(ctx, callID, deviceID)
 		if err != nil {
@@ -457,8 +443,8 @@ How you work:
 		h.Hostname, h.OS, h.Kernel, h.Arch, h.Cores)
 }
 
-// loop calls the model until it answers without tools, or stops on calls that need
-// approval. The caller has claimed the conversation.
+// loop calls the model until it answers without tools or needs approval. The caller has
+// claimed the conversation.
 func (e *Engine) loop(convID string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	e.mu.Lock()
@@ -471,8 +457,7 @@ func (e *Engine) loop(convID string) {
 	e.setState(ctx, convID, "running", "")
 	autoRead := e.Store.Setting(ctx, "assistant.auto_read", "true") == "true"
 
-	// The subscription provider answers through the Claude Code CLI, which runs the tools
-	// itself through the panel's MCP endpoint; the steps below are the API path.
+	// The Claude Code CLI runs tools itself through the MCP endpoint.
 	if first, err := e.resolve(ctx); err != nil {
 		e.fail(ctx, convID, err)
 		return
@@ -574,9 +559,7 @@ func refusal(detail string) string {
 	return " (" + detail + ")"
 }
 
-// claudeLoop runs one message through the Claude Code CLI. The tools are called by the
-// CLI while the turn is open, so there is no tool loop here: the answer is stored when
-// the CLI is done.
+// claudeLoop runs one message through the Claude Code CLI, which calls the tools itself.
 func (e *Engine) claudeLoop(ctx context.Context, convID string, tgt target) {
 	prompt, err := e.lastUserText(ctx, convID)
 	if err != nil {
@@ -599,11 +582,10 @@ func (e *Engine) claudeLoop(ctx context.Context, convID string, tgt target) {
 		return
 	}
 	e.setState(ctx, convID, "idle", "")
-} // answerStep asks the active provider for one step. When Google refuses the model itself
-// (a family it has retired, or closed to a key made today) the next model it does serve
-// takes over and the step is sent again: a retired name must not end the conversation
-// the administrator asked a question in. Two swaps are enough for a catalogue that has
-// moved on twice, and they keep a refused key from being retried forever.
+}
+
+// answerStep asks the active provider for one step. If Google refuses the model, it
+// switches to the next one it serves, at most twice.
 func (e *Engine) answerStep(ctx context.Context, convID string, tgt *target) (*turn, error) {
 	for attempt := 0; ; attempt++ {
 		t, err := e.answer(ctx, convID, *tgt)
@@ -619,8 +601,7 @@ func (e *Engine) answerStep(ctx context.Context, convID string, tgt *target) (*t
 	}
 }
 
-// answer asks the active provider for one step, streaming text and reasoning as it
-// arrives.
+// answer asks the active provider for one step, streaming text and reasoning.
 func (e *Engine) answer(ctx context.Context, convID string, tgt target) (*turn, error) {
 	history, err := e.Store.Messages(ctx, convID)
 	if err != nil {
@@ -631,8 +612,6 @@ func (e *Engine) answer(ctx context.Context, convID string, tgt target) (*turn, 
 		func(s string) { e.emit(convID, "thinking", map[string]any{"index": 0, "text": s}) })
 }
 
-// anthropicTurn normalizes an Anthropic answer, so the loop below does not care which
-// provider answered.
 // target is the provider a model call goes to, resolved before each step.
 type target struct {
 	ID    string
@@ -648,16 +627,13 @@ func kindOfProvider(id string) string {
 	return "openai"
 }
 
-// resolve picks the active provider. It does not touch the network: an unreachable
-// Ollama is reported by the model call itself, with its address in the message.
+// resolve picks the active provider without touching the network.
 func (e *Engine) resolve(ctx context.Context) (target, error) {
 	id := e.ProviderID(ctx)
 	t := target{ID: id, Kind: kindOfProvider(id), Model: e.model(ctx, id), Key: e.keyFor(ctx, id)}
 	if t.ID == ProviderOllama {
 		if t.Model == "" {
-			// Nothing was chosen yet. The first installed model is what the settings
-			// screen shows, so the conversation uses it too instead of asking for a
-			// choice that already reads as made.
+			// Nothing chosen yet: use the first installed model, as settings shows.
 			if models, ok, _ := e.ollamaModels(ctx, e.ollamaEndpoint(ctx), ""); ok {
 				t.Model = e.pickOllama(ctx, models, "")
 			}
@@ -680,9 +656,7 @@ func (e *Engine) resolve(ctx context.Context) (target, error) {
 		return target{}, fmt.Errorf("%w (%s).", ErrNoKey, t.ID)
 	}
 	if t.ID == ProviderGemini {
-		// The panel already replaced a model Google no longer offers; a message sent
-		// before that refresh must not fail on the retired name either. Only the cached
-		// list is used: the first token must not wait on a round trip.
+		// Skip a model Google retired, using only the cached list.
 		if models, live := e.lastGeminiModels(ctx, t.Key); live {
 			t.Model = firstModel(models, t.Model)
 		}

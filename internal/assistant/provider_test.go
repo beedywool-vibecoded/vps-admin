@@ -26,16 +26,14 @@ func testEngine(t *testing.T) *Engine {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Nothing in these tests should reach Google or Anthropic: the model list points at a
-	// closed port, and the Claude Code CLI, when it is installed, at a fake that accepts a
-	// token. A test that needs its own endpoint sets it on the engine it builds.
+	// Keep tests off the network: the Gemini model list points at a closed port and the
+	// Claude Code CLI at a fake.
 	e := &Engine{Deps: Deps{Store: st}, Box: box, GeminiModelsURL: "http://127.0.0.1:1", ClaudeURL: claudeAnswers(t)}
 	e.Init(context.Background())
 	return e
 }
 
-// claudeAnswers is a fake Anthropic endpoint that accepts a token: one streamed text
-// message, which is all the CLI needs to report a working credential.
+// claudeAnswers is a fake Anthropic endpoint that accepts any token.
 func claudeAnswers(t *testing.T) string {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -66,9 +64,7 @@ const geminiListPayload = `{"models":[
   {"name":"models/gemma-3-27b-it","displayName":"Gemma 3 27B","supportedGenerationMethods":["generateContent"]}
 ]}`
 
-// geminiListServer stands in for generativelanguage.googleapis.com. It refuses anything
-// but the expected key, counts the calls, and fails the test if the key is sent in the
-// URL instead of the header.
+// geminiListServer fakes the Gemini API. It fails the test if the key is sent in the URL.
 func geminiListServer(t *testing.T, payload string, status int, calls *int) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -114,8 +110,7 @@ func geminiEngine(t *testing.T, key, url string) (*Engine, context.Context) {
 	return e, ctx
 }
 
-// What the panel offers is what Google says this key can use, not a list compiled into
-// the binary months ago.
+// The model list comes from Google, not from the binary.
 func TestGeminiModelsComeFromGoogle(t *testing.T) {
 	calls := 0
 	srv := geminiListServer(t, geminiListPayload, http.StatusOK, &calls)
@@ -148,18 +143,16 @@ func TestGeminiModelsComeFromGoogle(t *testing.T) {
 	if gemini.Models[3].Hint != "Preview" {
 		t.Fatalf("a preview should say so: %+v", gemini.Models[3])
 	}
-	// A key that never chose a model starts on the cheap one, not on the biggest.
 	if gemini.Model != geminiFlashLiteLatest {
 		t.Fatalf("a fresh key should start on the cheap model: %q", gemini.Model)
 	}
-	// One round trip per key change, not one per panel refresh.
 	e.Settings(ctx)
 	if calls != 1 {
 		t.Fatalf("the list should be cached, Google was asked %d times", calls)
 	}
 }
 
-// Before a key exists the panel still shows what the free tier offers, and asks nobody.
+// Without a key the curated list is shown and nothing is fetched.
 func TestGeminiWithoutKeyShowsTheCuratedList(t *testing.T) {
 	e, ctx := geminiEngine(t, "", "http://127.0.0.1:1")
 	p := e.Settings(ctx)
@@ -179,8 +172,7 @@ func TestGeminiWithoutKeyShowsTheCuratedList(t *testing.T) {
 	}
 }
 
-// Google down or unreachable leaves the panel usable: the curated names stand in and the
-// reason is shown, rather than an empty menu.
+// If Google is unreachable, the curated names stand in and the reason is shown.
 func TestGeminiListFailureKeepsTheCuratedList(t *testing.T) {
 	srv := geminiListServer(t, "", http.StatusInternalServerError, nil)
 	e, ctx := geminiEngine(t, "AIzaGood", srv.URL)
@@ -204,7 +196,6 @@ func TestGeminiRefusedKeyWhenListing(t *testing.T) {
 	}
 }
 
-// The cheap model is only a starting point: once a model is chosen, every read agrees.
 func TestGeminiKeepsTheChosenModel(t *testing.T) {
 	srv := geminiListServer(t, geminiListPayload, http.StatusOK, nil)
 	e, ctx := geminiEngine(t, "AIzaGood", srv.URL)
@@ -222,8 +213,7 @@ func TestGeminiKeepsTheChosenModel(t *testing.T) {
 	}
 }
 
-// A key Google does not serve the lite model to still starts on something that works, and
-// is not told that a model it never picked has been retired.
+// A key without access to the lite model starts on the first one it can use.
 func TestGeminiStartsOnTheFirstModelWithoutTheLiteOne(t *testing.T) {
 	const without = `{"models":[
   {"name":"models/gemini-3.8-flash","displayName":"Gemini 3.8 Flash","supportedGenerationMethods":["generateContent"]},
@@ -243,8 +233,7 @@ func TestGeminiStartsOnTheFirstModelWithoutTheLiteOne(t *testing.T) {
 	}
 }
 
-// A model Google no longer offers must not brick every message: the first available one
-// takes over, in the panel and on the send path.
+// A retired model is replaced, in the panel and on the send path.
 func TestGeminiRetiredModelIsReplaced(t *testing.T) {
 	srv := geminiListServer(t, geminiListPayload, http.StatusOK, nil)
 	e, ctx := geminiEngine(t, "AIzaGood", srv.URL)
@@ -311,9 +300,7 @@ func TestProvidersListOllamaModels(t *testing.T) {
 	}
 }
 
-// Ollama answers with what is installed, and the settings screen shows the first model
-// when none was chosen. The conversation must use that model too: it used to display
-// qwen3:4b while resolve() refused to start and asked for a model to be picked.
+// With no saved choice, the conversation uses the first installed Ollama model.
 func TestOllamaWithoutAChoiceUsesTheFirstInstalledModel(t *testing.T) {
 	srv := tagsServer(t, `{"models":[{"name":"qwen3:4b","details":{"parameter_size":"4.0B"}}]}`)
 	e := testEngine(t)
@@ -352,8 +339,7 @@ func TestOllamaWithoutModelIsNotReady(t *testing.T) {
 	}
 }
 
-// The personality prompt the administrator writes rides on every model call, whichever
-// provider answers, and clearing it stops it being sent.
+// The persona is sent to every provider, and clearing it stops it.
 func TestPersonaReachesEveryPrompt(t *testing.T) {
 	e := testEngine(t)
 	ctx := context.Background()
@@ -395,8 +381,7 @@ func TestOllamaDownKeepsTheInstallHint(t *testing.T) {
 	}
 }
 
-// The panel draws a provider's models as a list. A stopped Ollama used to hand it null,
-// which threw while the settings were drawn and took the whole card with it.
+// A stopped Ollama must return [] rather than null.
 func TestAProviderWithNoModelsSendsAnArray(t *testing.T) {
 	e := testEngine(t)
 	ctx := context.Background()
@@ -454,8 +439,7 @@ func TestKeysArePerProvider(t *testing.T) {
 	}
 }
 
-// The paid API provider is gone: an installation that still points at it falls back to
-// the subscription when a token is saved, and to Ollama otherwise.
+// The legacy API provider falls back to the subscription when a token exists, else Ollama.
 func TestLegacyAnthropicChoiceMovesToTheSubscription(t *testing.T) {
 	e := testEngine(t)
 	ctx := context.Background()
@@ -499,8 +483,7 @@ func TestModelChoiceIsPerProvider(t *testing.T) {
 	}
 }
 
-// Claude Code is asked for a family. An installation that saved a full name before the
-// aliases keeps that family instead of sending a name its plan may not have.
+// A saved full Claude model name maps to its family alias.
 func TestClaudeFullNameKeepsItsFamily(t *testing.T) {
 	e := testEngine(t)
 	ctx := context.Background()

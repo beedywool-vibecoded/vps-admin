@@ -1,6 +1,5 @@
-// Package secret encrypts values stored in the database (environment variables, the
-// GitHub App key, API keys) with a key kept in a separate 0600 file of the data dir. A
-// copy of the database alone does not reveal them.
+// Package secret encrypts values stored in the database with a key kept in a separate
+// 0600 file, so a copy of the database alone reveals nothing.
 package secret
 
 import (

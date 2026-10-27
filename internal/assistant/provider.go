@@ -17,24 +17,19 @@ import (
 	"time"
 )
 
-// Providers the panel can talk to. Claude Code runs the official CLI on a subscription;
-// Gemini and Ollama speak the OpenAI chat protocol, so one adapter covers free and local
-// models. The paid Anthropic API provider was removed: premium means the subscription.
+// Gemini and Ollama both speak the OpenAI chat protocol, so one adapter covers them.
 const (
 	ProviderGemini = "gemini"
 	ProviderOllama = "ollama"
-	// ProviderClaudeCode runs the official CLI installed on the server, on the
-	// administrator's Claude subscription instead of a billed API key.
+	// ProviderClaudeCode runs the official CLI on the admin's subscription.
 	ProviderClaudeCode = "claude-code"
 
-	// legacyAnthropic is the provider that used an Anthropic API key. It is only read, to
-	// move an installation that still points at it to the subscription or to Ollama.
+	// legacyAnthropic is only read, to migrate old installs off the API-key provider.
 	legacyAnthropic = "anthropic"
 )
 
 const (
-	// geminiAPI is the native API, where the model list lives; geminiBase is the
-	// OpenAI-compatible door the chat goes through.
+	// Model list lives on the native API; chat goes through the OpenAI-compatible one.
 	geminiAPI  = "https://generativelanguage.googleapis.com/v1beta"
 	geminiBase = geminiAPI + "/openai"
 	ollamaBase = "http://127.0.0.1:11434"
@@ -43,11 +38,8 @@ const (
 	ollamaURLKey = "assistant.ollama_url"
 	geminiKey    = "assistant.key.gemini"
 	claudeKey    = "assistant.key.claude-code"
-	// personaKey holds the personality prompt the administrator writes in the settings;
-	// it is added to the system prompt of every model call.
-	personaKey = "assistant.persona"
-	// geminiRetiredKey holds the model names Google refused for a key, so the panel stops
-	// offering them and no message asks for one again.
+	personaKey   = "assistant.persona"
+	// Models Google refused for a given key.
 	geminiRetiredKey = "assistant.gemini.retired"
 )
 
@@ -62,8 +54,7 @@ type Model struct {
 	Hint  string `json:"hint,omitempty"`
 }
 
-// Provider is what the panel shows for one AI: whether it is connected, which model
-// is selected, and what to do when it is not ready.
+// Provider is what the panel shows for one AI.
 type Provider struct {
 	ID       string  `json:"id"`
 	Label    string  `json:"label"`
@@ -81,10 +72,8 @@ type Provider struct {
 	Install  string  `json:"install,omitempty"` // Ollama only, shown when it is not answering
 }
 
-// Claude Code is asked for a family, not for a model name: `claude --model sonnet` is
-// resolved by the CLI to whatever Sonnet the subscription serves today. A full name
-// written here would name a model the account may not include, and every message would
-// fail on it; the CLI's own aliases are the names it knows and keeps current.
+// Claude Code takes the CLI's family aliases, not full names: a full name may not be
+// included in the subscription, and the CLI keeps the aliases current.
 var claudeModels = []Model{
 	{ID: "sonnet", Label: "Sonnet", Hint: "Everyday work, the default"},
 	{ID: "opus", Label: "Opus", Hint: "Hardest incidents, highest cost"},
@@ -92,10 +81,7 @@ var claudeModels = []Model{
 	{ID: "fable", Label: "Fable"},
 }
 
-// geminiFallback is shown before a key is saved, and whenever Google cannot answer the
-// list of what that key may use. It is a preview, not the truth: the real list comes
-// from models.list (see geminiModelsFor). Google limits a retired family to keys that
-// already used it, so these are the names it serves to a key made today.
+// geminiFallback is shown before a key is saved or when models.list fails.
 var geminiFallback = []Model{
 	{ID: geminiFlashLiteLatest, Label: "Gemini Flash Lite Latest", Hint: "Cheapest, largest quota, the default here"},
 	{ID: "gemini-3.8-flash", Label: "Gemini 3.8 Flash", Hint: "Fast, more headroom on hard questions"},
@@ -103,15 +89,12 @@ var geminiFallback = []Model{
 	{ID: "gemini-4-argon", Label: "Gemini 4 Argon", Hint: "Deepest reasoning, paid tier only"},
 }
 
-// geminiFlashLiteLatest is the model a key starts on: this panel watches a server and
-// answers questions about it, which the cheapest model of the free tier does well, and the
-// alias follows Google's own updates. A name the person picks is stored and wins from then on.
+// geminiFlashLiteLatest is the default for a new key; a saved pick wins.
 const geminiFlashLiteLatest = "gemini-flash-lite-latest"
 
 var modelRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}$`)
 
-// Providers describes every AI the panel can use, in the order the sidebar shows them:
-// the free ones first, the subscription last.
+// Providers lists every AI in sidebar order: free ones first.
 func (e *Engine) Providers(ctx context.Context) []Provider {
 	active := e.ProviderID(ctx)
 	list := []Provider{
@@ -137,36 +120,25 @@ func (e *Engine) Providers(ctx context.Context) []Provider {
 	savedOllama := e.model(ctx, ProviderOllama)
 	list[0].Models, list[0].Ready, list[0].Hint = e.ollamaModels(ctx, list[0].URL, savedOllama)
 	if list[0].Ready {
-		// The panel shows a model, so it must be the one a conversation uses: the first
-		// installed model is recorded when nothing was saved. It used to be shown only,
-		// and every message then failed asking for a model to be picked.
+		// Record the fallback model too, otherwise every message fails asking for a pick.
 		list[0].Model = e.pickOllama(ctx, list[0].Models, savedOllama)
 	}
 	if !list[0].Ready && len(list[0].Models) == 0 {
 		list[0].Install = ollamaInstall
 	}
 	list[1].Ready = list[1].KeyHint != ""
-	// Which models the key can use is Google's answer, not ours; the curated names only
-	// stand in before a key exists or when Google cannot be reached.
 	saved := e.Store.Setting(ctx, "assistant.model."+ProviderGemini, "")
 	models, live, modelHint := e.geminiModelsFor(ctx)
 	list[1].Models, list[1].Hint = models, modelHint
 	switch {
 	case !list[1].Ready:
-		// Nothing connected yet: the preview names are what the free key will offer.
 		list[1].Hint = ""
 	case saved == "":
-		// Nothing was ever chosen: start on the cheap model, or on the first one this key
-		// may use when Google does not serve that name to it. Nothing is recorded, so a
-		// later pick, or a key that gains the model, takes over at once.
 		list[1].Model = firstModel(models, geminiFlashLiteLatest)
 	case !live:
-		// Google did not answer the list: the saved name stays, the preview only fills the menu.
 		list[1].Model = saved
 	case findModel(models, saved) == nil:
-		// Google stopped offering the saved model to this key: the first one takes over,
-		// and the panel asks for a choice instead of failing every message. The choice is
-		// recorded, so a message sent before the panel is opened uses it too.
+		// Saved model no longer offered to this key: switch and record the choice.
 		list[1].Model = firstModel(models, "")
 		list[1].Hint = "The model that was saved is no longer offered to this key. Pick one below."
 		e.Store.SetSetting(ctx, "assistant.model."+ProviderGemini, list[1].Model)
@@ -174,7 +146,6 @@ func (e *Engine) Providers(ctx context.Context) []Provider {
 		list[1].Model = saved
 	}
 
-	// Claude Code needs the binary as well as a token, and says which one is missing.
 	_, cliVersion, cliErr := e.claudeInfo(ctx)
 	list[2].Ready = list[2].KeyHint != "" && cliErr == nil
 	switch {
@@ -188,8 +159,7 @@ func (e *Engine) Providers(ctx context.Context) []Provider {
 	}
 	for i := range list {
 		list[i].Active = list[i].ID == active
-		// A provider with nothing to offer still sends a list, never null: the panel draws
-		// the models as an array, and a stopped Ollama used to hand it null.
+		// Never send null: the panel expects an array.
 		if list[i].Models == nil {
 			list[i].Models = []Model{}
 		}
@@ -197,9 +167,8 @@ func (e *Engine) Providers(ctx context.Context) []Provider {
 	return list
 }
 
-// geminiList is one page of models.list, on the native Gemini API. Google renamed the
-// capability field once (supportedGenerationMethods, then supportedActions), so both
-// are read.
+// geminiList is one page of models.list. Google renamed the capability field once, so
+// both names are read.
 type geminiList struct {
 	Models []struct {
 		Name                       string   `json:"name"`
@@ -210,19 +179,15 @@ type geminiList struct {
 	NextPageToken string `json:"nextPageToken"`
 }
 
-// geminiNotChat are models that do answer generateContent but cannot stand in for a
-// chat turn: they generate images or speech, or embed text, and would fail on the first
-// tool call. Gemini names them plainly enough to leave them out.
+// geminiNotChat are models that can't handle a chat turn with tool calls.
 var geminiNotChat = []string{
 	"embedding", "aqa", "imagen", "veo", "image", "tts", "audio", "live", "computer-use",
 }
 
-// Only the gemini family is offered: this panel works through tool calls, and the other
-// chat models Google lists (Gemma) do not do them, so they would answer once and then
-// ignore every request to look at the server.
+// Only the gemini family is offered: Gemma doesn't do tool calls.
 
-// geminiModelsFor lists the models the saved key can use. live says whether that list
-// came from Google: when it did not, the curated names are shown and hint says why.
+// geminiModelsFor lists the models the saved key can use. live is false when the list
+// is the fallback.
 func (e *Engine) geminiModelsFor(ctx context.Context) (models []Model, live bool, hint string) {
 	key := e.keyFor(ctx, ProviderGemini)
 	if key == "" {
@@ -233,7 +198,7 @@ func (e *Engine) geminiModelsFor(ctx context.Context) (models []Model, live bool
 	if tag == e.gemKey {
 		ttl := 10 * time.Minute
 		if !e.gemLive {
-			ttl = time.Minute // a failure is retried sooner than a success
+			ttl = time.Minute
 		}
 		if time.Since(e.gemAt) < ttl {
 			models, live, hint := e.gemList, e.gemLive, e.gemHint
@@ -253,9 +218,8 @@ func (e *Engine) geminiModelsFor(ctx context.Context) (models []Model, live bool
 	return models, live, hint
 }
 
-// retiredGemini is what Google refused for this key, recorded as "<key tag>/<model>" so
-// that a refusal is remembered for the key that got it: Google serves some families to
-// the keys that already used them and to no others.
+// retiredGemini is keyed by "<key tag>/<model>": Google serves some families only to
+// keys that already used them.
 func (e *Engine) retiredGemini(ctx context.Context, key string) map[string]bool {
 	out := map[string]bool{}
 	tag := keyTag(key)
@@ -270,7 +234,6 @@ func (e *Engine) retiredGemini(ctx context.Context, key string) map[string]bool 
 	return out
 }
 
-// retireGemini records that Google does not serve this model to this key.
 func (e *Engine) retireGemini(ctx context.Context, key, model string) {
 	tag := keyTag(key)
 	if tag == "" || model == "" {
@@ -291,7 +254,6 @@ func (e *Engine) retireGemini(ctx context.Context, key, model string) {
 	}
 }
 
-// withoutRetired drops what Google refused for this key.
 func withoutRetired(models []Model, retired map[string]bool) []Model {
 	if len(retired) == 0 {
 		return models
@@ -305,10 +267,8 @@ func withoutRetired(models []Model, retired map[string]bool) []Model {
 	return out
 }
 
-// geminiNextModel retires the model Google just refused and returns the next one it
-// serves this key, recorded as the choice. Google's catalogue still lists a family it
-// has closed to new keys, so the cached list is not trusted here: the refusal itself is
-// the only proof that the name cannot be used.
+// geminiNextModel retires the refused model and records the next one. The cached list
+// isn't trusted: Google still lists families closed to new keys.
 func (e *Engine) geminiNextModel(ctx context.Context, failed string) (string, bool) {
 	key := e.keyFor(ctx, ProviderGemini)
 	if key == "" {
@@ -345,8 +305,7 @@ func keyTag(key string) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-// lastGeminiModels is the list from the previous fetch, without asking Google again:
-// sending a message must not wait on a round trip that may take seconds.
+// lastGeminiModels returns the cached list; sending a message must not wait on Google.
 func (e *Engine) lastGeminiModels(ctx context.Context, key string) ([]Model, bool) {
 	if key == "" {
 		return nil, false
@@ -361,8 +320,7 @@ func (e *Engine) lastGeminiModels(ctx context.Context, key string) ([]Model, boo
 	return withoutRetired(models, e.retiredGemini(ctx, key)), true
 }
 
-// fetchGeminiModels asks Google which models this key may use. Listing needs the key:
-// without one Google refuses, which is exactly why the curated list is the fallback.
+// fetchGeminiModels asks Google which models this key may use.
 func (e *Engine) fetchGeminiModels(ctx context.Context, key string) ([]Model, bool, string) {
 	base := geminiAPI
 	if e.GeminiModelsURL != "" {
@@ -380,7 +338,7 @@ func (e *Engine) fetchGeminiModels(ctx context.Context, key string) ([]Model, bo
 		if err != nil {
 			return nil, false, "Gemini's model list could not be requested."
 		}
-		// The key travels in a header: a URL is written to logs and proxies.
+		// Header, not query string: URLs end up in logs.
 		req.Header.Set("x-goog-api-key", key)
 		resp, err := client.Do(req)
 		if err != nil {
@@ -427,8 +385,7 @@ func (e *Engine) fetchGeminiModels(ctx context.Context, key string) ([]Model, bo
 	return orderGemini(found), true, ""
 }
 
-// orderGemini keeps the familiar names on top, with the hints written for them, and
-// puts everything else the key can reach after, alphabetically.
+// orderGemini puts the known names first, then the rest alphabetically.
 func orderGemini(found []Model) []Model {
 	known := map[string]bool{}
 	out := make([]Model, 0, len(found))
@@ -485,7 +442,6 @@ func chatCapable(name string) bool {
 	return true
 }
 
-// geminiListError turns a refused models.list into one sentence the panel can show.
 func geminiListError(status int, body []byte) string {
 	msg := errorBodyMessage(body)
 	switch status {
@@ -524,15 +480,13 @@ func hint(key, prefix string) string {
 	return prefix + "…" + key[len(key)-4:]
 }
 
-// ProviderID is the provider new messages go to. Anything unknown falls back to
-// Ollama, the only one that needs no account.
+// ProviderID is the provider new messages go to, defaulting to Ollama.
 func (e *Engine) ProviderID(ctx context.Context) string {
 	switch id := e.Store.Setting(ctx, providerName, ""); id {
 	case ProviderGemini, ProviderOllama, ProviderClaudeCode:
 		return id
 	case legacyAnthropic:
-		// The API key provider is gone. An installation that still pointed at it moves to
-		// the subscription when a token is already saved, and to Ollama otherwise.
+		// Legacy API-key provider: move to the subscription if a token exists, else Ollama.
 		if e.keyFor(ctx, ProviderClaudeCode) != "" {
 			return ProviderClaudeCode
 		}
@@ -550,13 +504,12 @@ func (e *Engine) model(ctx context.Context, id string) string {
 	}
 	got := e.Store.Setting(ctx, "assistant.model."+id, def)
 	if id == ProviderClaudeCode {
-		// An installation from before the aliases has a full name saved: keep its family.
+		// Old installs saved a full name.
 		return claudeAlias(got)
 	}
 	return got
 }
 
-// claudeAlias turns a saved full model name into the family alias the CLI resolves.
 func claudeAlias(name string) string {
 	low := strings.ToLower(name)
 	for _, m := range claudeModels {
@@ -586,7 +539,6 @@ func (e *Engine) keyFor(ctx context.Context, id string) string {
 	return k
 }
 
-// SetProvider switches the AI every new message goes to.
 func (e *Engine) SetProvider(ctx context.Context, id string) error {
 	switch id {
 	case ProviderGemini, ProviderOllama, ProviderClaudeCode:
@@ -604,8 +556,7 @@ func (e *Engine) ollamaEndpoint(ctx context.Context) string {
 	return u
 }
 
-// parseEndpoint accepts an http(s) URL without credentials, and nothing else: the
-// panel is the one making the request.
+// parseEndpoint accepts an http(s) URL without credentials.
 func parseEndpoint(raw string) (string, error) {
 	if raw == "" {
 		return ollamaBase, nil
@@ -617,8 +568,7 @@ func parseEndpoint(raw string) (string, error) {
 	return strings.TrimRight(u.String(), "/"), nil
 }
 
-// SetOllamaURL points the panel at another Ollama, for a model that does not fit on
-// this server. It is checked before being saved.
+// SetOllamaURL points the panel at a remote Ollama.
 func (e *Engine) SetOllamaURL(ctx context.Context, raw string) error {
 	base, err := parseEndpoint(strings.TrimSpace(raw))
 	if err != nil {
@@ -645,9 +595,8 @@ type ollamaTags struct {
 	} `json:"models"`
 }
 
-// ollamaModels lists installed models, and says plainly when Ollama is absent or has
-// nothing to run yet. The answer is kept for a few seconds: the settings panel asks
-// for it after every change, and a stopped Ollama would otherwise cost 4 s each time.
+// ollamaModels lists installed models. Cached briefly: settings polls it after every
+// change and a stopped Ollama costs 4s per call.
 func (e *Engine) ollamaModels(ctx context.Context, base, want string) ([]Model, bool, string) {
 	e.pmu.Lock()
 	if base == e.tagsKey && time.Since(e.tagsAt) < 5*time.Second {
@@ -670,9 +619,8 @@ func (e *Engine) ollamaModels(ctx context.Context, base, want string) ([]Model, 
 	return models, ok, hint
 }
 
-// pickOllama is the model a conversation runs: the saved one when Ollama has it, and
-// otherwise the first installed one. The fallback is recorded, not just displayed, so
-// the settings screen and resolve agree on what will answer.
+// pickOllama returns the saved model if installed, else the first one. The fallback is
+// recorded so settings and resolve agree.
 func (e *Engine) pickOllama(ctx context.Context, models []Model, saved string) string {
 	pick := firstModel(models, saved)
 	if pick == "" || pick == saved {
@@ -712,9 +660,7 @@ func (e *Engine) fetchOllama(base string) ([]Model, bool, string) {
 	return models, true, ""
 }
 
-// SetModel records the model for one provider, so switching back and forth keeps the
-// choice. Claude Code is limited to the families the CLI knows; Gemini and Ollama accept
-// what the provider reports.
+// SetModel records the model for one provider.
 func (e *Engine) SetModel(ctx context.Context, provider, model string) error {
 	model = strings.TrimSpace(model)
 	if provider == "" {

@@ -18,8 +18,7 @@ import (
 	"github.com/beedywool/vps-admin/internal/store"
 )
 
-// proxyServer builds a panel whose Caddy config lives in a temporary root, with an app
-// the panel publishes.
+// proxyServer builds a panel with Caddy config in a temp root and one published app.
 func proxyServer(t *testing.T) (*Server, *deploy.Engine, string) {
 	t.Helper()
 	root := t.TempDir()
@@ -75,8 +74,8 @@ func sites(t *testing.T, rec *httptest.ResponseRecorder) proxy.Report {
 	return rep
 }
 
-// Pausing takes the domain out of the proxy, keeps the app in the list, and turning it
-// back on writes the snippet again with the app's port.
+// Pausing removes the domain from the proxy but keeps the app listed; resuming rewrites
+// the snippet.
 func TestProxyPauseAndResume(t *testing.T) {
 	s, _, dir := proxyServer(t)
 	app := addApp(t, s, store.App{
@@ -112,7 +111,7 @@ func TestProxyPauseAndResume(t *testing.T) {
 	}
 }
 
-// An app with no proxy URL cannot be paused: there would be nothing to turn back on.
+// An app with no proxy URL cannot be paused.
 func TestProxyPauseNeedsAURL(t *testing.T) {
 	s, _, _ := proxyServer(t)
 	addApp(t, s, store.App{ID: "local", Access: deploy.AccessLocal, Build: deploy.BuildCompose, Port: 3000})
@@ -145,8 +144,7 @@ func TestProxyOrderIsKept(t *testing.T) {
 	}
 }
 
-// Any site file in the proxy's directory can be paused and put back, and deleted,
-// whoever wrote it: the panel's snippet, a block added by hand, a file left by a gone app.
+// Any site file in the proxy's directory can be paused, resumed and deleted, whoever wrote it.
 func TestProxySitePauseResumeAndDelete(t *testing.T) {
 	s, eng, dir := proxyServer(t)
 	reloads := 0
@@ -206,8 +204,7 @@ func TestProxySitePauseResumeAndDelete(t *testing.T) {
 	}
 }
 
-// A file an app still owns is driven from the app: deleting or pausing it here would be
-// undone by the next deployment, or leave the app with no route and no way back.
+// A file an app still owns must be managed from the app; the next deploy would undo it.
 func TestProxySiteRefusesAnAppsSite(t *testing.T) {
 	s, _, dir := proxyServer(t)
 	addApp(t, s, store.App{ID: "live", Domain: "live.example.com", Access: deploy.AccessPublic, Build: deploy.BuildCompose, Port: 3000})
@@ -221,7 +218,6 @@ func TestProxySiteRefusesAnAppsSite(t *testing.T) {
 			t.Errorf("%s: %d %s", action, rec.Code, rec.Body.String())
 		}
 	}
-	// An unknown action is refused before anything is touched.
 	if rec := post(t, s.proxySite, s, "/api/proxy/site", fmt.Sprintf(`{"file":%q,"action":"rename"}`, path)); rec.Code != http.StatusBadRequest {
 		t.Fatalf("unknown action: %d", rec.Code)
 	}
@@ -230,7 +226,7 @@ func TestProxySiteRefusesAnAppsSite(t *testing.T) {
 	}
 }
 
-// Nothing outside the two directories the proxy reads is reachable from the panel.
+// Nothing outside the proxy's two site directories is reachable.
 func TestProxySiteStaysInTheSiteDirs(t *testing.T) {
 	s, _, dir := proxyServer(t)
 	for _, file := range []string{
@@ -246,8 +242,7 @@ func TestProxySiteStaysInTheSiteDirs(t *testing.T) {
 	}
 }
 
-// A site written by hand in the main Caddyfile is edited block by block: pausing,
-// resuming and deleting it leave the other sites and the global options alone.
+// Hand-written sites in the main Caddyfile are edited block by block.
 func TestProxySiteEditsTheCaddyfile(t *testing.T) {
 	s, _, dir := proxyServer(t)
 	caddyfile := filepath.Join(filepath.Dir(dir), "Caddyfile")
@@ -305,8 +300,7 @@ func TestProxySiteEditsTheCaddyfile(t *testing.T) {
 	}
 }
 
-// The same three actions on nginx: the file moves out of the sites directory, the root
-// helper reloads nginx, and nothing else is touched.
+// The same actions on nginx: the file moves out and the root helper reloads nginx.
 func TestProxySiteOnNginx(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "vps-admin-apps")
@@ -359,8 +353,7 @@ func TestProxySiteOnNginx(t *testing.T) {
 		t.Fatalf("helper calls = %v, want two nginx-reload", calls)
 	}
 
-	// nginx loads neither a hand-written backup nor the copy an older version may have
-	// kept aside when pausing one: the tab must not show either.
+	// Backup copies (hand-made or from older pause logic) must not be listed.
 	body = "server {\n\tlisten 80;\n\tserver_name old.example.com;\n}\n"
 	stored := filepath.Join(eng.DataDir, "proxy-paused", "nginx__legacy.bak.conf")
 	for _, f := range []string{stored, filepath.Join(dir, "legacy.bak.conf")} {
@@ -384,8 +377,7 @@ func TestProxySiteOnNginx(t *testing.T) {
 	}
 }
 
-// A proxy that refuses the new configuration keeps the site: pause writes the file back
-// and the panel reports the refusal instead of the site disappearing.
+// If the proxy refuses the new config, the site is written back and the error reported.
 func TestProxySiteRestoresWhenTheProxyRefuses(t *testing.T) {
 	s, eng, dir := proxyServer(t)
 	eng.ReloadCaddy = func(context.Context) error { return errors.New("bad config") }
@@ -403,11 +395,10 @@ func TestProxySiteRestoresWhenTheProxyRefuses(t *testing.T) {
 	}
 }
 
-// Deleting an app withdraws its Caddy site in the same request, and frees its paused
-// flag so the id can be used again.
+// Deleting an app withdraws its site and clears its paused flag.
 func TestDeleteAppWithdrawsItsSite(t *testing.T) {
 	s, _, dir := proxyServer(t)
-	// A linked folder skips the docker CLI, which the test machine may not have.
+	// Linked folder: skips the docker CLI.
 	app := addApp(t, s, store.App{
 		ID: "blog", Dir: t.TempDir(), Domain: "blog.example.com",
 		Access: deploy.AccessPublic, Build: deploy.BuildCompose, Port: 3000,

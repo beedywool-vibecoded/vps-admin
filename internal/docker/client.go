@@ -1,5 +1,5 @@
-// Package docker is a small Docker Engine API client over the unix socket. The official
-// SDK pulls in a large dependency tree for the handful of calls the agent needs.
+// Package docker is a small Docker Engine API client over the unix socket, to avoid the
+// official SDK's dependency tree.
 package docker
 
 import (
@@ -121,8 +121,7 @@ type Container struct {
 	Service string            `json:"service,omitempty"` // compose service
 	App     string            `json:"app,omitempty"`     // panel app it was deployed for
 	Labels  map[string]string `json:"-"`
-	// Exposed is true when a port is published on all interfaces: Docker writes its own
-	// iptables rules, so such a port is reachable even if ufw denies it.
+	// Exposed: published on all interfaces. Docker's iptables rules bypass ufw.
 	Exposed bool `json:"exposed"`
 }
 
@@ -190,7 +189,6 @@ func validID(id string) bool { return idPattern.MatchString(id) }
 // ValidID reports whether a container id, name or compose name is safe to put in a path.
 func ValidID(id string) bool { return validID(id) }
 
-// Action runs start, stop or restart on a container.
 func (c *Client) Action(ctx context.Context, id, action string) error {
 	if !validID(id) {
 		return ErrNotFound
@@ -210,8 +208,7 @@ func (c *Client) Action(ctx context.Context, id, action string) error {
 	return nil
 }
 
-// RestartPolicy is what Docker does with the container when the daemon starts: no,
-// always, unless-stopped or on-failure.
+// RestartPolicy returns no, always, unless-stopped or on-failure.
 func (c *Client) RestartPolicy(ctx context.Context, id string) (string, error) {
 	if !validID(id) {
 		return "", ErrNotFound
@@ -229,8 +226,7 @@ func (c *Client) RestartPolicy(ctx context.Context, id string) (string, error) {
 	return info.HostConfig.RestartPolicy.Name, nil
 }
 
-// SetRestartPolicy changes the policy Docker keeps in the container, which is what runs
-// it after the next boot and survives a restart.
+// SetRestartPolicy changes the restart policy stored on the container.
 func (c *Client) SetRestartPolicy(ctx context.Context, id, policy string) error {
 	if !validID(id) {
 		return ErrNotFound
@@ -250,16 +246,14 @@ func (c *Client) SetRestartPolicy(ctx context.Context, id, policy string) error 
 	return nil
 }
 
-// VolumeUse is a named volume that holds panel data, with the running containers that
-// currently mount it. A backup pauses them so the files stay consistent.
+// VolumeUse is a named volume holding panel data and the running containers mounting it.
 type VolumeUse struct {
 	Name       string   `json:"name"`
 	Containers []string `json:"containers,omitempty"` // ids of the running ones
 }
 
-// PanelVolumes lists the named volumes of the apps the panel runs: the ones their
-// containers mount, plus the volumes labelled for a vpsadmin compose project (a stack
-// that is down keeps its data). System volumes are never returned.
+// PanelVolumes lists the named volumes of panel apps, including those labelled for a
+// stopped vpsadmin compose project. System volumes are never returned.
 func (c *Client) PanelVolumes(ctx context.Context) ([]VolumeUse, error) {
 	containers, err := c.Containers(ctx)
 	if err != nil {
@@ -325,8 +319,7 @@ func (c *Client) PanelVolumes(ctx context.Context) ([]VolumeUse, error) {
 	return out, nil
 }
 
-// Pause freezes a container's processes without stopping it: the filesystem stops
-// changing, and Unpause puts it back exactly where it was.
+// Pause freezes a container's processes without stopping it.
 func (c *Client) Pause(ctx context.Context, id string) error {
 	if !validID(id) {
 		return ErrNotFound
@@ -405,8 +398,8 @@ type Stats struct {
 	MemLimit uint64  `json:"memLimit"`
 }
 
-// Stats samples every running container in parallel. Each call takes about a second
-// because the engine needs two readings to compute CPU usage.
+// Stats samples running containers in parallel. Each takes about a second: the engine
+// needs two readings for CPU.
 func (c *Client) Stats(ctx context.Context, ids []string) []Stats {
 	out := make([]Stats, len(ids))
 	sem := make(chan struct{}, 8)
@@ -463,8 +456,7 @@ func (c *Client) stats(ctx context.Context, id string) Stats {
 	return s
 }
 
-// appOf names the panel app a container belongs to: single containers carry a label,
-// compose apps run as the project vpsadmin-<app>.
+// appOf: single containers carry a label, compose apps run as project vpsadmin-<app>.
 func appOf(labels map[string]string) string {
 	if a := labels["vpsadmin.app"]; a != "" {
 		return a

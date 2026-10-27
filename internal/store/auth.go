@@ -29,7 +29,7 @@ func unixPtr(v sql.NullInt64) *time.Time {
 // AddPairingCode stores the hash of a one-time code valid for ttl.
 func (s *Store) AddPairingCode(ctx context.Context, hash []byte, ttl time.Duration) error {
 	n := now()
-	// Only the latest code stays usable: generating a new one revokes the others.
+	// Only the latest code stays usable.
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM pairing_codes WHERE used_at IS NULL OR expires_at < ?`, n); err != nil {
 		return err
 	}
@@ -74,7 +74,7 @@ func (s *Store) DeviceByToken(ctx context.Context, hash []byte) (string, error) 
 	return id, err
 }
 
-// TouchDevice records activity, at most once a minute per device to spare the disk.
+// TouchDevice records activity, at most once a minute per device.
 func (s *Store) TouchDevice(ctx context.Context, id, ip string) {
 	n := now()
 	s.db.ExecContext(ctx,
@@ -111,7 +111,6 @@ func (s *Store) DeviceActive(ctx context.Context, id string) bool {
 	return s.db.QueryRowContext(ctx, `SELECT 1 FROM devices WHERE id = ? AND revoked_at IS NULL`, id).Scan(&one) == nil
 }
 
-// RevokeDevice disables a device and drops its sessions and passkeys.
 // RenameDevice sets who uses a device and what it is.
 func (s *Store) RenameDevice(ctx context.Context, id, owner, name string) error {
 	r, err := s.db.ExecContext(ctx, `UPDATE devices SET owner = ?, name = ? WHERE id = ? AND revoked_at IS NULL`, owner, name, id)
@@ -124,6 +123,7 @@ func (s *Store) RenameDevice(ctx context.Context, id, owner, name string) error 
 	return nil
 }
 
+// RevokeDevice disables a device and drops its sessions and passkeys.
 func (s *Store) RevokeDevice(ctx context.Context, id string) error {
 	r, err := s.db.ExecContext(ctx,
 		`UPDATE devices SET revoked_at = ?, token_hash = NULL WHERE id = ? AND revoked_at IS NULL`, now(), id)

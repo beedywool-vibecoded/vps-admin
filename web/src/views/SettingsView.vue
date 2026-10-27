@@ -16,8 +16,7 @@ import { confirm, toast, toastError } from '@/lib/ui'
 import { resetAuthCheck } from '@/router'
 
 const router = useRouter()
-// Shown at the bottom of the page: rerunning the installer repairs the service and adds
-// what a new version needs, without touching the data.
+// Rerunning the installer repairs the service without touching the data.
 const installCommand = 'sudo vps-admin install'
 async function copyInstall() {
   try {
@@ -31,7 +30,7 @@ const devices = ref<Device[]>([])
 const current = ref('')
 const audit = ref<AuditEntry[]>([])
 const moreAudit = ref(true)
-// Activity: the latest few, the rest on demand in a scrolling list.
+// Activity: the latest few, the rest on demand.
 const auditOpen = ref(false)
 const shownAudit = computed(() => (auditOpen.value ? audit.value : audit.value.slice(0, 5)))
 const loadingAudit = ref(false)
@@ -69,12 +68,10 @@ const proxyTools = computed(() =>
       ]
     : [],
 )
-// One value per tool: what it is doing now, and its release when it has one.
 function toolValue(t: Tool): string {
   if (!t.installed) return 'not installed'
   return [t.running ? '' : 'stopped', t.version ?? ''].filter(Boolean).join(' · ') || 'installed'
 }
-// The proxy that actually serves the apps, if any is up.
 const activeProxy = computed(() => {
   const e = setup.value?.environment
   if (!e) return ''
@@ -101,7 +98,7 @@ const domains = computed(() => {
   }
 })
 const networkUp = computed(() => networks.value.filter((n) => n.tone === 'ok').length)
-// One row per private network, so the tile reads the same whether none or several are up.
+// One row per private network, so the tile reads the same with none or several.
 const networks = computed(() => {
   const e = setup.value?.environment
   if (!e) return []
@@ -143,8 +140,7 @@ async function commitOpacity(v: number) {
   }
 }
 
-// Alerts save themselves, like the appearance above: the switch at once, the URL and
-// the threshold when the field is left.
+// Alerts autosave: the switch immediately, the URL and threshold on blur.
 async function loadAlerts() {
   alertSet.value = await api.alerts()
   alertWebhook.value = alertSet.value.webhook
@@ -187,7 +183,6 @@ const MODES: { id: ThemeMode; label: string }[] = [
   { id: 'dark', label: 'Dark' },
   { id: 'light', label: 'Light' },
 ]
-// Devices grouped by the person using them, yours first.
 const people = computed(() => {
   const groups = new Map<string, Device[]>()
   for (const d of devices.value) {
@@ -205,7 +200,6 @@ const unnamedSelf = computed(() => {
 })
 const initial = (s: string) => (s.trim()[0] ?? '?').toUpperCase()
 
-// Rename dialog
 const editing = ref<Device | null>(null)
 const editOpen = computed({ get: () => editing.value !== null, set: (v) => !v && (editing.value = null) })
 const editOwner = ref('')
@@ -691,8 +685,7 @@ onMounted(async () => {
   font-size: 12.5px;
 }
 
-/* Three cards per row: six of them fill two rows exactly, so the last one never sits
-   alone beside an empty cell. */
+/* Three per row: six cards fill two rows exactly. */
 .setup-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -771,8 +764,7 @@ onMounted(async () => {
 .tile-value code {
   font-size: 14px;
 }
-/* The cards of a row are ordered so their content is about as tall: a card only gets
-   a strip of spare room at the bottom instead of a hole in the middle. */
+/* Cards in a row are ordered to have similar content heights. */
 .tile-sub {
   overflow-wrap: anywhere;
 }
@@ -792,8 +784,7 @@ onMounted(async () => {
   min-width: 0;
   font-size: 14px;
 }
-/* A long value (a tailnet name, an address) ends in an ellipsis instead of pushing the
-   card wider than its column or wrapping onto a second line. */
+/* Long values ellipsize instead of widening the card. */
 .tool-name {
   flex: 1;
   min-width: 0;

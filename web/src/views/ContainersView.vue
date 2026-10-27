@@ -28,9 +28,8 @@ const logsOpen = computed({ get: () => logsFor.value !== null, set: (v) => !v &&
 const loadLogs = () => api.containerLogs(logsFor.value!.id).then((r) => r.logs)
 
 
-// GitHub links and scripts of each compose folder
 const scripts = ref<Script[]>([])
-// Groups are collapsed by default; the open ones are remembered in this browser.
+// Collapsed by default; open groups are remembered in this browser.
 const isOpen = (name: string) => query.value.trim() !== '' || openGroups.value.has(name)
 const toggle = toggleGroup
 
@@ -70,8 +69,7 @@ async function loadLinks() {
   if (a.status === 'fulfilled') appIds.value = new Set(a.value.apps.map((x) => x.id))
 }
 
-// Docker keeps a restart policy per container: it is what brings them back when the
-// server reboots. The panel shows one switch per group, in the open section.
+// Docker keeps a restart policy per container; the panel shows one switch per group.
 const policies = ref<Record<string, string>>({})
 const bootBusy = ref<Record<string, boolean>>({})
 const startsOnBoot = (policy?: string) => policy === 'always' || policy === 'unless-stopped'
@@ -89,7 +87,7 @@ async function loadPolicies() {
   try {
     policies.value = (await api.containerRestartPolicies(ids)).policies
   } catch {
-    // The switch stays off; the list already reports Docker being unreachable.
+    // Switch stays off; the list already reports Docker as unreachable.
   }
 }
 async function setBoot(name: string, items: Container[], on: boolean) {
@@ -110,7 +108,6 @@ const groups = computed(() => {
   const map = new Map<string, Container[]>()
   for (const c of list.value) {
     if (q && !c.name.toLowerCase().includes(q) && !c.image.toLowerCase().includes(q) && !(c.project ?? '').includes(q)) continue
-    // Deployed apps group under their name; compose stacks under their project.
     const key = c.app || c.project || 'Standalone'
     map.set(key, [...(map.get(key) ?? []), c])
   }
@@ -144,7 +141,7 @@ async function loadStats() {
     const s = await api.containerStats()
     stats.value = Object.fromEntries(s.stats.map((x) => [x.id, x]))
   } catch {
-    // stats are a bonus; the list still works without them
+    // stats are optional
   }
 }
 
@@ -412,10 +409,8 @@ onBeforeUnmount(() => clearInterval(timer))
   display: flex;
   gap: 6px;
 }
-/* On a phone the row had five things on one line, so a long name pushed the state and
-   the buttons under it and left them ragged. The name now gets a line of its own with the
-   state on the right, the image and its ports sit under it, and the buttons end the block
-   on their own line. The desktop row is unchanged. */
+/* Phone layout: the name gets its own line with the state on the right, image and ports
+   under it, buttons on their own line. */
 @media (max-width: 760px) {
   .row {
     display: grid;

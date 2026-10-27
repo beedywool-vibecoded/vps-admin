@@ -8,8 +8,7 @@ import ConfirmDialog from './components/ConfirmDialog.vue'
 const route = useRoute()
 const ready = computed(() => route.matched.length > 0)
 const bare = computed(() => route.meta.public === true)
-// The key decides when the page transition replays. Switching conversations keeps the
-// assistant view mounted (it watches its own id), every other route change swaps pages.
+// Switching conversations keeps the assistant view mounted; other routes swap pages.
 const pageKey = computed(() => (route.name === 'assistant' ? '/assistant' : route.path))
 </script>
 

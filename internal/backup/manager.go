@@ -28,8 +28,7 @@ import (
 )
 
 const (
-	// The Drive remote and its mount point are fixed: the administrator never chooses
-	// them, so they cannot end up in a path the root helper would write to.
+	// Fixed so they can never point the root helper at an arbitrary path.
 	RemoteName = "vpsadmin"
 	MountPoint = "/srv/storage/vpsadmin"
 	HelperPath = "/opt/vps-admin/storage-helper"
@@ -39,11 +38,10 @@ const (
 	fullID        = "full"     // backup kind: state plus app sources and volumes
 	minPassphrase = 12
 	maxKeep       = 60
-	// A full archive copies app sources and volumes: allow it to run long.
+	// Full archives copy app sources and volumes.
 	runTimeout = 4 * time.Hour
 )
 
-// Settings keys, in the settings table next to the others.
 const (
 	SettingEnabled    = "backup.enabled"
 	SettingToken      = "backup.token"      // sealed: the rclone OAuth token
@@ -56,7 +54,6 @@ const (
 	SettingLast       = "backup.last"
 )
 
-// Defaults, exported so the panel and the tests agree.
 const (
 	DefaultPath = "vps-admin"
 	DefaultHour = 3
@@ -76,8 +73,7 @@ type Archive struct {
 	Time time.Time `json:"time"`
 }
 
-// Last is the outcome of the latest run, kept in the database so the panel can show it
-// after a restart.
+// Last is the outcome of the latest run, persisted across restarts.
 type Last struct {
 	At    time.Time `json:"at"`
 	Kind  string    `json:"kind"`
@@ -87,7 +83,6 @@ type Last struct {
 	Error string    `json:"error,omitempty"`
 }
 
-// Status is what the settings page shows.
 type Status struct {
 	Configured    bool      `json:"configured"`
 	Enabled       bool      `json:"enabled"`
@@ -110,8 +105,8 @@ type Status struct {
 	Warning       string    `json:"warning,omitempty"`
 }
 
-// Options are the values the panel may change. Nil means "leave it alone", so an empty
-// password field does not erase the one saved.
+// Options are the values the panel may change. Nil means unchanged, so an empty password
+// field does not erase the saved one.
 type Options struct {
 	Enabled    *bool   `json:"enabled"`
 	Path       *string `json:"path"`
@@ -133,8 +128,7 @@ type Manager struct {
 	Helper  string // path of the root helper, empty when the installer did not put it
 	Docker  *docker.Client
 
-	// Tests replace the volume listing and the tar/unpack of a volume; in production
-	// they go through Docker and the root helper.
+	// Overridden in tests; production goes through Docker and the root helper.
 	Volumes        func(context.Context) ([]docker.VolumeUse, error)
 	exportVolumeFn func(context.Context, string, string) error
 	importVolumeFn func(context.Context, string, string) error
@@ -145,8 +139,7 @@ type Manager struct {
 	mountTried time.Time
 }
 
-// Configured reports whether a token and a passphrase are saved: without both, a backup
-// cannot be written.
+// Configured reports whether both a token and a passphrase are saved.
 func (m *Manager) Configured(ctx context.Context) bool {
 	return m.Store.Setting(ctx, SettingToken, "") != "" && m.Store.Setting(ctx, SettingPassphrase, "") != ""
 }
@@ -155,8 +148,8 @@ func (m *Manager) enabled(ctx context.Context) bool {
 	return m.Store.Setting(ctx, SettingEnabled, "false") == "true"
 }
 
-// remotePath is the folder inside Drive, relative and validated. A bare name check is
-// not enough: a mounted Drive is a folder, and .. would write outside it.
+// remotePath is the folder inside Drive. Checked for ".." since the mounted Drive is a
+// real folder.
 func (m *Manager) remotePath(ctx context.Context) string {
 	p := strings.Trim(m.Store.Setting(ctx, SettingPath, DefaultPath), "/")
 	if !validPath(p) {
@@ -217,8 +210,8 @@ func (m *Manager) passphrase(ctx context.Context) (string, error) {
 
 func (m *Manager) confPath() string { return filepath.Join(m.Cfg.DataDir, confName) }
 
-// Save applies what the panel sent. The token is normalized: `rclone authorize` prints
-// it between markers, and people paste those too.
+// Save applies what the panel sent. People paste the token with the markers `rclone
+// authorize` prints around it.
 func (m *Manager) Save(ctx context.Context, o Options) error {
 	if o.Path != nil {
 		p := strings.Trim(strings.TrimSpace(*o.Path), "/")
@@ -274,8 +267,7 @@ func (m *Manager) Save(ctx context.Context, o Options) error {
 		case err != nil:
 			return err
 		default:
-			// The configuration goes first: a saved token the mount cannot read would
-			// report a Drive that never comes up.
+			// Write the config first, or the mount comes up without a readable token.
 			if err := m.writeConf(token); err != nil {
 				return err
 			}
@@ -299,8 +291,7 @@ func (m *Manager) Save(ctx context.Context, o Options) error {
 
 var errNoToken = errors.New("no token")
 
-// NormalizeToken reads the JSON printed by `rclone authorize "drive"`, with or without
-// the markers around it, and checks it can be used unattended (it needs a refresh token).
+// NormalizeToken parses `rclone authorize "drive"` output and requires a refresh token.
 func NormalizeToken(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -324,8 +315,7 @@ func NormalizeToken(raw string) (string, error) {
 	return string(b), nil
 }
 
-// writeConf keeps the rclone configuration in the data directory, 0600 like the secrets
-// it holds. The mount unit reads it there.
+// writeConf stores the rclone config (0600) in the data directory, where the mount unit reads it.
 func (m *Manager) writeConf(token string) error {
 	if err := os.MkdirAll(m.Cfg.DataDir, 0o700); err != nil {
 		return err
@@ -338,8 +328,7 @@ func (m *Manager) writeConf(token string) error {
 	return os.Rename(tmp, m.confPath())
 }
 
-// SetMount mounts or unmounts the Drive through the root helper. The panel runs
-// unprivileged, so it cannot write the systemd unit itself.
+// SetMount goes through the root helper since the panel can't write the systemd unit.
 func (m *Manager) SetMount(ctx context.Context, on bool) error {
 	if m.Helper == "" {
 		return errors.New("the storage helper is missing: rerun the installer")
@@ -368,8 +357,7 @@ func (m *Manager) SetMount(ctx context.Context, on bool) error {
 	return fmt.Errorf("the Drive is still busy: fusermount3 -uz %s over SSH", MountPoint)
 }
 
-// Mounted reads /proc/self/mounts: it is the panel's view, so it stays true for the
-// containers and the backup writer alike.
+// Mounted reads /proc/self/mounts.
 func (m *Manager) Mounted() bool {
 	b, err := os.ReadFile("/proc/self/mounts")
 	if err != nil {
@@ -404,8 +392,7 @@ func (m *Manager) host() string {
 	return h
 }
 
-// Status gathers what the settings page shows. Listing the remote needs network access,
-// so it only happens when the Drive is mounted or the caller asks for it.
+// Status lists the remote only when mounted or asked, since that needs the network.
 func (m *Manager) Status(ctx context.Context, withArchives bool) Status {
 	st := Status{
 		Configured:    m.Configured(ctx),
@@ -465,8 +452,7 @@ func (m *Manager) setProgress(p string) {
 	m.mu.Unlock()
 }
 
-// Start runs a backup in the background and returns at once: the panel polls the status
-// for the progress and the outcome.
+// Start runs a backup in the background; the panel polls the status.
 func (m *Manager) Start(ctx context.Context, kind string) error {
 	if kind != settingsID && kind != fullID {
 		return errors.New("unknown backup kind")
@@ -502,7 +488,7 @@ func (m *Manager) Start(ctx context.Context, kind string) error {
 	return nil
 }
 
-// run writes the archive and uploads it. It returns what was uploaded, for the history.
+// run writes the archive and uploads it.
 func (m *Manager) run(ctx context.Context, kind string) (string, int64, error) {
 	work, err := os.MkdirTemp(m.Cfg.DataDir, "backup-")
 	if err != nil {
@@ -528,8 +514,7 @@ func (m *Manager) run(ctx context.Context, kind string) (string, int64, error) {
 	dest := filepath.Join(work, name)
 	h := Header{Kind: kind, Created: time.Now().UTC(), Panel: m.Version, Host: m.host(), PublicURL: m.Cfg.PublicURL}
 	entries := []Entry{
-		// The key travels with the database: a restore on a fresh server must be able to
-		// read the variables the database holds, and the archive is encrypted anyway.
+		// The key is included so a fresh server can read the database; the archive is encrypted.
 		{Name: "vps-admin.db", Path: snapshot, Mode: 0o600},
 		{Name: "secret.key", Data: key, Mode: 0o600},
 	}
@@ -555,14 +540,12 @@ func (m *Manager) run(ctx context.Context, kind string) (string, int64, error) {
 	}
 	m.setProgress("Removing old archives")
 	if err := m.prune(ctx); err != nil {
-		// The backup is on the Drive: a failed cleanup is not a failed backup.
 		slog.Warn("backup: cannot prune old archives", "err", err)
 	}
 	return name, st.Size(), nil
 }
 
-// upload prefers the mount (the user asked for it, and it keeps one copy on the Drive),
-// then falls back to rclone copying straight to the remote when the mount is down.
+// upload uses the mount when it's up, otherwise rclone copies straight to the remote.
 func (m *Manager) upload(ctx context.Context, local, name string) error {
 	if m.Mounted() {
 		dir := filepath.Join(MountPoint, m.remotePath(ctx))
@@ -585,7 +568,7 @@ func (m *Manager) upload(ctx context.Context, local, name string) error {
 	return err
 }
 
-// listNames returns the archive names on the remote, newest last.
+// listNames returns archive names, newest last.
 func (m *Manager) listNames(ctx context.Context) ([]string, error) {
 	if m.Mounted() {
 		entries, err := os.ReadDir(filepath.Join(MountPoint, m.remotePath(ctx)))
@@ -623,7 +606,6 @@ func (m *Manager) listNames(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
-// Archives lists what can be restored, with sizes and dates when the Drive is mounted.
 func (m *Manager) Archives(ctx context.Context) ([]Archive, error) {
 	var out []Archive
 	if m.Mounted() {
@@ -646,8 +628,7 @@ func (m *Manager) Archives(ctx context.Context) ([]Archive, error) {
 			out = append(out, Archive{Name: e.Name(), Size: info.Size(), Time: info.ModTime()})
 		}
 	} else {
-		// Without the mount, lsjson is what gives sizes and dates; lsf would only give
-		// names, and the panel shows a date next to every archive.
+		// lsf only gives names; lsjson also gives sizes and dates.
 		if _, err := exec.LookPath("rclone"); err != nil {
 			return nil, errors.New("rclone is not installed")
 		}
@@ -670,8 +651,7 @@ func (m *Manager) Archives(ctx context.Context) ([]Archive, error) {
 			}
 		}
 	}
-	// The tab shows the list as it comes: newest first, then by name when the Drive gives
-	// the same modification time to several files.
+	// Newest first; Drive can give several files the same mtime.
 	sort.Slice(out, func(i, j int) bool {
 		if !out[i].Time.Equal(out[j].Time) {
 			return out[i].Time.After(out[j].Time)
@@ -681,8 +661,7 @@ func (m *Manager) Archives(ctx context.Context) ([]Archive, error) {
 	return out, nil
 }
 
-// Delete removes one archive from the Drive. The panel asks for confirmation first: the
-// file no longer appears in the list, and a backup cannot be restored without it.
+// Delete removes one archive from the Drive.
 func (m *Manager) Delete(ctx context.Context, name string) error {
 	if !archiveFile.MatchString(name) {
 		return errors.New("that is not a backup file name")
@@ -696,7 +675,6 @@ func (m *Manager) Delete(ctx context.Context, name string) error {
 	return m.remove(ctx, name)
 }
 
-// remove deletes one archive through the mount when it is up, and with rclone otherwise.
 func (m *Manager) remove(ctx context.Context, name string) error {
 	if m.Mounted() {
 		err := os.Remove(filepath.Join(MountPoint, m.remotePath(ctx), name))
@@ -713,8 +691,7 @@ func (m *Manager) remove(ctx context.Context, name string) error {
 	return err
 }
 
-// prune keeps the newest archives and removes the rest, from Drive too (no trash, so
-// the space comes back).
+// prune keeps the newest archives and deletes the rest (no Drive trash).
 func (m *Manager) prune(ctx context.Context) error {
 	names, err := m.listNames(ctx)
 	if err != nil {
@@ -732,7 +709,6 @@ func (m *Manager) prune(ctx context.Context) error {
 	return nil
 }
 
-// Test checks the Drive answers with the saved token, and reports what it finds.
 func (m *Manager) Test(ctx context.Context) (string, error) {
 	if _, err := m.token(ctx); err != nil {
 		return "", errors.New("the saved token cannot be read: paste it again")
@@ -747,17 +723,15 @@ func (m *Manager) Test(ctx context.Context) (string, error) {
 	if _, err := exec.LookPath("rclone"); err != nil {
 		return "", errors.New("rclone is not installed: rerun the installer")
 	}
-	// The backup folder may not exist yet: checking the Drive root proves the token
-	// without failing on a fresh setup.
+	// List the Drive root: the backup folder may not exist yet.
 	if _, err := m.exec(ctx, time.Minute, "rclone", "lsd", "--config", m.confPath(), RemoteName+":"); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("Google Drive answers; backups go to %s", m.remotePath(ctx)), nil
 }
 
-// Restore downloads an archive, checks it and stages it for the next start. Replacing
-// the database of a running panel is not safe, so the caller restarts the service and
-// ApplyPending swaps the files in before the store opens.
+// Restore downloads and checks an archive, then stages it. Replacing the database of a
+// running panel isn't safe, so ApplyPending swaps the files in on the next start.
 func (m *Manager) Restore(ctx context.Context, file, passphrase string) (Header, error) {
 	var h Header
 	if !archiveFile.MatchString(file) {
@@ -815,7 +789,7 @@ func (m *Manager) Restore(ctx context.Context, file, passphrase string) (Header,
 		return h, err
 	}
 
-	// Stage the files: the panel replaces them at its next start, never while it runs.
+	// Staged files are swapped in at the next start.
 	stage := filepath.Join(m.Cfg.DataDir, "restore")
 	if err := os.RemoveAll(stage); err != nil {
 		return h, err
@@ -840,9 +814,8 @@ func (m *Manager) Restore(ctx context.Context, file, passphrase string) (Header,
 	return h, nil
 }
 
-// ApplyPending installs a staged restore. It runs before the store opens: the database
-// and the key are swapped together, and the previous files stay next to them with a
-// timestamp.
+// ApplyPending installs a staged restore before the store opens. Previous files are kept
+// with a timestamp.
 func ApplyPending(dataDir string) error {
 	stage := filepath.Join(dataDir, "restore")
 	db := filepath.Join(stage, "vps-admin.db")
@@ -874,8 +847,7 @@ func ApplyPending(dataDir string) error {
 			return err
 		}
 	}
-	// The volumes are unpacked by ApplyStagedVolumes once the Docker client is up; the
-	// rest of the stage goes now.
+	// Volumes are unpacked later by ApplyStagedVolumes, once Docker is up.
 	if _, err := os.Stat(filepath.Join(stage, "volumes")); err == nil {
 		slog.Info("full restore staged", "volumes", filepath.Join(stage, "volumes"))
 		return nil
@@ -887,8 +859,7 @@ func ApplyPending(dataDir string) error {
 	return nil
 }
 
-// Loop runs the scheduled backup. It checks every minute: a missed hour (the panel was
-// down) is caught up the same day, and a failure does not retry in a loop.
+// Loop runs the scheduled backup, checking every minute so a missed hour is caught up.
 func (m *Manager) Loop(ctx context.Context) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
@@ -901,8 +872,7 @@ func (m *Manager) Loop(ctx context.Context) {
 		if !m.enabled(ctx) || !m.Configured(ctx) {
 			continue
 		}
-		// The Drive should come back after a reboot; the unit does it, but a unit that was
-		// stopped or removed is retried here, at most every ten minutes.
+		// Remount if the unit was stopped, at most every ten minutes.
 		if m.mountOn(ctx) && m.Helper != "" && !m.Mounted() {
 			m.mu.Lock()
 			due := time.Since(m.mountTried) > 10*time.Minute
@@ -979,8 +949,7 @@ func copyFile(src, dst string) error {
 	return out.Close()
 }
 
-// validSnapshot makes sure a restored database is a readable panel state before it is
-// allowed anywhere near the real one.
+// validSnapshot checks a restored database is a readable panel state.
 func validSnapshot(path string) error {
 	f, err := os.Open(path)
 	if err != nil {

@@ -343,8 +343,7 @@ class EmptyCard extends StatelessWidget {
   );
 }
 
-/// Which container groups are expanded, shared by the Overview and Containers pages and
-/// remembered on this phone. Collapsed by default.
+/// Which container groups are expanded, persisted on this phone. Collapsed by default.
 class OpenGroups extends ChangeNotifier {
   OpenGroups._() {
     SharedPreferences.getInstance()
@@ -371,8 +370,7 @@ class OpenGroups extends ChangeNotifier {
   }
 }
 
-/// A container group card (header with icon, name, folder, state dots, count, chevron,
-/// collapsible body), the same on the Overview and on Containers.
+/// A collapsible container group card, used on Overview and Containers.
 class GroupCard extends StatelessWidget {
   const GroupCard({
     super.key,
@@ -406,8 +404,7 @@ class GroupCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
-                // The badge hangs from the top of the card: sat in the middle of a
-                // three-line title block, it read as floating next to nothing.
+                // Badge top-aligned; centred it looked detached from the title.
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   InkWell(
@@ -464,9 +461,7 @@ class GroupCard extends StatelessWidget {
                                       ],
                                     ),
                                   ),
-                                  // The compose project keeps a line of its own under a
-                                  // renamed group, the way an image sits under a container
-                                  // name; squeezed onto the title line it broke the name.
+                                  // Compose project on its own line under a renamed group.
                                   if (titled)
                                     Muted(g.name, size: 13, maxLines: 1),
                                   if (g.dir != null)

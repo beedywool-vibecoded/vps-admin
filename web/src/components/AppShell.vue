@@ -137,7 +137,7 @@ onBeforeUnmount(() => {
   gap: 6px;
   padding: 20px 0;
   border-right: 1px solid var(--sch);
-  /* The sections are taller than a short window: the rail scrolls, the page does not. */
+  /* The rail scrolls on short windows, not the page. */
   overflow-y: auto;
   overscroll-behavior: contain;
 }

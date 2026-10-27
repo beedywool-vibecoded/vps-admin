@@ -25,8 +25,7 @@ func msg(t *testing.T, role, content string) store.ConvMessage {
 	return store.ConvMessage{Role: role, Content: content}
 }
 
-// The stored history is the Anthropic format; the OpenAI providers must see tool
-// results as tool messages and must not receive Anthropic thinking blocks.
+// OpenAI providers get tool results as tool messages and no thinking blocks.
 func TestToOpenAI(t *testing.T) {
 	history := []store.ConvMessage{
 		msg(t, "user", `{"role":"user","content":[{"type":"text","text":"List the apps"}]}`),
@@ -143,8 +142,7 @@ func TestChatReassemblesStream(t *testing.T) {
 	}
 }
 
-// Gemini answers a later request that drops the signature of a function call with a 400
-// about the missing thought signature, so the stored call has to carry it back.
+// Gemini 400s if a function call's thought signature isn't sent back.
 func TestThoughtSignatureIsSentBackWithTheCall(t *testing.T) {
 	history := []store.ConvMessage{
 		msg(t, "user", `{"role":"user","content":[{"type":"text","text":"How much space is left?"}]}`),
@@ -215,9 +213,7 @@ func TestEndpointValidation(t *testing.T) {
 	}
 }
 
-// The whole loop with a free online provider: a tool call is executed by the panel,
-// its result goes back to the model, and the answer is stored in the same format
-// whichever provider wrote it.
+// Full loop with Gemini: tool call executed, result sent back, answer stored.
 func TestGeminiToolLoop(t *testing.T) {
 	var calls int
 	var second chatRequest
@@ -307,9 +303,7 @@ func TestGeminiToolLoop(t *testing.T) {
 	}
 }
 
-// Google's catalogue still lists a family it has closed to keys made today, so the name
-// only fails when a message is sent with it. The next model it does serve takes over, the
-// switch is recorded, and the refused name is never asked for again.
+// A model Google lists but refuses at send time is replaced and never asked for again.
 func TestGeminiRefusedModelAtSendIsReplaced(t *testing.T) {
 	const retired = "gemini-2.5-flash"
 	var mu sync.Mutex
@@ -325,8 +319,7 @@ func TestGeminiRefusedModelAtSendIsReplaced(t *testing.T) {
 			asked[req.Model]++
 			mu.Unlock()
 			if req.Model == retired {
-				// Google's OpenAI-compatible door answers an array, which the panel must read
-				// rather than show.
+				// Gemini's OpenAI-compatible endpoint returns an array.
 				w.WriteHeader(http.StatusNotFound)
 				io.WriteString(w, `[{"error":{"code":404,"message":"This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.8-flash for the latest features and improvements."}}]`)
 				return

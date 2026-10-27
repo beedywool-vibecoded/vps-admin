@@ -1,12 +1,10 @@
 // Package deploy builds GitHub repositories into Docker containers and puts them online
-// behind Caddy.
+// behind the reverse proxy.
 //
-// Single-container apps (Dockerfile, node, static) deploy without downtime: the new
-// container starts on a fresh loopback port next to the old one, must answer on it, then
-// Caddy switches over and the old one is removed. Images stay tagged by commit so a
-// rollback restarts a previous image without rebuilding. Compose apps run with
-// `docker compose up` in a folder that persists between deploys, so relative bind mounts
-// keep their data.
+// Single-container apps deploy without downtime: the new container starts on a fresh
+// loopback port, must answer, then the proxy switches over. Images stay tagged by commit
+// for rollbacks. Compose apps run in a persistent folder so relative bind mounts keep
+// their data.
 package deploy
 
 import (
@@ -53,20 +51,16 @@ type Engine struct {
 	Store  *store.Store
 	Box    *secret.Box
 	GitHub *github.Client
-	// DataDir holds sources (apps/, builds/); SitesDir the Caddy snippets and NginxDir
-	// the nginx sites, one per app (whichever proxy the installer set up).
+	// DataDir holds sources (apps/, builds/); SitesDir and NginxDir hold one site per app.
 	DataDir  string
 	SitesDir string
 	NginxDir string
 	// Helper runs the root proxy helper (deploy/proxy-helper.sh) through sudo.
-	Helper func(ctx context.Context, args ...string) (string, error)
-	// TailscaleName is this machine's tailnet name, empty without Tailscale.
+	Helper        func(ctx context.Context, args ...string) (string, error)
 	TailscaleName func(ctx context.Context) string
 	// ReloadCaddy applies the snippets; Caddy refuses a bad config and keeps the old one.
 	ReloadCaddy func(context.Context) error
-	// WriteCaddy replaces a Caddy configuration file through the root helper, for the
-	// main Caddyfile and the files Caddy imports: the agent cannot write those itself.
-	// Tests leave it nil to write the file directly.
+	// WriteCaddy writes root-owned Caddy files through the helper. Nil in tests.
 	WriteCaddy func(ctx context.Context, path string, data []byte) error
 	// gitRemote replaces the GitHub clone URL of linked folders in tests.
 	gitRemote func(repo, token string) string
@@ -102,8 +96,8 @@ func (e *Engine) Run(ctx context.Context) {
 	}
 }
 
-// Deploy queues a deployment of app at sha (the branch head when empty). image reuses a
-// built image instead of building, for rollbacks.
+// Deploy queues a deployment of app at sha (the branch head when empty). image skips the
+// build, for rollbacks.
 func (e *Engine) Deploy(ctx context.Context, app store.App, trigger, sha, message, image string) (*store.Deployment, error) {
 	e.mu.Lock()
 	busy := e.running[app.ID]
@@ -140,9 +134,8 @@ func (e *Engine) Busy(appID string) bool {
 	return e.running[appID]
 }
 
-// AnyBusy reports whether a deployment is running at all. A deployment stops and
-// recreates the containers of its app on purpose, so the alert watcher stays quiet
-// while one is going on.
+// AnyBusy reports whether any deployment is running; alerts stay quiet meanwhile since
+// deployments recreate containers.
 func (e *Engine) AnyBusy() bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -266,8 +259,7 @@ func (e *Engine) dockerOut(ctx context.Context, args ...string) (string, error) 
 	return strings.TrimSpace(out.String()), err
 }
 
-// finish records the outcome last: the full log is stored and the app is free for a new
-// deployment by the time anyone sees FinishedAt.
+// finish records the outcome last, so FinishedAt implies the log is stored and the app free.
 func (e *Engine) finish(ctx context.Context, l *logger, d *store.Deployment, err error) {
 	if err != nil {
 		l.Printf("FAILED: %v", err)
@@ -362,7 +354,6 @@ func (e *Engine) fetchAndBuild(ctx context.Context, l *logger, app *store.App, d
 	}
 	l.Printf("Fetching %s at %s: %s", app.Repo, short(d.SHA), d.Message)
 
-	// Compose keeps one folder; other builds use a throwaway one.
 	src := e.srcDir(*app, d, app.Build)
 	if app.Build != BuildCompose {
 		defer os.RemoveAll(src)
@@ -402,7 +393,6 @@ func (e *Engine) fetchAndBuild(ctx context.Context, l *logger, app *store.App, d
 		return errors.New(det.Reason)
 	}
 	if build == BuildCompose && app.Build != BuildCompose {
-		// Auto-detected compose: move the source to the persistent folder.
 		dst := e.srcDir(*app, d, BuildCompose)
 		os.RemoveAll(dst)
 		os.MkdirAll(filepath.Dir(dst), 0o750)
@@ -479,8 +469,7 @@ func (e *Engine) goLiveContainer(ctx context.Context, l *logger, app store.App, 
 	if app.MemoryMB > 0 {
 		args = append(args, "--memory", fmt.Sprintf("%dm", app.MemoryMB))
 	}
-	// "-e KEY" takes the value from the CLI environment: any character works and the
-	// values never show up in the process list.
+	// "-e KEY" reads the value from the environment, keeping it out of the process list.
 	for _, kv := range env {
 		k, _, _ := strings.Cut(kv, "=")
 		args = append(args, "-e", k)
@@ -507,10 +496,9 @@ func (e *Engine) goLiveContainer(ctx context.Context, l *logger, app store.App, 
 	return e.retirePrevious(ctx, l, app, d)
 }
 
-// waitHealthy waits until the app answers HTTP and stays up for a few seconds, so a
-// crash loop is not mistaken for a healthy start. A TCP connect is not enough: Docker's
-// port proxy accepts connections even when nothing listens inside the container. Any
-// HTTP status counts, a 404 or 500 still means the server is up.
+// waitHealthy waits until the app answers HTTP and stays up a few seconds. TCP isn't
+// enough: Docker's port proxy accepts connections even when nothing listens inside.
+// Any HTTP status counts.
 func (e *Engine) waitHealthy(ctx context.Context, l *logger, name string, port int) error {
 	l.Printf("Waiting for the app to answer HTTP on port %d", port)
 	client := &http.Client{Timeout: 3 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
@@ -572,8 +560,7 @@ func (e *Engine) retirePrevious(ctx context.Context, l *logger, app store.App, d
 
 func (e *Engine) composeProject(appID string) string { return "vpsadmin-" + appID }
 
-// EnvFilePath is where an app's variables are written: the chosen file, or .env by
-// default, inside the folder that is deployed.
+// EnvFilePath is the app's env file, .env by default, inside the deployed folder.
 func EnvFilePath(app store.App) string {
 	if p := strings.TrimSpace(app.EnvPath); p != "" {
 		return p
@@ -594,8 +581,7 @@ func ValidEnvPath(p string) bool {
 	return c != "." && c != ".." && !strings.HasPrefix(c, "../") && !strings.HasPrefix(c, "/")
 }
 
-// writeEnvFile puts the app's variables in a file the compose project can read, and
-// returns its path relative to root. 0600: it carries the secrets the panel holds.
+// writeEnvFile writes the app's variables (0600) and returns the path relative to root.
 func (e *Engine) writeEnvFile(root string, app store.App, env []string) (string, error) {
 	rel := EnvFilePath(app)
 	if !ValidEnvPath(rel) {
@@ -618,9 +604,8 @@ func (e *Engine) writeEnvFile(root string, app store.App, env []string) (string,
 	return rel, nil
 }
 
-// envLine renders one variable for a compose env file: quoted, since the values hold
-// passwords and URLs where a space or a # would otherwise end the value, and with $
-// escaped so compose passes it through instead of reading it as a variable.
+// envLine quotes the value (passwords, URLs with # or spaces) and escapes $ so compose
+// doesn't interpolate it.
 func envLine(k, v string) string {
 	if v == "" {
 		return k + "=\n"
@@ -641,8 +626,7 @@ func (e *Engine) composeUp(ctx context.Context, l *logger, app store.App, root s
 		args = append(args, "--env-file", rel)
 		cliEnv = nil
 	} else {
-		// Compose reads .env.vps-admin for ${VAR} interpolation; variables also reach
-		// the CLI environment, which compose uses the same way.
+		// Compose reads .env.vps-admin for ${VAR} interpolation.
 		var envFile strings.Builder
 		for _, kv := range env {
 			k, v, _ := strings.Cut(kv, "=")
@@ -731,8 +715,8 @@ func (e *Engine) Restart(ctx context.Context, app store.App) error {
 	return e.docker(ctx, io.Discard, "", nil, "restart", live.Container)
 }
 
-// Remove deletes the containers, images, Caddy site and files of an app. Named volumes
-// are only removed when volumes is true.
+// Remove deletes the containers, images, proxy site and files of an app. Named volumes
+// only go when volumes is true.
 func (e *Engine) Remove(ctx context.Context, app store.App, volumes bool) error {
 	if e.Busy(app.ID) {
 		return ErrBusy
@@ -740,8 +724,7 @@ func (e *Engine) Remove(ctx context.Context, app store.App, volumes bool) error 
 	var errs []error
 	src := filepath.Join(e.DataDir, "apps", app.ID, "src")
 	if app.Dir != "" {
-		// A linked folder belongs to the administrator: unlinking stops the updates and
-		// leaves the folder and its containers exactly as they are.
+		// Linked folders belong to the admin: unlinking leaves them alone.
 	} else if app.Build == BuildCompose {
 		args := []string{"compose", "-p", e.composeProject(app.ID), "down", "--remove-orphans", "--rmi", "local"}
 		if volumes {

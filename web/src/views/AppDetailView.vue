@@ -31,13 +31,11 @@ const domains = ref(false)
 const tab = ref<'deployments' | 'env' | 'settings'>('deployments')
 const busy = ref(false)
 
-// Selected deployment and its build output
 const selected = ref<number | null>(null)
 const log = ref('')
 const logEl = ref<HTMLElement>()
 let closeStream: (() => void) | undefined
 
-// Settings form
 const form = ref({ branch: '', rootDir: '', build: 'auto' as BuildType, port: 0, domain: '', autoDeploy: true, keep: 5, memoryMb: 0, access: 'public' as AccessMode, allow: '' })
 const cmds = ref({ installCmd: '', buildCmd: '', startCmd: '', dockerfile: '', composeFile: '' })
 const checkResult = ref<UpdateCheck | null>(null)
@@ -60,10 +58,9 @@ const buildOptions = (Object.keys(BUILD_LABEL) as BuildType[]).map((k) => ({ val
 
 const running = computed(() => deployments.value.some((d) => ['queued', 'building', 'starting'].includes(d.status)))
 const selectedDep = computed(() => deployments.value.find((d) => d.id === selected.value))
-// A public repository entered by URL has no push webhook behind it.
+// Public repo entered by URL: no webhook.
 const external = computed(() => app.value?.installationId === 0)
 
-// The list shows the latest deployments; older ones are one click away.
 const DEPLOY_LIMIT = 5
 const showAllDeps = ref(false)
 const visibleDeps = computed(() => (showAllDeps.value ? deployments.value : deployments.value.slice(0, DEPLOY_LIMIT)))
@@ -74,8 +71,7 @@ async function load() {
     app.value = res.app
     deployments.value = res.deployments
     domains.value = res.domains
-    // Only send fields the API accepts: hasValue is read-only and the server
-    // rejects unknown JSON fields, which made every env save fail with 400.
+    // hasValue is read-only and the server rejects unknown fields (400).
     if (!envDirty) env.value = res.env.map((e) => ({ key: e.key, value: e.value, secret: e.secret, keep: e.secret && e.hasValue }))
     const a = res.app
     if (!targetDirty) {
@@ -88,7 +84,7 @@ async function load() {
       cmds.value = { installCmd: a.installCmd, buildCmd: a.buildCmd, startCmd: a.startCmd, dockerfile: a.dockerfile, composeFile: a.composeFile }
     }
     if (selected.value === null && res.deployments[0]) select(res.deployments[0].id)
-    // A link to an older deployment (a notification) opens the list far enough to show it.
+    // Deep link to an older deployment: expand the list.
     if (!showAllDeps.value && selected.value !== null && !res.deployments.slice(0, DEPLOY_LIMIT).some((d) => d.id === selected.value)) showAllDeps.value = true
   } catch (e) {
     toastError(e)
@@ -126,7 +122,7 @@ function select(id: number) {
 
 function toggleDeps() {
   showAllDeps.value = !showAllDeps.value
-  // Collapsing hides the older rows, so keep the log on a deployment that stays listed.
+  // Keep the log on a deployment that stays listed after collapsing.
   const first = deployments.value[0]
   if (!showAllDeps.value && selected.value !== null && !visibleDeps.value.some((d) => d.id === selected.value) && first) select(first.id)
 }
@@ -197,8 +193,7 @@ async function saveSettings() {
   }
 }
 
-// The source alone changes, with the settings the app already has: unsaved edits in the
-// form stay in the form and are not silently written.
+// Changes only the source, using the saved settings; unsaved form edits are not written.
 async function changeSource(src: { repo: string; branch: string; external: boolean }) {
   const a = app.value
   if (!a) return
@@ -611,7 +606,7 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
 }
-/* Same box as the dropdowns beside them (M3Select), so a row keeps one height. */
+/* Matches M3Select's height */
 .tf {
   box-sizing: border-box;
   display: flex;

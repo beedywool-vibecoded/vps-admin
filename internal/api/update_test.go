@@ -42,7 +42,7 @@ func TestUpdateSourceSetting(t *testing.T) {
 		t.Fatalf("stored source = %q", v)
 	}
 
-	// Anything that is not a GitHub repository is refused and changes nothing.
+	// Non-GitHub URLs are refused.
 	if rec := call(`{"repo":"https://gitlab.com/o/r"}`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("invalid source status = %d, want 400", rec.Code)
 	}
@@ -50,7 +50,7 @@ func TestUpdateSourceSetting(t *testing.T) {
 		t.Fatalf("a refused source was applied: %q", up.Source())
 	}
 
-	// An empty value goes back to the repository the build was configured with.
+	// Empty resets to the build's default repository.
 	rec = call(`{"repo":""}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("reset status = %d: %s", rec.Code, rec.Body.String())

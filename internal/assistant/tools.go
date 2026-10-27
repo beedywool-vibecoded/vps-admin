@@ -19,7 +19,6 @@ import (
 
 const maxResult = 16 << 10
 
-// Deps are the parts of the agent the tools act on.
 type Deps struct {
 	Store     *store.Store
 	Runner    *system.Runner
@@ -74,7 +73,6 @@ func defFor(name string) *toolDef {
 	return nil
 }
 
-// call is a parsed tool request.
 type call struct {
 	Filter       string `json:"filter"`
 	Name         string `json:"name"`
@@ -90,8 +88,7 @@ type call struct {
 
 var ErrInvalidInput = errors.New("invalid tool input")
 
-// parse validates a tool input: unknown tool, bad JSON (a cut-off stream), or a
-// missing required field are all reported back to the model as tool errors.
+// parse validates a tool input. Errors go back to the model as tool errors.
 func parse(name, raw string) (*toolDef, *call, error) {
 	d := defFor(name)
 	if d == nil {
@@ -310,8 +307,8 @@ func (dp *Deps) execute(ctx context.Context, d *toolDef, c *call) (string, error
 	return "", fmt.Errorf("unknown tool %s", d.name)
 }
 
-// shell runs a command line as the agent user. A leading sudo becomes `sudo -n` so a
-// command outside the sudo allowlist fails at once instead of waiting for a password.
+// shell runs a command as the agent user. sudo becomes `sudo -n` so commands outside the
+// allowlist fail instead of waiting for a password.
 func (dp *Deps) shell(ctx context.Context, command string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()

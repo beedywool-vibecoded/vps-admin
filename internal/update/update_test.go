@@ -90,8 +90,7 @@ func TestSourceChange(t *testing.T) {
 	}
 }
 
-// A token saved for the previous update source answers 403 on another repository. A
-// public one must still be read: the request is retried without the token.
+// A stale token gets 403 on a new public repo; the request is retried without it.
 func TestCheckRetriesWithoutAStaleToken(t *testing.T) {
 	var seen []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

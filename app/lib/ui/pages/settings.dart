@@ -10,8 +10,7 @@ import '../live.dart';
 import '../scope.dart';
 import '../widgets.dart';
 
-/// SettingsView.vue: appearance, server background, devices by person, activity, plus
-/// what only the app has: the servers it knows and its own update.
+/// SettingsView.vue, plus the app-only parts: known servers and app updates.
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
@@ -75,7 +74,7 @@ class _SettingsPageState extends State<SettingsPage> {
       if (!mounted) return;
       setState(() {
         alerts = a;
-        // The fields are only filled once: a pass over them must not overwrite typing.
+        // Only fill once so a refresh doesn't overwrite typing.
         if (hookCtl.text.isEmpty) hookCtl.text = a['webhook'] as String? ?? '';
         if (diskCtl.text.isEmpty) diskCtl.text = '${a['disk'] ?? 90}';
       });
@@ -321,7 +320,6 @@ class _SettingsPageState extends State<SettingsPage> {
       children: [Text(a), Muted(b)],
     );
 
-    // Devices by person, the current person first.
     final me = devices.where((d) => d.id == current).firstOrNull;
     final people = <String, List<Device>>{};
     for (final d in devices) {

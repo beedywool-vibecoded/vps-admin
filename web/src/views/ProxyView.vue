@@ -22,7 +22,7 @@ const shown = computed(() => {
   )
 })
 
-// Two sites answering the same name is what makes a deploy fail with "domain already used".
+// Two sites on the same name make a deploy fail with "domain already used".
 const shared = computed(() => {
   const seen = new Map<string, number>()
   for (const s of sites.value) for (const d of s.domains) seen.set(d, (seen.get(d) ?? 0) + 1)
@@ -31,8 +31,7 @@ const shared = computed(() => {
 
 const url = (s: ProxySite) => `${s.scheme}://${s.domains[0]}`
 const key = (s: ProxySite) => `${s.file}|${s.domains[0]}`
-// What the server stores for the manual order: the app for a managed site, the file and
-// its first domain otherwise.
+// Must match siteKey in internal/api/proxy.go.
 const siteKey = (s: ProxySite) => (s.id ? `app:${s.id}` : `file:${s.file}|${s.domains[0] ?? ''}`)
 
 const busy = ref('')
@@ -41,9 +40,8 @@ const dragTo = ref<number | null>(null)
 // A filtered list would reorder the wrong rows: no dragging while searching.
 const canDrag = computed(() => !query.value.trim())
 
-// An app's URL is paused through the app, which knows how to write it again. Any other
-// site is paused in its file: a snippet is moved aside, a Caddyfile block is commented
-// out so the other sites sharing that file keep answering.
+// App URLs are paused through the app. Other sites are paused in their file: a snippet
+// is moved aside, a shared Caddyfile block is commented out.
 async function togglePause(s: ProxySite) {
   busy.value = siteKey(s)
   const name = s.domains[0]
@@ -59,8 +57,7 @@ async function togglePause(s: ProxySite) {
   }
 }
 
-// nginx only: Caddy gets its certificates by itself. certbot edits the server block and
-// reloads nginx, which is why this works on a hand-written site too.
+// nginx only; Caddy handles certificates itself.
 async function addHTTPS(s: ProxySite) {
   const domain = s.domains[0]
   if (!domain) return
@@ -81,8 +78,7 @@ async function addHTTPS(s: ProxySite) {
   }
 }
 
-// Any site in the list can go, including a block added by hand: only that site is removed
-// from its file, then the proxy is reloaded, so the domain stops answering.
+// Removes only this site from its file, then reloads the proxy.
 async function removeSite(s: ProxySite) {
   const ok = await confirm({
     title: `Delete ${s.domains[0] ?? s.file}?`,
@@ -134,7 +130,7 @@ async function drop(i: number) {
 onMounted(async () => {
   try {
     const r = await api.proxy()
-    // A server that sends null for a list must not blank the page: the view walks all three.
+    // Normalize null lists from the server.
     r.sites = (r.sites ?? []).map((s) => ({ ...s, domains: s.domains ?? [] }))
     r.unreadable = r.unreadable ?? []
     rep.value = r
@@ -299,7 +295,6 @@ onMounted(async () => {
 .dom:hover {
   text-decoration: underline;
 }
-/* A paused site answers nothing: its name is text, not a link. */
 .paused-dom,
 .paused-dom:hover {
   text-decoration: none;

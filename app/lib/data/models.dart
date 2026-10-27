@@ -85,8 +85,7 @@ class DockerContainer {
   final List<Map<String, dynamic>> ports;
   final bool exposed;
 
-  /// The group it belongs to, as on the panel: the app it was deployed for,
-  /// else its compose project, else Standalone.
+  /// The app it was deployed for, else its compose project, else Standalone.
   String get group => (app ?? '').isNotEmpty
       ? app!
       : ((project ?? '').isNotEmpty ? project! : 'Standalone');
@@ -141,14 +140,13 @@ class ProxySite {
   final bool vpnOnly;
   final String scheme;
 
-  /// An app's URL turned off from the panel: the snippet is gone, the app runs on.
+  /// URL turned off from the panel; the app keeps running.
   final bool paused;
 
   String get url => domains.isEmpty ? '' : '$scheme://${domains.first}';
 }
 
-/// What the machine's reverse proxy serves: the engine, every site, and the files the
-/// agent could not read.
+/// What the reverse proxy serves, plus the files the agent couldn't read.
 class ProxyReport {
   ProxyReport(Map<String, dynamic> j)
     : engine = j['engine'] as String? ?? '',

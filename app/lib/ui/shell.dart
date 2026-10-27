@@ -23,8 +23,8 @@ import 'scope.dart';
 import 'widget_bar.dart';
 import 'widgets.dart';
 
-/// AppShell.vue: the panel's navigation. Phones get the bottom bar (four sections and
-/// More), wide screens the rail with every section; very wide ones the widget bar.
+/// AppShell.vue: bottom bar on phones, rail on wide screens, plus the widget bar on very
+/// wide ones.
 class Shell extends StatefulWidget {
   const Shell({super.key});
 

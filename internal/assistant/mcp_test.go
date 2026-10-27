@@ -11,8 +11,7 @@ import (
 	"github.com/beedywool/vps-admin/internal/system"
 )
 
-// The MCP endpoint is what the Claude Code CLI calls. Its token, its tool list and its
-// policy are checked here, without starting the CLI.
+// Token, tool list and policy of the MCP endpoint, without starting the CLI.
 func TestMCPBridge(t *testing.T) {
 	e := testEngine(t)
 	e.Deps.DataDir = t.TempDir()
@@ -122,8 +121,7 @@ func TestClaudeCodeNeedsATokenAndTheBinary(t *testing.T) {
 	if provider.Label != "Claude Code" || provider.Badge != "subscription" || provider.KeyHint == "" {
 		t.Fatalf("the provider is not described: %+v", provider)
 	}
-	// The binary is installed on the test machine; where it is not, Ready stays false and
-	// the panel shows the install commands.
+	// Without the binary installed, Ready must stay false.
 	if _, _, err := e.claudeInfo(ctx); err != nil && provider.Ready {
 		t.Fatalf("a missing claude binary must make the provider not ready: %+v", provider)
 	}
