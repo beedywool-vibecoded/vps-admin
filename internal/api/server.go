@@ -169,28 +169,40 @@ func (s *Server) Handler() http.Handler {
 		writeError(w, http.StatusNotFound, "not_found")
 	})
 	mux.Handle("/", web.Handler())
-	return s.clientCORS(securityHeaders(s.Cfg.LauncherOrigin, mux))
+	return clientCORS(securityHeaders(s.Cfg.LauncherOrigin, mux))
 }
 
-// clientCORS lets the web clients of client_origins (the phone client) call the API from their
-// own origin. They authenticate with a device token in Authorization, never with the session
-// cookie (no Allow-Credentials), so a page on another origin can't act with the panel's session.
-func (s *Server) clientCORS(h http.Handler) http.Handler {
+// clientCORS lets web clients on any origin (the phone client, beedywool-vibecoded/vps-admin-client,
+// wherever it is hosted) call the API, the way the Android app could, with no setup on the server.
+// Only for what a device token already authorizes: requests sent with "Authorization: Bearer", and
+// pairing, whose one-time code is the secret. Cookies are never allowed (no Allow-Credentials), so a
+// page elsewhere can't use a panel session, and without a token it can't read anything.
+func clientCORS(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if origin == "" || !strings.HasPrefix(r.URL.Path, "/api/") || !s.Cfg.AllowsClient(origin) {
+		if origin == "" || !strings.HasPrefix(r.URL.Path, "/api/") {
 			h.ServeHTTP(w, r)
 			return
 		}
-		hd := w.Header()
-		hd.Set("Access-Control-Allow-Origin", origin)
-		hd.Add("Vary", "Origin")
+		pairing := r.URL.Path == "/api/auth/pair"
 		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+			asks := strings.ToLower(r.Header.Get("Access-Control-Request-Headers"))
+			if !pairing && !strings.Contains(asks, "authorization") {
+				h.ServeHTTP(w, r)
+				return
+			}
+			hd := w.Header()
+			hd.Set("Access-Control-Allow-Origin", origin)
+			hd.Add("Vary", "Origin")
 			hd.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE")
 			hd.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept")
 			hd.Set("Access-Control-Max-Age", "600")
 			w.WriteHeader(http.StatusNoContent)
 			return
+		}
+		if pairing || strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Add("Vary", "Origin")
 		}
 		h.ServeHTTP(w, r)
 	})

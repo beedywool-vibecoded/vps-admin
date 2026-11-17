@@ -176,7 +176,7 @@ Repo **privé** : ajoute `--token <jeton>`, un jeton GitHub *fine-grained* en le
 
 **Panel privé.** Si Tailscale tourne, l'installeur propose de servir le panel **uniquement sur le tailnet** (`--tailscale`, ou `--public` pour ne pas être questionné) : `tailscale serve` le publie sur `https://machine.tailnet.ts.net` avec un certificat du tailnet (active « HTTPS » dans la console Tailscale), et le domaine public ne reçoit plus que les webhooks GitHub. Pour WireGuard ou une IP de bureau : `--allow 10.8.0.0/24,…`, le reste reçoit un 403 (webhooks et renouvellement des certificats restent ouverts). Autres options : `--proxy caddy|nginx|none`, `--email`, `--no-tls`.
 
-**Client PWA.** Pour gérer le serveur depuis le client multi-serveurs, autorise son adresse : `--client https://vps-admin.example.com` (relancer l'installeur suffit sur un serveur déjà en place ; `--client none` le retire). L'agent accepte alors les requêtes de cette origine avec un jeton d'appareil, jamais avec le cookie du panel (`client_origins` dans `/etc/vps-admin/config.json`).
+**Client PWA.** Rien à configurer : comme l'ancienne app Android, le [client multi-serveurs](https://github.com/beedywool-vibecoded/vps-admin-client) s'appaire avec le code de `sudo vps-admin pair`, où qu'il soit hébergé. L'agent accepte ses requêtes d'une autre origine seulement avec un jeton d'appareil (et pour l'appairage), jamais avec le cookie du panel.
 
 **Launcher.** Pour afficher le panel dans le [Launcher](https://github.com/beedywool-vibecoded/launcher) et suivre son thème : `--launcher https://launcher.example.com` (`--launcher none` le retire, ou `launcher_origin` dans la config, ou la variable `LAUNCHER_ORIGIN`). Sans lui, le panel refuse toujours d'être affiché dans un cadre. La session du panel étant en `SameSite=Strict`, le Launcher doit être sur le même site (par exemple `launcher.example.com` et `admin.example.com`).
 
@@ -195,7 +195,7 @@ Ouvre ensuite le domaine, tape le code, crée ta passkey. Pour le client PWA ou 
 **Accès**
 - **Code d'appairage** généré par root : à usage unique, 10 minutes, seul le dernier compte, essais limités.
 - **Web** : passkey obligatoire, cookie `__Host-` `SameSite=Strict`, en-tête anti-CSRF.
-- **Client PWA** : jeton par appareil, gardé sur le téléphone derrière le verrouillage de l'app, révocable ; seules les origines de `client_origins` peuvent appeler l'API, sans cookie.
+- **Client PWA** : jeton par appareil, gardé sur le téléphone derrière le verrouillage de l'app, révocable ; les autres origines ne peuvent appeler l'API qu'avec un jeton d'appareil, jamais avec le cookie du panel.
 - **Journal d'audit** de chaque connexion et de chaque action, avec l'appareil et l'IP.
 
 </td>
