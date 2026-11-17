@@ -178,6 +178,8 @@ Repo **privé** : ajoute `--token <jeton>`, un jeton GitHub *fine-grained* en le
 
 **Client PWA.** Pour gérer le serveur depuis le client multi-serveurs, autorise son adresse : `--client https://vps-admin.example.com` (relancer l'installeur suffit sur un serveur déjà en place ; `--client none` le retire). L'agent accepte alors les requêtes de cette origine avec un jeton d'appareil, jamais avec le cookie du panel (`client_origins` dans `/etc/vps-admin/config.json`).
 
+**Launcher.** Pour afficher le panel dans le [Launcher](https://github.com/beedywool-vibecoded/launcher) et suivre son thème : `--launcher https://launcher.example.com` (`--launcher none` le retire, ou `launcher_origin` dans la config, ou la variable `LAUNCHER_ORIGIN`). Sans lui, le panel refuse toujours d'être affiché dans un cadre. La session du panel étant en `SameSite=Strict`, le Launcher doit être sur le même site (par exemple `launcher.example.com` et `admin.example.com`).
+
 Ouvre ensuite le domaine, tape le code, crée ta passkey. Pour le client PWA ou un autre navigateur : `sudo vps-admin pair`. Relancer l'installeur répare ou met à jour sans toucher aux données.
 
 <br>

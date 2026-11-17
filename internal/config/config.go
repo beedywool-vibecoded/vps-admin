@@ -35,6 +35,10 @@ type Config struct {
 	// ClientOrigins are the web clients allowed to call the API from another origin with a
 	// device token (CORS, never cookies): the phone client, e.g. https://vps-admin.example.com.
 	ClientOrigins []string `json:"client_origins,omitempty"`
+	// LauncherOrigin is the Launcher (beedywool-vibecoded/launcher) allowed to show the panel in
+	// a frame and to share its theme with it, e.g. https://launcher.example.com. Empty: none.
+	// The LAUNCHER_ORIGIN environment variable overrides it.
+	LauncherOrigin string `json:"launcher_origin,omitempty"`
 
 	prefixes []netip.Prefix
 }
@@ -98,6 +102,17 @@ func (c *Config) validate() error {
 			return fmt.Errorf("client_origins: %q must be an https origin, like https://vps-admin.example.com", o)
 		}
 		c.ClientOrigins[i] = u.Scheme + "://" + u.Host
+	}
+	if env := os.Getenv("LAUNCHER_ORIGIN"); env != "" {
+		c.LauncherOrigin = env
+	}
+	if c.LauncherOrigin != "" {
+		u, err := url.Parse(c.LauncherOrigin)
+		local := u != nil && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1")
+		if err != nil || u.Host == "" || (u.Scheme != "https" && !(u.Scheme == "http" && local)) || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
+			return fmt.Errorf("launcher_origin: %q must be an https origin, like https://launcher.example.com", c.LauncherOrigin)
+		}
+		c.LauncherOrigin = u.Scheme + "://" + u.Host
 	}
 	if !filepath.IsAbs(c.DataDir) {
 		return fmt.Errorf("data_dir must be absolute, got %q", c.DataDir)

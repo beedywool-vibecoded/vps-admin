@@ -40,11 +40,32 @@ func TestClientIP(t *testing.T) {
 // Connecting GitHub posts a form to github.com; a stricter form-action breaks it
 // (Firefox reports NS_ERROR 0x805a0061).
 func TestCSPAllowsGitHubForm(t *testing.T) {
-	h := securityHeaders(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	h := securityHeaders("", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
 	if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "form-action 'self' https://github.com") {
 		t.Fatalf("CSP blocks the GitHub App form: %s", csp)
+	}
+}
+
+// Only the configured Launcher may frame the panel, and passkeys work in its frame.
+func TestLauncherMayFrame(t *testing.T) {
+	noop := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	rec := httptest.NewRecorder()
+	securityHeaders("", noop).ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if rec.Header().Get("X-Frame-Options") != "DENY" || !strings.Contains(rec.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") {
+		t.Fatalf("framing allowed without a launcher: %v", rec.Header())
+	}
+	rec = httptest.NewRecorder()
+	securityHeaders("https://launcher.example.com", noop).ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if rec.Header().Get("X-Frame-Options") != "" {
+		t.Fatal("X-Frame-Options would block the launcher")
+	}
+	if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'self' https://launcher.example.com;") {
+		t.Fatalf("launcher not in frame-ancestors: %s", csp)
+	}
+	if pp := rec.Header().Get("Permissions-Policy"); !strings.Contains(pp, `publickey-credentials-get=(self "https://launcher.example.com")`) {
+		t.Fatalf("passkeys blocked in the frame: %s", pp)
 	}
 }
 

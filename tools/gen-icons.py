@@ -6,8 +6,7 @@ symbols/web/<symbol>/materialsymbolsrounded/<symbol>_24px.svg (weight 400, grade
 optical size 24) from https://github.com/google/material-design-icons. Most glyphs are
 drawn on the 960 x 960 grid; a few are still published on the legacy 24 x 24 grid, which
 is why the paths are split in two blocks. Both are inlined in web/src/components/Icon.vue
-so no icon font has to be downloaded. Run it after adding an icon, then
-tools/gen-app-icons.py to copy them into the app.
+so no icon font has to be downloaded. Run it after adding an icon.
 """
 import re
 import urllib.request
@@ -85,30 +84,41 @@ SYMBOLS = {
     "stop": "stop",
 }
 
+# The filled variant (FILL 1) of these: the current section in the navigation and chosen
+# states (docs: icons are outlined, filled when current).
+FILLED = ["overview", "containers", "services", "globe", "security", "apps", "assistant",
+          "terminal", "updates", "cloud", "settings"]
+
 URL = (
     "https://raw.githubusercontent.com/google/material-design-icons/master"
-    "/symbols/web/{0}/materialsymbolsrounded/{0}_24px.svg"
+    "/symbols/web/{0}/materialsymbolsrounded/{0}{1}_24px.svg"
 )
 GRID_960, GRID_24 = "0 -960 960 960", "0 0 24 24"
 
 root = Path(__file__).resolve().parent.parent
 icon_vue = root / "web/src/components/Icon.vue"
 
-paths, small = {}, {}
-for name, symbol in SYMBOLS.items():
+def fetch(name, symbol, suffix=""):
+    """(grid, path) of one official symbol."""
     try:
-        with urllib.request.urlopen(URL.format(symbol), timeout=30) as res:
+        with urllib.request.urlopen(URL.format(symbol, suffix), timeout=30) as res:
             svg = res.read().decode()
     except Exception as e:  # noqa: BLE001 - report which symbol failed
-        raise SystemExit(f"{symbol} ({name}): {e}")
+        raise SystemExit(f"{symbol}{suffix} ({name}): {e}")
     # The legacy 24 px files carry no viewBox at all.
     view_box = re.search(r'viewBox="([^"]+)"', svg)
     grid = view_box.group(1).strip() if view_box else GRID_24
     if grid not in (GRID_960, GRID_24):
         raise SystemExit(f"{symbol}: unexpected viewBox {grid}")
-    (paths if grid == GRID_960 else small)[name] = re.search(
-        r'<path[^>]*\sd="([^"]+)"', svg
-    ).group(1)
+    return grid, re.search(r'<path[^>]*\sd="([^"]+)"', svg).group(1)
+
+
+paths, small, filled = {}, {}, {}
+for name, symbol in SYMBOLS.items():
+    grid, d = fetch(name, symbol)
+    (paths if grid == GRID_960 else small)[name] = d
+for name in FILLED:
+    filled[name] = fetch(name, SYMBOLS[name], "_fill1")
 
 
 def block(const, icons, comment=None):
@@ -129,5 +139,13 @@ if "const SMALL = {" in src:
     src = re.sub(r"const SMALL = \{.*?\n\} as const", lambda _: small_block, src, flags=re.S)
 else:
     src = src.replace("// Brand marks", small_block + "\n// Brand marks", 1)
+lines = ["const FILLED: Partial<Record<string, { vb: string; d: string }>> = {"]
+lines += [f"  '{n}': {{ vb: '{g}', d: '{d}' }}, // {SYMBOLS[n]}" for n, (g, d) in filled.items()]
+lines.append("}")
+filled_block = "\n".join(lines)
+if "const FILLED" in src:
+    src = re.sub(r"const FILLED: .*?\n\}\n", lambda _: filled_block + "\n", src, flags=re.S)
+else:
+    src = src.replace("// Brand marks", filled_block + "\n// Brand marks", 1)
 icon_vue.write_text(src)
 print(f"{len(paths)} icons on the 960 grid, {len(small)} on the legacy 24 grid")

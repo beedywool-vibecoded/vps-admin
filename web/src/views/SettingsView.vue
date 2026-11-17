@@ -10,7 +10,7 @@ import { api, type AlertSettings, type AuditEntry, type Device, type ServerSetup
 import ShapeLoader from '@/components/ShapeLoader.vue'
 import StatusDot from '@/components/StatusDot.vue'
 import { passkeysSupported, registerPasskey } from '@/lib/passkey'
-import { SEEDS, mode, seed, type ThemeMode } from '@/lib/theme'
+import { SEEDS, external, mode, seed, type ThemeMode } from '@/lib/theme'
 import { ago, dateTime } from '@/lib/format'
 import { confirm, toast, toastError } from '@/lib/ui'
 import { resetAuthCheck } from '@/router'
@@ -327,12 +327,13 @@ onMounted(async () => {
 
     <section class="card">
       <div class="card-head"><h2>Appearance</h2></div>
+      <p v-if="external" class="ext-note small" role="status">Controlled by an external source: the Launcher's theme. To use these settings here, turn off “Share my theme with apps” in the Launcher's settings.</p>
       <div class="setting">
         <div class="grow">
           <div>Theme</div>
           <div class="muted small">Saved in this browser</div>
         </div>
-        <div class="seg" role="radiogroup" aria-label="Theme">
+        <div :inert="Boolean(external)" :class="{ 'ext-off': external }" class="seg" role="radiogroup" aria-label="Theme">
           <button
             v-for="m in MODES"
             :key="m.id"
@@ -352,7 +353,7 @@ onMounted(async () => {
           <div>Seed color</div>
           <div class="muted small">The whole palette is generated from it, like Material You on Android</div>
         </div>
-        <div class="seeds" role="radiogroup" aria-label="Seed color">
+        <div :inert="Boolean(external)" :class="{ 'ext-off': external }" class="seeds" role="radiogroup" aria-label="Seed color">
           <button
             v-for="s in SEEDS"
             :key="s.hex"
@@ -511,7 +512,7 @@ onMounted(async () => {
               <div v-for="t in proxyTools" :key="t.name" class="tool" :class="{ off: !t.tool.installed }">
                 <StatusDot :tone="!t.tool.installed ? 'idle' : t.tool.running ? 'ok' : 'warn'" :label="t.tool.installed ? (t.tool.running ? 'running' : 'stopped') : 'not installed'" />
                 <span class="tool-name">{{ t.name }}</span>
-                <span class="tool-value muted small" :title="toolValue(t.tool)">{{ toolValue(t.tool) }}</span>
+                <span v-tip="toolValue(t.tool)" class="tool-value muted small">{{ toolValue(t.tool) }}</span>
               </div>
               <div v-if="setup.environment.traefik" class="tool">
                 <StatusDot tone="ok" label="running" />
@@ -531,7 +532,7 @@ onMounted(async () => {
               <div v-for="n in networks" :key="n.name" class="tool" :class="{ off: n.tone === 'idle' }">
                 <StatusDot :tone="n.tone" :label="n.detail" />
                 <span class="tool-name">{{ n.name }}</span>
-                <span class="tool-value muted small" :title="n.detail">{{ n.detail }}</span>
+                <span v-tip="n.detail" class="tool-value muted small">{{ n.detail }}</span>
               </div>
             </div>
           </article>
@@ -882,6 +883,16 @@ onMounted(async () => {
 .seg button.on {
   background: var(--secc);
   color: var(--on-secc);
+}
+.ext-off {
+  opacity: 0.38;
+}
+.ext-note {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--tc);
+  color: var(--on-tc);
 }
 .seeds {
   display: flex;

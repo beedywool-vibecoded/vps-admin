@@ -24,6 +24,9 @@
 #   --client ORIGIN   web client allowed to call the API with a device token (the phone
 #                     client, beedywool-vibecoded/vps-admin-client), e.g.
 #                     https://vps-admin.example.com; "none" removes it
+#   --launcher ORIGIN the Launcher (beedywool-vibecoded/launcher) allowed to show the panel
+#                     in a frame and share its theme, e.g. https://launcher.example.com;
+#                     "none" removes it
 #
 # Running it again repairs or upgrades an existing install and keeps its data.
 set -euo pipefail
@@ -42,6 +45,7 @@ TAILSCALE=ask
 ALLOW=""
 TS_NAME=""
 CLIENT=""
+LAUNCHER=""
 TS_PORT=443
 TOKEN="${VPS_ADMIN_GITHUB_TOKEN:-}"
 
@@ -70,7 +74,8 @@ while [ $# -gt 0 ]; do
 		--allow) ALLOW="${2:-}"; shift 2 ;;
 		--token) TOKEN="${2:-}"; shift 2 ;;
 		--client) CLIENT="${2:-}"; shift 2 ;;
-		-h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+		--launcher) LAUNCHER="${2:-}"; shift 2 ;;
+		-h|--help) sed -n '2,33p' "$0"; exit 0 ;;
 		*) die "unknown option $1" ;;
 	esac
 done
@@ -83,6 +88,9 @@ if [ -n "$ALLOW" ] && ! [[ "$ALLOW" =~ ^[0-9a-fA-F:./,]+$ ]]; then
 fi
 if [ -n "$CLIENT" ] && [ "$CLIENT" != none ] && ! [[ "$CLIENT" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?/?$ ]]; then
 	die "--client takes an https origin, like https://vps-admin.example.com"
+fi
+if [ -n "$LAUNCHER" ] && [ "$LAUNCHER" != none ] && ! [[ "$LAUNCHER" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?/?$ ]]; then
+	die "--launcher takes an https origin, like https://launcher.example.com"
 fi
 if [ -n "$DOMAIN" ] && ! [[ "$DOMAIN" =~ ^[A-Za-z0-9.-]+$ ]]; then
 	die "--domain takes a hostname, like admin.example.com"
@@ -240,6 +248,13 @@ if [ -n "$CLIENT" ]; then
 	sed -i '/"client_origins"/d' /etc/vps-admin/config.json
 	if [ "$CLIENT" != none ]; then
 		sed -i "s#\"public_url\": *\"[^\"]*\",#&\n  \"client_origins\": [\"${CLIENT%/}\"],#" /etc/vps-admin/config.json
+	fi
+fi
+# The Launcher, the same way.
+if [ -n "$LAUNCHER" ]; then
+	sed -i '/"launcher_origin"/d' /etc/vps-admin/config.json
+	if [ "$LAUNCHER" != none ]; then
+		sed -i "s#\"public_url\": *\"[^\"]*\",#&\n  \"launcher_origin\": \"${LAUNCHER%/}\",#" /etc/vps-admin/config.json
 	fi
 fi
 chown root:vps-admin /etc/vps-admin/config.json

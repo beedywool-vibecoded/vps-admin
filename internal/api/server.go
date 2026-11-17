@@ -169,7 +169,7 @@ func (s *Server) Handler() http.Handler {
 		writeError(w, http.StatusNotFound, "not_found")
 	})
 	mux.Handle("/", web.Handler())
-	return s.clientCORS(securityHeaders(mux))
+	return s.clientCORS(securityHeaders(s.Cfg.LauncherOrigin, mux))
 }
 
 // clientCORS lets the web clients of client_origins (the phone client) call the API from their
@@ -196,15 +196,25 @@ func (s *Server) clientCORS(h http.Handler) http.Handler {
 	})
 }
 
-func securityHeaders(h http.Handler) http.Handler {
+// securityHeaders forbids framing, except by the Launcher when one is configured: it may show the
+// panel in a frame, and passkeys keep working there (publickey-credentials-*).
+func securityHeaders(launcher string, h http.Handler) http.Handler {
+	ancestors, selfAnd := "'none'", "(self)"
+	if launcher != "" {
+		ancestors, selfAnd = "'self' "+launcher, `(self "`+launcher+`")`
+	}
+	csp := "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-ancestors " + ancestors + "; base-uri 'none'; form-action 'self' https://github.com"
+	perms := "camera=(), microphone=(), geolocation=(), publickey-credentials-get=" + selfAnd + ", publickey-credentials-create=" + selfAnd
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hd := w.Header()
 		hd.Set("X-Content-Type-Options", "nosniff")
 		hd.Set("Referrer-Policy", "no-referrer")
-		hd.Set("X-Frame-Options", "DENY")
+		if launcher == "" {
+			hd.Set("X-Frame-Options", "DENY")
+		}
 		// form-action allows github.com: connecting GitHub posts the App manifest there.
-		hd.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self' https://github.com")
-		hd.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		hd.Set("Content-Security-Policy", csp)
+		hd.Set("Permissions-Policy", perms)
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			hd.Set("Cache-Control", "no-store")
 		}

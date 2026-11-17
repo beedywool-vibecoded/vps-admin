@@ -68,22 +68,30 @@ const ROLES: Record<string, (typeof C)[keyof typeof C]> = {
   '--outline-v': C.outlineVariant,
 }
 
+// Theme shared by the Launcher (beedywool-vibecoded/launcher): inside its frame the panel follows
+// the launcher's seed and mode, live, and its own settings are kept but not used (Settings shows
+// "Controlled by an external source"). Opened directly, nothing changes.
+export const external = ref<{ seed: string; mode: ThemeMode } | null>(null)
+const activeSeed = () => external.value?.seed ?? seed.value
+const activeMode = () => external.value?.mode ?? mode.value
+
 const media = typeof window !== 'undefined' ? window.matchMedia('(prefers-color-scheme: dark)') : null
 
 export function isDark(): boolean {
-  return mode.value === 'dark' || (mode.value === 'system' && (media?.matches ?? true))
+  const m = activeMode()
+  return m === 'dark' || (m === 'system' && (media?.matches ?? true))
 }
 
 export function applyTheme() {
   const dark = isDark()
-  const scheme = new SchemeTonalSpot(Hct.fromInt(argbFromHex(seed.value)), dark, 0)
+  const scheme = new SchemeTonalSpot(Hct.fromInt(argbFromHex(activeSeed())), dark, 0)
   const root = document.documentElement
   root.dataset.theme = dark ? 'dark' : 'light'
   for (const [name, role] of Object.entries(ROLES)) {
     root.style.setProperty(name, hexFromArgb((role as { getArgb(s: unknown): number }).getArgb(scheme)))
   }
   // Commands use a dark surface in light mode too.
-  const night = dark ? scheme : new SchemeTonalSpot(Hct.fromInt(argbFromHex(seed.value)), true, 0)
+  const night = dark ? scheme : new SchemeTonalSpot(Hct.fromInt(argbFromHex(activeSeed())), true, 0)
   const tone = (role: unknown) => hexFromArgb((role as { getArgb(s: unknown): number }).getArgb(night))
   root.style.setProperty('--code-bg', tone(C.surfaceContainerLowest))
   root.style.setProperty('--code-fg', tone(C.onSurface))
@@ -93,10 +101,27 @@ export function applyTheme() {
 
 export function initTheme() {
   applyTheme()
-  media?.addEventListener('change', () => mode.value === 'system' && applyTheme())
+  media?.addEventListener('change', () => activeMode() === 'system' && applyTheme())
+  initThemeBridge()
+  watch(external, applyTheme)
   watch([seed, mode], () => {
     save('vpsadmin.seed', seed.value)
     save('vpsadmin.mode', mode.value)
     applyTheme()
   })
+}
+
+// Only the page framing this app can send it a theme, and only the launcher may frame it
+// (frame-ancestors: launcher_origin in the config). Anything malformed is ignored.
+function initThemeBridge() {
+  if (typeof window === 'undefined' || window.parent === window) return
+  window.addEventListener('message', (e) => {
+    if (e.source !== window.parent) return
+    const d = e.data as { type?: unknown; v?: unknown; shared?: unknown; seed?: unknown; mode?: unknown } | null
+    if (!d || d.type !== 'launcher:theme' || d.v !== 1) return
+    if (d.shared === true && typeof d.seed === 'string' && /^#[0-9a-f]{6}$/i.test(d.seed) && (d.mode === 'system' || d.mode === 'light' || d.mode === 'dark'))
+      external.value = { seed: d.seed, mode: d.mode }
+    else if (d.shared === false) external.value = null
+  })
+  window.parent.postMessage({ type: 'launcher:hello', v: 1 }, '*')
 }
