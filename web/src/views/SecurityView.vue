@@ -15,14 +15,14 @@ const GROUPS = [
   { id: 'network', title: 'Network', shape: 'clover' as const, tint: 'var(--secc)' },
   { id: 'updates', title: 'Updates', shape: 'sunny' as const, tint: 'var(--tc)' },
 ]
-const byGroup = (g: string): Check[] => report.value?.checks.filter((c) => c.group === g) ?? []
+const byGroup = (g: string): Check[] => (report.value?.checks ?? []).filter((c) => c.group === g) ?? []
 const counts = computed(() => {
   const c = { ok: 0, warn: 0, fail: 0, unknown: 0 }
   for (const x of report.value?.checks ?? []) c[x.status]++
   return c
 })
-const publicPorts = computed(() => report.value?.ports.filter((p) => p.public) ?? [])
-const localPorts = computed(() => report.value?.ports.filter((p) => !p.public) ?? [])
+const publicPorts = computed(() => (report.value?.ports ?? []).filter((p) => p.public) ?? [])
+const localPorts = computed(() => (report.value?.ports ?? []).filter((p) => !p.public) ?? [])
 const LABEL = { ok: 'Good', warn: 'To improve', fail: 'To fix', unknown: 'Unknown' }
 
 async function load(refresh = false) {
