@@ -118,7 +118,7 @@ def banner(theme, shot):
   <text x="62" y="73" font-size="14" font-weight="500" fill="{c['muted']}">pour n'importe quel VPS</text>
   <text x="44" y="166" font-size="72" font-weight="500" letter-spacing="-1.5" fill="{c['text']}">VPS Admin</text>
   <text x="48" y="212" font-size="21" fill="{c['muted']}">Panel, déploiements et assistant pour tes serveurs</text>
-  {chips(c, 48, 250, [('Material You', c['pc'], c['on_pc']), ('Go', c['secc'], c['on_secc']), ('Flutter', c['tc'], c['on_tc'])])}
+  {chips(c, 48, 250, [('Material You', c['pc'], c['on_pc']), ('Go', c['secc'], c['on_secc']), ('PWA', c['tc'], c['on_tc'])])}
 </g>
 </svg>
 """

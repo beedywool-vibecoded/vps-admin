@@ -32,6 +32,9 @@ type Config struct {
 	// ScriptsDir holds the links made by `sudo vps-admin link`; root-owned.
 	ScriptsDir string `json:"scripts_dir"`
 	Update     Update `json:"update"`
+	// ClientOrigins are the web clients allowed to call the API from another origin with a
+	// device token (CORS, never cookies): the phone client, e.g. https://vps-admin.example.com.
+	ClientOrigins []string `json:"client_origins,omitempty"`
 
 	prefixes []netip.Prefix
 }
@@ -88,6 +91,14 @@ func (c *Config) validate() error {
 		}
 		c.WebhookURL = strings.TrimRight(c.WebhookURL, "/")
 	}
+	for i, o := range c.ClientOrigins {
+		u, err := url.Parse(o)
+		local := u != nil && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1")
+		if err != nil || u.Host == "" || (u.Scheme != "https" && !(u.Scheme == "http" && local)) || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
+			return fmt.Errorf("client_origins: %q must be an https origin, like https://vps-admin.example.com", o)
+		}
+		c.ClientOrigins[i] = u.Scheme + "://" + u.Host
+	}
 	if !filepath.IsAbs(c.DataDir) {
 		return fmt.Errorf("data_dir must be absolute, got %q", c.DataDir)
 	}
@@ -106,6 +117,16 @@ func (c *Config) validate() error {
 func (c *Config) RPID() string {
 	u, _ := url.Parse(c.PublicURL)
 	return u.Hostname()
+}
+
+// AllowsClient tells whether origin is one of the web clients allowed to call the API.
+func (c *Config) AllowsClient(origin string) bool {
+	for _, o := range c.ClientOrigins {
+		if o == origin {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Config) Secure() bool { return strings.HasPrefix(c.PublicURL, "https://") }

@@ -38,6 +38,6 @@
   <text x="62" y="73" font-size="14" font-weight="500" fill="#49454F">pour n'importe quel VPS</text>
   <text x="44" y="166" font-size="72" font-weight="500" letter-spacing="-1.5" fill="#1D1B20">VPS Admin</text>
   <text x="48" y="212" font-size="21" fill="#49454F">Panel, déploiements et assistant pour tes serveurs</text>
-  <rect x="48.0" y="250" width="129" height="40" rx="20" fill="#EADDFF"/><text x="113" y="275" font-size="15" font-weight="500" text-anchor="middle" fill="#21005D">Material You</text><rect x="185.2" y="250" width="43" height="40" rx="20" fill="#E8DEF8"/><text x="207" y="275" font-size="15" font-weight="500" text-anchor="middle" fill="#1D192B">Go</text><rect x="236.4" y="250" width="86" height="40" rx="20" fill="#FFD8E4"/><text x="280" y="275" font-size="15" font-weight="500" text-anchor="middle" fill="#31111D">Flutter</text>
+  <rect x="48.0" y="250" width="129" height="40" rx="20" fill="#EADDFF"/><text x="113" y="275" font-size="15" font-weight="500" text-anchor="middle" fill="#21005D">Material You</text><rect x="185.2" y="250" width="43" height="40" rx="20" fill="#E8DEF8"/><text x="207" y="275" font-size="15" font-weight="500" text-anchor="middle" fill="#1D192B">Go</text><rect x="236.4" y="250" width="52" height="40" rx="20" fill="#FFD8E4"/><text x="262" y="275" font-size="15" font-weight="500" text-anchor="middle" fill="#31111D">PWA</text>
 </g>
 </svg>

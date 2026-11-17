@@ -21,6 +21,9 @@
 #                     webhooks and certificate renewals stay reachable.
 #   --token TOKEN     GitHub token for a private repository (read-only Contents access);
 #                     also saved in the config so self-update keeps working
+#   --client ORIGIN   web client allowed to call the API with a device token (the phone
+#                     client, beedywool-vibecoded/vps-admin-client), e.g.
+#                     https://vps-admin.example.com; "none" removes it
 #
 # Running it again repairs or upgrades an existing install and keeps its data.
 set -euo pipefail
@@ -38,6 +41,7 @@ TLS=1
 TAILSCALE=ask
 ALLOW=""
 TS_NAME=""
+CLIENT=""
 TS_PORT=443
 TOKEN="${VPS_ADMIN_GITHUB_TOKEN:-}"
 
@@ -65,7 +69,8 @@ while [ $# -gt 0 ]; do
 		--public) TAILSCALE=no; shift ;;
 		--allow) ALLOW="${2:-}"; shift 2 ;;
 		--token) TOKEN="${2:-}"; shift 2 ;;
-		-h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+		--client) CLIENT="${2:-}"; shift 2 ;;
+		-h|--help) sed -n '2,30p' "$0"; exit 0 ;;
 		*) die "unknown option $1" ;;
 	esac
 done
@@ -75,6 +80,9 @@ command -v systemctl >/dev/null || die "systemd is required"
 case "$PROXY" in auto|caddy|nginx|none) ;; *) die "--proxy takes auto, caddy, nginx or none" ;; esac
 if [ -n "$ALLOW" ] && ! [[ "$ALLOW" =~ ^[0-9a-fA-F:./,]+$ ]]; then
 	die "--allow takes networks like 10.8.0.0/24,192.168.1.0/24"
+fi
+if [ -n "$CLIENT" ] && [ "$CLIENT" != none ] && ! [[ "$CLIENT" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?/?$ ]]; then
+	die "--client takes an https origin, like https://vps-admin.example.com"
 fi
 if [ -n "$DOMAIN" ] && ! [[ "$DOMAIN" =~ ^[A-Za-z0-9.-]+$ ]]; then
 	die "--domain takes a hostname, like admin.example.com"
@@ -226,6 +234,13 @@ fi
 sed -i '/"webhook_url"/d' /etc/vps-admin/config.json
 if [ -n "$WEBHOOK_URL" ]; then
 	sed -i "s#\"public_url\": *\"[^\"]*\",#&\n  \"webhook_url\": \"$WEBHOOK_URL\",#" /etc/vps-admin/config.json
+fi
+# The phone client: only when the option is given, so a rerun without it keeps the setting.
+if [ -n "$CLIENT" ]; then
+	sed -i '/"client_origins"/d' /etc/vps-admin/config.json
+	if [ "$CLIENT" != none ]; then
+		sed -i "s#\"public_url\": *\"[^\"]*\",#&\n  \"client_origins\": [\"${CLIENT%/}\"],#" /etc/vps-admin/config.json
+	fi
 fi
 chown root:vps-admin /etc/vps-admin/config.json
 chmod 640 /etc/vps-admin/config.json

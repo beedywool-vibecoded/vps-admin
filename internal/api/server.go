@@ -98,8 +98,6 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/update/check", full(s.updateCheck))
 	mux.Handle("POST /api/update/apply", full(s.updateApply))
 	mux.Handle("PUT /api/settings/update", full(s.updateSettings))
-	mux.Handle("GET /api/app/latest", full(s.appLatest))
-	mux.Handle("GET /api/app/apk", full(s.appAPK))
 
 	mux.Handle("GET /api/backup", full(s.backupStatus))
 	mux.Handle("PUT /api/backup", full(s.backupUpdate))
@@ -171,7 +169,31 @@ func (s *Server) Handler() http.Handler {
 		writeError(w, http.StatusNotFound, "not_found")
 	})
 	mux.Handle("/", web.Handler())
-	return securityHeaders(mux)
+	return s.clientCORS(securityHeaders(mux))
+}
+
+// clientCORS lets the web clients of client_origins (the phone client) call the API from their
+// own origin. They authenticate with a device token in Authorization, never with the session
+// cookie (no Allow-Credentials), so a page on another origin can't act with the panel's session.
+func (s *Server) clientCORS(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin == "" || !strings.HasPrefix(r.URL.Path, "/api/") || !s.Cfg.AllowsClient(origin) {
+			h.ServeHTTP(w, r)
+			return
+		}
+		hd := w.Header()
+		hd.Set("Access-Control-Allow-Origin", origin)
+		hd.Add("Vary", "Origin")
+		if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
+			hd.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE")
+			hd.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept")
+			hd.Set("Access-Control-Max-Age", "600")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 func securityHeaders(h http.Handler) http.Handler {

@@ -8,17 +8,16 @@
 
 <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-4F378B?style=for-the-badge&logo=go&logoColor=D0BCFF" alt="Go"></a>
 <a href="https://vuejs.org"><img src="https://img.shields.io/badge/Vue_3-4F378B?style=for-the-badge&logo=vuedotjs&logoColor=D0BCFF" alt="Vue 3"></a>
-<a href="https://flutter.dev"><img src="https://img.shields.io/badge/Flutter_3.44-4F378B?style=for-the-badge&logo=flutter&logoColor=D0BCFF" alt="Flutter"></a>
 <a href="https://m3.material.io"><img src="https://img.shields.io/badge/Material_You-4F378B?style=for-the-badge&logo=materialdesign&logoColor=D0BCFF" alt="Material You"></a>
 <a href="https://www.sqlite.org"><img src="https://img.shields.io/badge/SQLite-4F378B?style=for-the-badge&logo=sqlite&logoColor=D0BCFF" alt="SQLite"></a>
 <a href="https://www.docker.com"><img src="https://img.shields.io/badge/Docker-4F378B?style=for-the-badge&logo=docker&logoColor=D0BCFF" alt="Docker"></a>
 <a href="https://caddyserver.com"><img src="https://img.shields.io/badge/Caddy-4F378B?style=for-the-badge&logo=caddy&logoColor=D0BCFF" alt="Caddy"></a>
 
 <img src="https://img.shields.io/badge/Linux-amd64_%2F_arm64-4A4458?style=flat-square&logo=linux&logoColor=white" alt="Linux amd64 / arm64">
-<img src="https://img.shields.io/badge/app-Android-633B48?style=flat-square&logo=android&logoColor=white" alt="Android">
+<img src="https://img.shields.io/badge/client-PWA_multi--serveurs-633B48?style=flat-square&logo=pwa&logoColor=white" alt="Client PWA multi-serveurs">
 <img src="https://img.shields.io/badge/connexion-passkey-4F378B?style=flat-square" alt="Passkey">
 <img src="https://img.shields.io/badge/releases-sign%C3%A9es_ed25519-4A4458?style=flat-square" alt="Releases signées ed25519">
-<img src="https://img.shields.io/badge/tests-23_Go_%2B_4_Flutter-0cce6b?style=flat-square" alt="Tests">
+<img src="https://img.shields.io/badge/tests-34_fichiers_Go-0cce6b?style=flat-square" alt="Tests">
 <img src="https://img.shields.io/badge/binaire-1_fichier_statique-633B48?style=flat-square" alt="Un seul binaire">
 
 <br>
@@ -38,8 +37,8 @@
 <br>
 
 > **VPS Admin** est un panel d'administration à installer sur n'importe quel VPS Linux.
-> Il tient en **un seul binaire Go** qui embarque le panel web Material 3, et une **app Android** en Material You
-> gère plusieurs serveurs. On y suit le serveur en direct, on déploie ses repos GitHub dans Docker en un clic,
+> Il tient en **un seul binaire Go** qui embarque le panel web Material 3, et un **client PWA**
+> ([vps-admin-client](https://github.com/beedywool-vibecoded/vps-admin-client)) gère plusieurs serveurs depuis le téléphone. On y suit le serveur en direct, on déploie ses repos GitHub dans Docker en un clic,
 > et un assistant IA, local ou en ligne, enquête sur les pannes. **Chaque modification attend ton approbation.**
 
 <br>
@@ -135,16 +134,17 @@ fail2ban, mises à jour en attente, LLMNR, ports ouverts et ports Docker qui
 <td valign="top">
 
 ### Plusieurs serveurs
-L'app Android passe d'un serveur à l'autre depuis la barre du haut. Sur le web, chaque
-panel est celui du serveur qui l'héberge, avec sa propre passkey liée à son domaine.
+Le **client PWA** ([vps-admin-client](https://github.com/beedywool-vibecoded/vps-admin-client))
+passe d'un serveur à l'autre depuis la barre du haut, avec un jeton par serveur gardé sur le
+téléphone. Sur le web, chaque panel est celui du serveur qui l'héberge, avec sa propre passkey
+liée à son domaine.
 
 </td>
 <td valign="top">
 
 ### Mises à jour automatiques
-Un tag sur GitHub suffit : les binaires sont **signés en ed25519** et l'APK est compilé.
-Les agents installent la nouvelle version tout seuls, et reviennent à l'ancienne
-si elle ne démarre pas. L'app se met à jour via le serveur.
+Un tag sur GitHub suffit : les binaires sont **signés en ed25519**. Les agents installent
+la nouvelle version tout seuls, et reviennent à l'ancienne si elle ne démarre pas.
 
 </td>
 </tr>
@@ -176,7 +176,9 @@ Repo **privé** : ajoute `--token <jeton>`, un jeton GitHub *fine-grained* en le
 
 **Panel privé.** Si Tailscale tourne, l'installeur propose de servir le panel **uniquement sur le tailnet** (`--tailscale`, ou `--public` pour ne pas être questionné) : `tailscale serve` le publie sur `https://machine.tailnet.ts.net` avec un certificat du tailnet (active « HTTPS » dans la console Tailscale), et le domaine public ne reçoit plus que les webhooks GitHub. Pour WireGuard ou une IP de bureau : `--allow 10.8.0.0/24,…`, le reste reçoit un 403 (webhooks et renouvellement des certificats restent ouverts). Autres options : `--proxy caddy|nginx|none`, `--email`, `--no-tls`.
 
-Ouvre ensuite le domaine, tape le code, crée ta passkey. Pour l'app ou un autre navigateur : `sudo vps-admin pair`. Relancer l'installeur répare ou met à jour sans toucher aux données.
+**Client PWA.** Pour gérer le serveur depuis le client multi-serveurs, autorise son adresse : `--client https://vps-admin.example.com` (relancer l'installeur suffit sur un serveur déjà en place ; `--client none` le retire). L'agent accepte alors les requêtes de cette origine avec un jeton d'appareil, jamais avec le cookie du panel (`client_origins` dans `/etc/vps-admin/config.json`).
+
+Ouvre ensuite le domaine, tape le code, crée ta passkey. Pour le client PWA ou un autre navigateur : `sudo vps-admin pair`. Relancer l'installeur répare ou met à jour sans toucher aux données.
 
 <br>
 
@@ -191,7 +193,7 @@ Ouvre ensuite le domaine, tape le code, crée ta passkey. Pour l'app ou un autre
 **Accès**
 - **Code d'appairage** généré par root : à usage unique, 10 minutes, seul le dernier compte, essais limités.
 - **Web** : passkey obligatoire, cookie `__Host-` `SameSite=Strict`, en-tête anti-CSRF.
-- **App** : jeton par appareil, gardé dans le stockage chiffré d'Android, révocable.
+- **Client PWA** : jeton par appareil, gardé sur le téléphone derrière le verrouillage de l'app, révocable ; seules les origines de `client_origins` peuvent appeler l'API, sans cookie.
 - **Journal d'audit** de chaque connexion et de chaque action, avec l'appareil et l'IP.
 
 </td>
@@ -228,11 +230,10 @@ Ouvre ensuite le domaine, tape le code, crée ta passkey. Pour l'app ou un autre
 <tr><td><code>internal/deploy</code></td><td>Build et lancement des apps, contrôle HTTP, bascule Caddy, retour arrière.</td></tr>
 <tr><td><code>internal/github</code></td><td>GitHub App (manifest), jetons d'installation, webhooks signés.</td></tr>
 <tr><td><code>internal/assistant</code></td><td>Boucle de conversation, adaptateur OpenAI-compatible (Gemini, Ollama), pont MCP pour le CLI Claude Code, outils, politique d'approbation.</td></tr>
-<tr><td><code>internal/alerts</code></td><td>Surveillance des conteneurs et des disques, webhook d'alerte (réglé dans le panel et l'app).</td></tr>
-<tr><td><code>internal/update</code></td><td>Releases signées, installation, distribution de l'APK.</td></tr>
+<tr><td><code>internal/alerts</code></td><td>Surveillance des conteneurs et des disques, webhook d'alerte (réglé dans le panel et le client).</td></tr>
+<tr><td><code>internal/update</code></td><td>Releases signées, installation.</td></tr>
 <tr><td><code>internal/store</code></td><td>SQLite en pur Go (binaire statique), historique append-only.</td></tr>
 <tr><td><code>web/</code></td><td>Panel Vue 3 + Vite, Material 3 Expressive, palette Material You générée depuis une couleur de base.</td></tr>
-<tr><td><code>app/</code></td><td>Flutter 3.44, <code>dynamic_color</code>, plusieurs serveurs, mise à jour intégrée.</td></tr>
 <tr><td><code>deploy/</code></td><td>Installeur, unité systemd, <code>preflight.sh</code> (retour arrière).</td></tr>
 </table>
 
@@ -247,7 +248,6 @@ cd web && npm ci && npm run build && cd ..      # le panel est compilé dans int
 go test ./...
 go run ./cmd/vps-admin serve -config dev.json   # 127.0.0.1:7171 par défaut
 go run ./cmd/vps-admin pair -config dev.json
-cd app && flutter test                          # l'app Android
 ```
 
 <details>
@@ -269,9 +269,9 @@ cd app && flutter test                          # l'app Android
 <br>
 
 Pousser un tag `vX.Y.Z` lance le workflow `release` :
-1. il compile les binaires et l'APK ;
+1. il compile les binaires ;
 2. il signe `SHA256SUMS` avec le secret `RELEASE_SIGNING_KEY` ;
-3. il publie la release : un binaire par architecture, l'APK et son JSON, `install.sh` et
+3. il publie la release : un binaire par architecture, `install.sh` et
    `vps-admin-deploy.tar.gz` (les scripts du service en une seule archive, pour garder la
    liste des fichiers courte).
 

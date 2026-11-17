@@ -589,7 +589,7 @@ onMounted(async () => {
               <span v-if="d.id === current" class="chip">This device</span>
             </div>
             <div class="muted small">
-              {{ d.kind === 'app' ? 'Android app' : `Browser · ${d.passkeys} passkey${d.passkeys === 1 ? '' : 's'}` }} ·
+              {{ d.kind === 'app' ? 'Phone client' : `Browser · ${d.passkeys} passkey${d.passkeys === 1 ? '' : 's'}` }} ·
               added {{ ago(d.createdAt) }} · seen {{ ago(d.lastSeenAt) }}{{ d.lastIp ? ` from ${d.lastIp}` : '' }}
             </div>
           </div>
