@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { api } from './lib/api'
+import { reloadOnStaleChunks } from './lib/staleChunks'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -40,3 +41,5 @@ router.beforeEach(async (to) => {
 export function resetAuthCheck() {
   checked = false
 }
+
+reloadOnStaleChunks(router)
