@@ -15,6 +15,17 @@ import { appearance } from '@/lib/appearance'
   z-index: -1;
   pointer-events: none;
 }
+/* A dark tint over the picture so the cards stand out from it: stronger in light mode, where the
+   cards are light too */
+.server-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.38);
+}
+:global([data-theme='dark']) .server-bg::after {
+  background: rgb(0 0 0 / 0.45);
+}
 .server-bg img {
   width: 100%;
   height: 100%;
