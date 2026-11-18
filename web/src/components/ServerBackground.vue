@@ -21,10 +21,10 @@ import { appearance } from '@/lib/appearance'
   content: '';
   position: absolute;
   inset: 0;
-  background: rgb(0 0 0 / 0.2);
+  background: rgb(0 0 0 / 0.1);
 }
 :global([data-theme='dark']) .server-bg::after {
-  background: rgb(0 0 0 / 0.3);
+  background: rgb(0 0 0 / 0.06);
 }
 .server-bg img {
   width: 100%;
