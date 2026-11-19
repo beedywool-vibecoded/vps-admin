@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import M3Shape from '@/components/M3Shape.vue'
-import M3Switch from '@/components/M3Switch.vue'
+import SwitchRow from '@/components/SwitchRow.vue'
 import Icon from '@/components/Icon.vue'
 import RebootDialog from '@/components/RebootDialog.vue'
 import { api, type Check, type UpdateStatus } from '@/lib/api'
@@ -186,19 +186,9 @@ onMounted(async () => {
           </button>
         </form>
       </div>
-      <div class="setting">
-        <div class="grow">
-          <div>Install updates automatically</div>
-          <div class="muted small">Checks the update source every 6 hours. Only builds signed with the project key are installed.</div>
-        </div>
-        <M3Switch v-model="auto" label="Install updates automatically" :disabled="!st" />
-      </div>
-      <div class="setting">
-        <div class="grow">
-          <div>Follow pre-releases</div>
-          <div class="muted small">Get release candidates before they are marked stable.</div>
-        </div>
-        <M3Switch v-model="pre" label="Follow pre-releases" :disabled="!st" />
+      <div class="linked">
+        <SwitchRow v-model="auto" label="Install updates automatically" hint="Checks the update source every 6 hours. Only builds signed with the project key are installed." :disabled="!st" />
+        <SwitchRow v-model="pre" label="Follow pre-releases" hint="Get release candidates before they are marked stable." :disabled="!st" />
       </div>
     </section>
 
