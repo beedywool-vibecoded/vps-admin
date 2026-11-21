@@ -1,45 +1,50 @@
-import { createRouter, createWebHistory } from 'vue-router'
-import { api } from './lib/api'
-import { reloadOnStaleChunks } from './lib/staleChunks'
+import { createRouter, createWebHistory } from 'vue-router';
+import { api } from './lib/api';
+import { reloadOnStaleChunks } from './lib/staleChunks';
 
 export const router = createRouter({
-  history: createWebHistory(),
-  routes: [
-    { path: '/login', name: 'login', component: () => import('./views/LoginView.vue'), meta: { public: true } },
-    { path: '/', name: 'overview', component: () => import('./views/OverviewView.vue') },
-    { path: '/apps', name: 'apps', component: () => import('./views/AppsView.vue') },
-    { path: '/apps/new', name: 'app-new', component: () => import('./views/NewAppView.vue') },
-    { path: '/apps/:id', name: 'app', component: () => import('./views/AppDetailView.vue'), props: true },
-    { path: '/assistant/:id?', name: 'assistant', component: () => import('./views/AssistantView.vue'), props: true },
-    { path: '/scripts', name: 'scripts', component: () => import('./views/ScriptsView.vue') },
-    { path: '/services', name: 'services', component: () => import('./views/ServicesView.vue') },
-    { path: '/proxy', name: 'proxy', component: () => import('./views/ProxyView.vue') },
-    { path: '/containers', name: 'containers', component: () => import('./views/ContainersView.vue') },
-    { path: '/security', name: 'security', component: () => import('./views/SecurityView.vue') },
-    { path: '/updates', name: 'updates', component: () => import('./views/UpdatesView.vue') },
-    { path: '/backups', name: 'backups', component: () => import('./views/BackupsView.vue') },
-    { path: '/settings', name: 'settings', component: () => import('./views/SettingsView.vue') },
-    { path: '/:pathMatch(.*)*', redirect: '/' },
-  ],
-  scrollBehavior: () => ({ top: 0 }),
-})
+    history: createWebHistory(),
+    routes: [
+        { path: '/login', name: 'login', component: () => import('./views/LoginView.vue'), meta: { public: true } },
+        { path: '/', name: 'overview', component: () => import('./views/OverviewView.vue') },
+        { path: '/apps', name: 'apps', component: () => import('./views/AppsView.vue') },
+        { path: '/apps/new', name: 'app-new', component: () => import('./views/NewAppView.vue') },
+        { path: '/apps/:id', name: 'app', component: () => import('./views/AppDetailView.vue'), props: true },
+        {
+            path: '/assistant/:id?',
+            name: 'assistant',
+            component: () => import('./views/AssistantView.vue'),
+            props: true,
+        },
+        { path: '/scripts', name: 'scripts', component: () => import('./views/ScriptsView.vue') },
+        { path: '/services', name: 'services', component: () => import('./views/ServicesView.vue') },
+        { path: '/proxy', name: 'proxy', component: () => import('./views/ProxyView.vue') },
+        { path: '/containers', name: 'containers', component: () => import('./views/ContainersView.vue') },
+        { path: '/security', name: 'security', component: () => import('./views/SecurityView.vue') },
+        { path: '/updates', name: 'updates', component: () => import('./views/UpdatesView.vue') },
+        { path: '/backups', name: 'backups', component: () => import('./views/BackupsView.vue') },
+        { path: '/settings', name: 'settings', component: () => import('./views/SettingsView.vue') },
+        { path: '/:pathMatch(.*)*', redirect: '/' },
+    ],
+    scrollBehavior: () => ({ top: 0 }),
+});
 
 // One auth check per load; API calls that later return 401 send the user back here too.
-let checked = false
+let checked = false;
 router.beforeEach(async (to) => {
-  if (to.meta.public || checked) return true
-  try {
-    const st = await api.authState()
-    if (st.scope !== 'full') return { name: 'login', query: to.fullPath !== '/' ? { next: to.fullPath } : {} }
-    checked = true
-    return true
-  } catch {
-    return { name: 'login' }
-  }
-})
+    if (to.meta.public || checked) return true;
+    try {
+        const st = await api.authState();
+        if (st.scope !== 'full') return { name: 'login', query: to.fullPath !== '/' ? { next: to.fullPath } : {} };
+        checked = true;
+        return true;
+    } catch {
+        return { name: 'login' };
+    }
+});
 
 export function resetAuthCheck() {
-  checked = false
+    checked = false;
 }
 
-reloadOnStaleChunks(router)
+reloadOnStaleChunks(router);

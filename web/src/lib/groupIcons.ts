@@ -1,17 +1,58 @@
 // Icons for container groups, shared with everyone via the server appearance.
-import type { IconName } from '@/components/Icon.vue'
-import { appearance, type Appearance } from './appearance'
-import { request } from './api'
+import type { IconName } from '@/components/Icon.vue';
+import { appearance, type Appearance } from './appearance';
+import { request } from './api';
 
-export const GROUP_ICONS: IconName[] = ['database', 'game', 'music', 'film', 'chat', 'cloud', 'mail', 'cart', 'code', 'robot', 'chart', 'camera', 'book', 'home', 'bolt', 'heart', 'star', 'leaf', 'paw', 'coffee', 'image', 'video', 'bell', 'cpu', 'wrench', 'users', 'calendar', 'map', 'server', 'shop', 'globe', 'folder', 'terminal', 'lock', 'key', 'phone', 'apps', 'containers', 'security', 'github']
+export const GROUP_ICONS: IconName[] = [
+    'database',
+    'game',
+    'music',
+    'film',
+    'chat',
+    'cloud',
+    'mail',
+    'cart',
+    'code',
+    'robot',
+    'chart',
+    'camera',
+    'book',
+    'home',
+    'bolt',
+    'heart',
+    'star',
+    'leaf',
+    'paw',
+    'coffee',
+    'image',
+    'video',
+    'bell',
+    'cpu',
+    'wrench',
+    'users',
+    'calendar',
+    'map',
+    'server',
+    'shop',
+    'globe',
+    'folder',
+    'terminal',
+    'lock',
+    'key',
+    'phone',
+    'apps',
+    'containers',
+    'security',
+    'github',
+];
 
 export async function setGroupIcon(project: string, icon: string) {
-  Object.assign(appearance, await request<Appearance>('PUT', '/api/appearance/icons', { project, icon }))
+    Object.assign(appearance, await request<Appearance>('PUT', '/api/appearance/icons', { project, icon }));
 }
 
 export async function setGroupTitle(project: string, title: string) {
-  Object.assign(appearance, await request<Appearance>('PUT', '/api/appearance/titles', { project, title }))
+    Object.assign(appearance, await request<Appearance>('PUT', '/api/appearance/titles', { project, title }));
 }
 
 /** The name shown for a compose project: its title if one was given. */
-export const groupTitle = (project: string) => appearance.groupTitles?.[project] || project
+export const groupTitle = (project: string) => appearance.groupTitles?.[project] || project;

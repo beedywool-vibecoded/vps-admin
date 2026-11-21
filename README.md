@@ -92,6 +92,7 @@
 <td width="33%" valign="top">
 
 ### Le serveur en direct
+
 CPU, mémoire, disques, réseau et charge toutes les 5 secondes, historique sur **1 h et 24 h**.
 Services systemd et conteneurs Docker groupés par projet compose : démarrer, arrêter,
 redémarrer, **logs en direct**. Arrêter SSH ou le panel lui-même est refusé.
@@ -100,6 +101,7 @@ redémarrer, **logs en direct**. Arrêter SSH ou le panel lui-même est refusé.
 <td width="33%" valign="top">
 
 ### Déploiements GitHub
+
 Une **GitHub App** se crée en un clic, en lecture seule sur les repos choisis. Dockerfile,
 Compose, Node ou site statique : le type est **détecté tout seul**, commandes d'install,
 de build et de démarrage personnalisables. Chaque push redéploie **sans coupure**, avec un
@@ -113,6 +115,7 @@ et ses scripts s'affichent à côté de ses conteneurs.
 <td width="33%" valign="top">
 
 ### Assistant IA
+
 Trois fournisseurs au choix, réglables dans le panel : **Ollama** en local (gratuit, rien
 ne sort du serveur), **Gemini** avec la clé gratuite d'AI Studio, ou **Claude Code** avec
 ton abonnement Pro/Max (le CLI installé sur le serveur, ses outils natifs coupés ; aucune
@@ -126,6 +129,7 @@ certaines actions sont bloquées quoi qu'il arrive.
 <td valign="top">
 
 ### Audit de sécurité
+
 Port SSH, mots de passe, root, pare-feu, **ufw et nftables qui se superposent**,
 fail2ban, mises à jour en attente, LLMNR, ports ouverts et ports Docker qui
 **contournent ufw**. Chaque point vient avec sa correction.
@@ -134,6 +138,7 @@ fail2ban, mises à jour en attente, LLMNR, ports ouverts et ports Docker qui
 <td valign="top">
 
 ### Plusieurs serveurs
+
 Le **client PWA** ([vps-admin-client](https://github.com/beedywool-vibecoded/vps-admin-client))
 passe d'un serveur à l'autre depuis la barre du haut, avec un jeton par serveur gardé sur le
 téléphone. Sur le web, chaque panel est celui du serveur qui l'héberge, avec sa propre passkey
@@ -143,6 +148,7 @@ liée à son domaine.
 <td valign="top">
 
 ### Mises à jour automatiques
+
 Un tag sur GitHub suffit : les binaires sont **signés en ed25519**. Les agents installent
 la nouvelle version tout seuls, et reviennent à l'ancienne si elle ne démarre pas.
 
@@ -163,16 +169,16 @@ curl -fsSL https://github.com/beedywool/vps-admin/releases/latest/download/insta
   | sudo bash -s -- --domain admin.example.com
 ```
 
-Repo **privé** : ajoute `--token <jeton>`, un jeton GitHub *fine-grained* en lecture seule sur « Contents » de ce repo. Il reste dans la config pour que les mises à jour continuent.
+Repo **privé** : ajoute `--token <jeton>`, un jeton GitHub _fine-grained_ en lecture seule sur « Contents » de ce repo. Il reste dans la config pour que les mises à jour continuent.
 
-| Étape | Ce que fait l'installeur |
-| --- | --- |
-| 1 | Télécharge le binaire (amd64 ou arm64), vérifie la **signature ed25519** puis le checksum |
-| 2 | Crée l'utilisateur système `vps-admin` (groupes `docker`, `systemd-journal`, `adm`) |
-| 3 | Écrit la liste blanche sudo avec les vrais chemins des commandes |
-| 4 | Installe le service systemd et le script de retour arrière |
-| 5 | Configure le reverse proxy trouvé : Caddy (domaine et dossier des apps) ou nginx (site dédié et certificat Let's Encrypt via certbot, proposé à l'installation s'il manque) |
-| 6 | Affiche un **code d'appairage** |
+| Étape | Ce que fait l'installeur                                                                                                                                                    |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Télécharge le binaire (amd64 ou arm64), vérifie la **signature ed25519** puis le checksum                                                                                   |
+| 2     | Crée l'utilisateur système `vps-admin` (groupes `docker`, `systemd-journal`, `adm`)                                                                                         |
+| 3     | Écrit la liste blanche sudo avec les vrais chemins des commandes                                                                                                            |
+| 4     | Installe le service systemd et le script de retour arrière                                                                                                                  |
+| 5     | Configure le reverse proxy trouvé : Caddy (domaine et dossier des apps) ou nginx (site dédié et certificat Let's Encrypt via certbot, proposé à l'installation s'il manque) |
+| 6     | Affiche un **code d'appairage**                                                                                                                                             |
 
 **Panel privé.** Si Tailscale tourne, l'installeur propose de servir le panel **uniquement sur le tailnet** (`--tailscale`, ou `--public` pour ne pas être questionné) : `tailscale serve` le publie sur `https://machine.tailnet.ts.net` avec un certificat du tailnet (active « HTTPS » dans la console Tailscale), et le domaine public ne reçoit plus que les webhooks GitHub. Pour WireGuard ou une IP de bureau : `--allow 10.8.0.0/24,…`, le reste reçoit un 403 (webhooks et renouvellement des certificats restent ouverts). Autres options : `--proxy caddy|nginx|none`, `--email`, `--no-tls`.
 
@@ -193,6 +199,7 @@ Ouvre ensuite le domaine, tape le code, crée ta passkey. Pour le client PWA ou 
 <td width="50%" valign="top">
 
 **Accès**
+
 - **Code d'appairage** généré par root : à usage unique, 10 minutes, seul le dernier compte, essais limités.
 - **Web** : passkey obligatoire, cookie `__Host-` `SameSite=Strict`, en-tête anti-CSRF.
 - **Client PWA** : jeton par appareil, gardé sur le téléphone derrière le verrouillage de l'app, révocable ; les autres origines ne peuvent appeler l'API qu'avec un jeton d'appareil, jamais avec le cookie du panel.
@@ -202,6 +209,7 @@ Ouvre ensuite le domaine, tape le code, crée ta passkey. Pour le client PWA ou 
 <td width="50%" valign="top">
 
 **Serveur**
+
 - L'agent écoute sur `127.0.0.1`, le TLS est assuré par Caddy ou par nginx avec certbot.
 - Utilisateur dédié, root seulement pour les commandes de `/etc/sudoers.d/vps-admin`.
 - Variables d'environnement, clé GitHub App et clés des fournisseurs d'IA **chiffrées** (AES-GCM).
@@ -271,6 +279,7 @@ go run ./cmd/vps-admin pair -config dev.json
 <br>
 
 Pousser un tag `vX.Y.Z` lance le workflow `release` :
+
 1. il compile les binaires ;
 2. il signe `SHA256SUMS` avec le secret `RELEASE_SIGNING_KEY` ;
 3. il publie la release : un binaire par architecture, `install.sh` et

@@ -1,90 +1,86 @@
 <script setup lang="ts">
 // Variables go to the app's environment or to a file in the deployed folder (some
 // compose files read a real .env).
-import M3Switch from './M3Switch.vue'
+import M3Switch from './M3Switch.vue';
 
-const file = defineModel<boolean>('file', { required: true })
-const path = defineModel<string>('path', { required: true })
+const file = defineModel<boolean>('file', { required: true });
+const path = defineModel<string>('path', { required: true });
 </script>
 
 <template>
-  <div class="target">
-    <div class="row">
-      <div class="grow">
-        <div>Write a .env file</div>
-        <div class="muted small">
-          {{
-            file
-              ? 'Written to a file in the deployed folder.'
-              : 'Passed as environment variables.'
-          }}
+    <div class="target">
+        <div class="row">
+            <div class="grow">
+                <div>Write a .env file</div>
+                <div class="muted small">
+                    {{ file ? 'Written to a file in the deployed folder.' : 'Passed as environment variables.' }}
+                </div>
+            </div>
+            <M3Switch v-model="file" label="Write a .env file" />
         </div>
-      </div>
-      <M3Switch v-model="file" label="Write a .env file" />
+        <div v-if="file" class="ffield">
+            <label class="tf">
+                <span>Path of the file</span>
+                <input v-model.trim="path" placeholder=".env" spellcheck="false" autocomplete="off" />
+            </label>
+            <small>Relative to the app’s folder, like .env. Rewritten at each deployment.</small>
+        </div>
     </div>
-    <div v-if="file" class="ffield">
-      <label class="tf">
-        <span>Path of the file</span>
-        <input v-model.trim="path" placeholder=".env" spellcheck="false" autocomplete="off" />
-      </label>
-      <small>Relative to the app’s folder, like .env. Rewritten at each deployment.</small>
-    </div>
-  </div>
 </template>
 
 <style scoped>
 .target {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 .row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
 }
 .ffield {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
 }
 .ffield small {
-  padding-left: 16px;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--on-sv);
+    padding-left: 16px;
+    font-size: 12px;
+    line-height: 16px;
+    color: var(--on-sv);
 }
 .tf {
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2px;
-  height: 56px;
-  padding: 6px 16px;
-  border-radius: 12px 12px 4px 4px;
-  background: var(--schh);
-  border-bottom: 1px solid var(--on-sv);
-  overflow: hidden;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    height: 56px;
+    padding: 6px 16px;
+    border-radius: 12px 12px 4px 4px;
+    background: var(--schh);
+    border-bottom: 1px solid var(--on-sv);
+    overflow: hidden;
 }
 .tf:focus-within {
-  border-bottom-color: var(--primary);
-  box-shadow: inset 0 -1px 0 var(--primary);
+    border-bottom-color: var(--primary);
+    box-shadow: inset 0 -1px 0 var(--primary);
 }
 .tf span {
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 500;
-  color: var(--primary);
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+    color: var(--primary);
 }
 .tf input {
-  height: 24px;
-  border: none;
-  background: none;
-  outline: none;
-  font-size: 16px;
-  color: var(--on-surface);
-  padding: 0;
+    height: 24px;
+    border: none;
+    background: none;
+    outline: none;
+    font-size: 16px;
+    color: var(--on-surface);
+    padding: 0;
 }
 </style>
