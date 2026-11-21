@@ -2,8 +2,8 @@
 // Navigation rail on wide screens; under 760 px a bottom bar with four sections and, in its middle,
 // the large M3 cookie that fans out the seven others (the same shell as Lock, Parcel and Escale,
 // app-template's docs/design.md section 6). Icons are outlined, filled on the current section.
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import Icon, { type IconName } from './Icon.vue'
 import M3Shape from './M3Shape.vue'
 import ServerBackground from './ServerBackground.vue'
@@ -17,6 +17,7 @@ import { duration } from '@/lib/format'
 import { toastError } from '@/lib/ui'
 
 const route = useRoute()
+const router = useRouter()
 
 const NAV: { to: string; label: string; icon: IconName; mobile: boolean }[] = [
   { to: '/', label: 'Overview', icon: 'overview', mobile: true },
@@ -40,32 +41,63 @@ const BAR = NAV.filter((n) => n.mobile)
 const barLeft = BAR.slice(0, Math.ceil(BAR.length / 2))
 const barRight = BAR.slice(Math.ceil(BAR.length / 2))
 
-// The fan around the cookie: one arc from 140 to 40 degrees (radius 130 px) for up to four
-// sections; beyond that two rings, the first ones on an inner arc (115 px) and the rest on an
-// outer one (210 px, 128 to 52 degrees so it stays inside a 360 px screen).
-function arcPos(i: number, n: number) {
-  let r = 130, from = 140, to = 40, k = i, m = n
-  if (n > 4) {
-    const inner = Math.floor(n / 2)
-    if (i < inner) [r, m] = [115, inner]
-    else [r, from, to, k, m] = [210, 128, 52, i - inner, n - inner]
-  }
-  const a = ((m === 1 ? 90 : from - ((from - to) * k) / (m - 1)) * Math.PI) / 180
-  return { '--x': `${Math.round(Math.cos(a) * r)}px`, '--y': `${Math.round(-Math.sin(a) * r)}px`, '--d': `${i * 40}ms` }
-}
+// The hub's menu (M3 Expressive FAB menu, laid out as a grid): a panel rising from the shape, the
+// other sections as tiles, four across (three for six or nine, so no row is left with one)
+const cols = computed(() => {
+  const n = MORE.length
+  return n <= 4 ? n : n === 6 || n === 9 ? 3 : 4
+})
 
 const moreOpen = ref(false)
+const hubBtn = ref<HTMLButtonElement>()
+const menu = ref<HTMLElement>()
 // The bar stays above the scrim while it fades out (else the cookie darkens)
 const fanLeaving = ref(false)
 watch(moreOpen, (v) => (v ? lockScroll() : unlockScroll()))
 watch(() => route.path, () => (moreOpen.value = false))
-function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') moreOpen.value = false
+// Back (Android's button or gesture, the browser's) closes the menu instead of leaving the page: an
+// entry is pushed while it's open, with the router's own state so the router sees the same page
+function openMenu() {
+  moreOpen.value = true
+  history.pushState({ ...history.state, hubMenu: true }, '')
+  void nextTick(() => menu.value?.querySelector<HTMLElement>('a')?.focus({ preventScroll: true }))
+}
+function closeMenu(refocus = false) {
+  if (!moreOpen.value) return
+  moreOpen.value = false
+  if (history.state?.hubMenu) history.back()
+  if (refocus) hubBtn.value?.focus({ preventScroll: true })
+}
+const onPop = () => {
+  if (moreOpen.value && !history.state?.hubMenu) moreOpen.value = false
+}
+// A section chosen: it takes the menu's history entry, so Back from it returns to the page under
+function go(e: MouseEvent, to: string) {
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button > 0) return
+  e.preventDefault()
+  const replace = Boolean(history.state?.hubMenu)
+  moreOpen.value = false
+  void (replace ? router.replace(to) : router.push(to))
+}
+// Arrows move between the tiles (Escape is below)
+function menuKey(e: KeyboardEvent) {
+  const by: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols.value, ArrowUp: -cols.value }
+  if (!(e.key in by) || !menu.value) return
+  const items = [...menu.value.querySelectorAll<HTMLElement>('a')]
+  const i = items.indexOf(document.activeElement as HTMLElement)
+  const next = items[Math.min(items.length - 1, Math.max(0, (i < 0 ? 0 : i) + by[e.key]!))]
+  if (!next) return
+  e.preventDefault()
+  next.focus()
+}
+const onKey = (e: KeyboardEvent) => {
+  if (e.key === 'Escape' && moreOpen.value) closeMenu(true)
 }
 
 let stop: (() => void) | undefined
 onMounted(async () => {
   document.addEventListener('keydown', onKey)
+  window.addEventListener('popstate', onPop)
   try {
     loadAppearance().catch(() => {})
     await loadSystem()
@@ -76,6 +108,7 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKey)
+  window.removeEventListener('popstate', onPop)
   if (moreOpen.value) unlockScroll()
   stop?.()
 })
@@ -110,7 +143,7 @@ onBeforeUnmount(() => {
         {{ n.label }}
       </RouterLink>
       <span class="hub-slot">
-        <button type="button" class="hub" :class="{ open: moreOpen, cur: moreActive }" :aria-expanded="moreOpen" aria-haspopup="true" :aria-label="moreOpen ? 'Close more sections' : 'More sections'" @click="moreOpen = !moreOpen">
+        <button ref="hubBtn" type="button" class="hub" :class="{ open: moreOpen, cur: moreActive }" :aria-expanded="moreOpen" aria-haspopup="true" aria-controls="hub-menu" :aria-label="moreOpen ? 'Close more sections' : 'More sections'" v-tip="moreOpen ? 'Close more sections' : 'More sections'" @click="moreOpen ? closeMenu() : openMenu()">
           <M3Shape kind="cookie" :size="64" fill="var(--pc)" class="hub-shape" />
           <Icon name="plus" :size="30" class="hub-icon" />
         </button>
@@ -122,12 +155,13 @@ onBeforeUnmount(() => {
     </nav>
 
     <Transition name="fan" @before-leave="fanLeaving = true" @after-leave="fanLeaving = false">
-      <div v-if="moreOpen" class="scrim" @click.self="moreOpen = false">
-        <nav class="fan" aria-label="More sections">
-          <RouterLink v-for="(n, k) in MORE" :key="n.to" :to="n.to" class="fan-item" :class="{ active: isActive(n.to) }" :style="arcPos(k, MORE.length)" :aria-current="isActive(n.to) ? 'page' : undefined">
-            <span class="fan-btn"><Icon :name="n.icon" :size="26" :filled="isActive(n.to)" /></span>
-            <span class="fan-lbl">{{ n.label }}</span>
-          </RouterLink>
+      <div v-if="moreOpen" class="scrim" @click.self="closeMenu()">
+        <nav id="hub-menu" ref="menu" class="hub-menu" aria-label="More sections" :style="{ '--cols': cols }" @keydown="menuKey">
+          <!-- Plain links: RouterLink would navigate before go() can take the menu's history entry -->
+          <a v-for="(n, k) in MORE" :key="n.to" :href="router.resolve(n.to).href" class="hm-item st" :class="{ active: isActive(n.to) }" :aria-current="isActive(n.to) ? 'page' : undefined" :style="{ '--d': `${k * 25}ms` }" @click="go($event, n.to)">
+            <span class="hm-tile"><Icon :name="n.icon" :size="26" :filled="isActive(n.to)" /></span>
+            <span class="hm-lbl">{{ n.label }}</span>
+          </a>
         </nav>
       </div>
     </Transition>
@@ -353,77 +387,104 @@ onBeforeUnmount(() => {
     z-index: 28;
     background: rgba(0, 0, 0, 0.45);
   }
-  /* Center of the arc: center of the shape (64 px bar, shape raised by 26 px) */
-  .fan {
+  /* The hub's menu: a panel rising from the shape (its top is 26 px above the 64 px bar), 16 px
+     clear of it, 12 px from the screen's sides at most, scrolling inside if a short screen asks */
+  .hub-menu {
     position: absolute;
     left: 50%;
-    bottom: calc(38px + 7px + env(safe-area-inset-bottom));
-    width: 0;
-    height: 0;
+    bottom: calc(64px + 26px + 16px + env(safe-area-inset-bottom));
+    display: grid;
+    /* Tiles up to 88 px: a short list makes a small panel, a long one shrinks them to fit */
+    grid-template-columns: repeat(var(--cols), minmax(0, 88px));
+    gap: 4px;
+    width: max-content;
+    max-width: calc(100% - 24px);
+    max-height: calc(100dvh - 64px - 26px - 32px - env(safe-area-inset-bottom));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 12px;
+    border-radius: 28px;
+    background: var(--sc);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
+    translate: -50% 0;
+    transform-origin: 50% 100%;
+    transition:
+      scale 0.42s cubic-bezier(0.34, 1.4, 0.64, 1),
+      translate 0.42s cubic-bezier(0.34, 1.4, 0.64, 1),
+      opacity 0.2s var(--ease);
   }
-  .fan-item {
-    position: absolute;
-    left: 0;
-    top: 0;
+  .hm-item {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 4px;
-    width: 88px;
-    margin: -28px 0 0 -44px;
+    gap: 6px;
+    min-width: 0;
+    padding: 10px 2px 8px;
+    border-radius: 20px;
+    color: var(--on-surface);
     font-size: 12px;
     font-weight: 600;
+    line-height: 1.25;
+    text-align: center;
     text-decoration: none;
-    translate: var(--x) var(--y);
     transition:
-      translate 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) var(--d),
-      scale 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) var(--d),
-      opacity 0.2s var(--d);
+      opacity 0.32s var(--ease-decel) var(--d),
+      translate 0.32s var(--ease-decel) var(--d);
   }
-  .fan-btn {
+  .hm-tile {
+    position: relative;
     display: grid;
     place-items: center;
     width: 56px;
     height: 56px;
     border-radius: 18px;
-    background: var(--scl, var(--sc));
+    background: var(--sch);
     color: var(--on-surface);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition:
+      border-radius 0.2s var(--ease),
+      background 0.2s var(--ease);
   }
-  .fan-btn {
-    transition: scale 0.15s var(--ease, ease);
+  .hm-item:active .hm-tile {
+    border-radius: 28px;
   }
-  .fan-item:active .fan-btn {
-    scale: 0.92;
-  }
-  .fan-item.active .fan-btn {
+  .hm-item.active .hm-tile {
     background: var(--secc);
     color: var(--on-secc);
   }
-  .fan-lbl {
-    padding: 2px 10px;
-    border-radius: 10px;
-    background: var(--scl, var(--sc));
-    color: var(--on-surface);
-    white-space: nowrap;
+  .hm-lbl {
+    max-width: 100%;
+    overflow-wrap: anywhere;
   }
-  .fan-item.active .fan-lbl {
-    background: var(--secc);
-    color: var(--on-secc);
-  }
+  /* Opening: the panel grows from the shape on a spring, the tiles rise in one after another;
+     closing: a quick fade */
   .fan-enter-from,
   .fan-leave-to {
     opacity: 0;
   }
-  .fan-enter-from .fan-item,
-  .fan-leave-to .fan-item {
-    translate: 0 0;
-    scale: 0.3;
+  .fan-enter-from .hub-menu {
     opacity: 0;
+    scale: 0.6;
+    translate: -50% 40px;
+  }
+  .fan-enter-from .hm-item {
+    opacity: 0;
+    translate: 0 10px;
+  }
+  .fan-leave-to .hub-menu {
+    opacity: 0;
+    scale: 0.94;
+    transition-duration: 0.18s;
+    transition-timing-function: var(--ease);
+  }
+  .fan-leave-active .hm-item {
+    transition: none;
   }
   .fan-enter-active,
   .fan-leave-active {
-    transition: opacity 0.3s;
+    transition: opacity 0.3s var(--ease);
+  }
+  .fan-leave-active {
+    transition-duration: 0.2s;
   }
   .main-col {
     padding: 16px 16px 96px;
@@ -439,7 +500,8 @@ onBeforeUnmount(() => {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .fan-item,
+  .hub-menu,
+  .hm-item,
   .hub-shape,
   .hub-icon {
     transition: none;
