@@ -54,7 +54,7 @@ async function connect() {
 async function disconnect() {
   const ok = await confirm({
     title: 'Disconnect GitHub?',
-    body: 'Apps keep running, but cannot be redeployed until GitHub is connected again. Delete the App on GitHub too if you no longer need it.',
+    body: 'Apps keep running but can’t redeploy until GitHub is connected again.',
     action: 'Disconnect',
     danger: true,
   })
@@ -90,9 +90,7 @@ onBeforeUnmount(() => clearInterval(timer))
       <div class="grow">
         <h2>Deploy from GitHub</h2>
         <p class="muted">
-          Creates a private GitHub App for this server in one click: it can only read the repositories you
-          choose, and tells the server when you push so it redeploys by itself. GitHub then lets
-          you pick your account or any of your organizations.
+          Creates a private GitHub App: it reads only the repositories you choose and redeploys on push.
         </p>
         <p class="muted small">
           You can also deploy any public repository from its URL without connecting GitHub, using
@@ -118,7 +116,7 @@ onBeforeUnmount(() => clearInterval(timer))
     </section>
 
     <p v-if="gh && !gh.domains" class="muted small">
-      No reverse proxy (Caddy or nginx) was set up by the installer, so apps get no public domain. They can still be served on Tailscale or stay on 127.0.0.1.
+      No reverse proxy, so no public domains. Apps can still use Tailscale or stay local.
     </p>
 
     <div v-if="loading" class="loading-block"><ShapeLoader label="Loading apps" /></div>

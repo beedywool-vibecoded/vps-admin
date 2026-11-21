@@ -327,7 +327,7 @@ onMounted(async () => {
 
     <section class="card">
       <div class="card-head"><h2>Appearance</h2></div>
-      <p v-if="external" class="ext-note small" role="status">Controlled by an external source: the Launcher's theme. To use these settings here, turn off “Share my theme with apps” in the Launcher's settings.</p>
+      <p v-if="external" class="ext-note small" role="status">Set by the Launcher. Turn off “Share my theme with apps” there to change it here.</p>
       <div class="setting">
         <div class="grow">
           <div>Theme</div>
@@ -351,7 +351,7 @@ onMounted(async () => {
       <div class="setting col">
         <div>
           <div>Seed color</div>
-          <div class="muted small">The whole palette is generated from it, like Material You on Android</div>
+          <div class="muted small">The whole palette comes from it, like Material You</div>
         </div>
         <div :inert="Boolean(external)" :class="{ 'ext-off': external }" class="seeds" role="radiogroup" aria-label="Seed color">
           <button
@@ -393,7 +393,7 @@ onMounted(async () => {
             <div class="small muted">Opacity</div>
             <M3Slider v-model="opacity" label="Background opacity" :min="0.05" :max="1" :step="0.05" :format="(v) => `${Math.round(v * 100)}%`" @update:model-value="appearance.opacity = $event" @commit="commitOpacity" />
           </div>
-          <p class="muted small" style="margin: 0">JPEG, PNG or WebP, up to 8 MB. Cards stay opaque so text keeps its contrast.</p>
+          <p class="muted small" style="margin: 0">JPEG, PNG or WebP, up to 8 MB.</p>
         </div>
       </div>
     </section>
@@ -406,7 +406,7 @@ onMounted(async () => {
       <div class="setting">
         <div class="grow">
           <div>Notify me</div>
-          <div class="muted small">A container that stops, crashes or turns unhealthy, and a disk that fills up. Deployments and stops from the panel never alert, and every delivery is listed in Activity.</div>
+          <div class="muted small">A container that stops, crashes or turns unhealthy, and a full disk.</div>
         </div>
         <M3Switch v-model="alertEnabled" label="Send alerts" :disabled="!alertSet" />
       </div>
@@ -571,7 +571,7 @@ onMounted(async () => {
         <Icon name="person" :size="20" />
         <div class="grow">
           <div>Who uses this browser?</div>
-          <div class="muted small">Every device now has the name of its person, so admins can tell each other apart</div>
+          <div class="muted small">Every device now names its person</div>
         </div>
         <label class="field self-field"><input v-model="selfOwner" placeholder="Your name" aria-label="Your name" maxlength="60" autocomplete="name" /></label>
         <button class="btn btn-filled st" type="submit" :disabled="!selfOwner.trim()">Save</button>
@@ -652,8 +652,7 @@ onMounted(async () => {
         <span class="muted small">Repairs the service and adds what a new version needs</span>
       </div>
       <p class="muted small" style="margin: 0 0 10px">
-        It keeps the database, the apps and the current URL. Run it after an update when the release needs a system package
-        or the privileged helper, like rclone and FUSE for Google Drive backups.
+        Keeps the database, apps and URL. Run it when a release needs new system packages.
       </p>
       <div class="cmd">
         <code>{{ installCommand }}</code>

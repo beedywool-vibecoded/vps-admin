@@ -317,7 +317,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', fitCard))
           </label>
           <p v-if="publicError" class="err small">{{ publicError }}</p>
           <p v-else class="muted small">
-            A public repository cannot notify this server when you push, so automatic deploys stay off. Use Redeploy on the app after a push.
+            A public repository can’t deploy on push: use Redeploy.
           </p>
           <div class="actions">
             <button v-if="repo && isExternal" class="btn btn-text btn-lg st" type="button" @click="step = 2">

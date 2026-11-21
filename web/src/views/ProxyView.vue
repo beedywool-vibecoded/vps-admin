@@ -170,8 +170,7 @@ onMounted(async () => {
       </div>
 
       <p v-if="sites.length" class="hint muted small">
-        Drag a row to set the order. Pausing a site takes its domain out of {{ engine }} and keeps everything else
-        running; the row stays here so it can be turned back on. Deleting one removes it from the proxy configuration.
+        Drag to reorder. Pausing removes the domain; the app keeps running.
       </p>
 
       <section class="card">
@@ -259,7 +258,7 @@ onMounted(async () => {
       <section v-if="rep.unreadable.length" class="card">
         <h2>Some files could not be read</h2>
         <p class="muted small">
-          The agent runs as its own user, so a configuration file it cannot open is left out of this list.
+          Files the agent can’t read are left out.
         </p>
         <code v-for="f in rep.unreadable" :key="f" class="muted small line">{{ f }}</code>
       </section>

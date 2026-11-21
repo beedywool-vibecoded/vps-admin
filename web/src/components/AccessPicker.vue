@@ -56,7 +56,7 @@ const options = computed(() => {
       id: 'vpn' as const,
       icon: 'lock' as const,
       title: 'VPN only',
-      sub: 'The domain answers only to the networks you list (WireGuard, ZeroTier, an office)',
+      sub: 'Only the networks you list can reach it',
       disabled: !!setup.value && !setup.value.sites,
     },
     {

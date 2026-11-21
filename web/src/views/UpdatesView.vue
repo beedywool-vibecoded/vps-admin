@@ -136,7 +136,7 @@ onMounted(async () => {
       <div v-if="st?.error" class="note bad"><Icon name="alert" :size="18" /> {{ st.error }}</div>
       <div v-if="st?.lastResult" class="note" :class="{ bad: st.lastResult.startsWith('rolled back') }">
         <Icon :name="st.lastResult.startsWith('rolled back') ? 'alert' : 'history'" :size="18" />
-        Last update: {{ st.lastResult }}{{ st.lastResult.startsWith('rolled back') ? ' (it failed to start, the previous version was restored and this one will not be retried automatically)' : '' }}
+        Last update: {{ st.lastResult }}{{ st.lastResult.startsWith('rolled back') ? '  (it failed to start: the previous version is back)' : '' }}
       </div>
 
       <div v-if="st?.latest" class="release">
@@ -187,7 +187,7 @@ onMounted(async () => {
         </form>
       </div>
       <div class="linked">
-        <SwitchRow v-model="auto" label="Install updates automatically" hint="Checks the update source every 6 hours. Only builds signed with the project key are installed." :disabled="!st" />
+        <SwitchRow v-model="auto" label="Install updates automatically" hint="Checks every 6 hours. Only signed builds are installed." :disabled="!st" />
         <SwitchRow v-model="pre" label="Follow pre-releases" hint="Get release candidates before they are marked stable." :disabled="!st" />
       </div>
     </section>
@@ -205,8 +205,7 @@ onMounted(async () => {
       </div>
       <div v-if="reboot && reboot.status !== 'ok'" class="note"><Icon name="info" :size="18" /> {{ reboot.detail }}</div>
       <p class="muted small" style="margin: 0">
-        Installing packages and rebooting from the panel comes with the assistant, behind an approval for each
-        step. Until then, use <code>sudo apt full-upgrade</code> (or your distribution's equivalent) over SSH.
+        Until the assistant can do it, use <code>sudo apt full-upgrade</code> (or your distribution's equivalent) over SSH.
       </p>
     </section>
     <RebootDialog v-model="rebootOpen" />

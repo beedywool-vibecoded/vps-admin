@@ -34,7 +34,7 @@ async function reboot() {
     }
     await new Promise((r) => setTimeout(r, 4000))
   }
-  toast('The server has not come back after 6 minutes. Check it from your hosting console.', true)
+  toast('No answer after 6 minutes. Check your hosting console.', true)
   state.value = 'ask'
 }
 </script>
@@ -43,8 +43,7 @@ async function reboot() {
   <M3Dialog v-model="open" title="Restart the server">
     <template v-if="state === 'ask'">
       <p class="muted" style="margin: 0">
-        Every site, container and service stops for about a minute while the server reboots. Containers with a
-        restart policy and enabled services come back on their own.
+        Everything stops for about a minute, then comes back.
       </p>
       <label class="field">
         <input v-model="typed" :placeholder="`Type ${session.host?.hostname ?? 'the server name'} to confirm`" aria-label="Server name" autocomplete="off" spellcheck="false" />

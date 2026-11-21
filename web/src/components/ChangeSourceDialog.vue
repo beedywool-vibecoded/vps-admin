@@ -118,9 +118,7 @@ function change() {
   <M3Dialog v-model="open" title="Change source">
     <div class="src-body">
       <p class="muted small note">
-        The app keeps its settings and deployment history. Pushes and deployments follow the repository picked here,
-        including when it was moved to another account or organization. A public repository entered by URL has no
-        push webhook: automatic deploys stay off.
+        Settings and history are kept. A public repository by URL can’t deploy on push.
       </p>
       <div class="public">
         <div class="muted small">Use a public repository instead</div>

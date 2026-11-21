@@ -15,8 +15,8 @@ const path = defineModel<string>('path', { required: true })
         <div class="muted small">
           {{
             file
-              ? 'The variables go into a file in the deployed folder instead of the app environment.'
-              : 'The variables are handed to the app and to compose as environment variables.'
+              ? 'Written to a file in the deployed folder.'
+              : 'Passed as environment variables.'
           }}
         </div>
       </div>
@@ -27,7 +27,7 @@ const path = defineModel<string>('path', { required: true })
         <span>Path of the file</span>
         <input v-model.trim="path" placeholder=".env" spellcheck="false" autocomplete="off" />
       </label>
-      <small>Relative to the app's folder, for example .env or config/.env. It is rewritten at each deployment and never committed.</small>
+      <small>Relative to the app’s folder, like .env. Rewritten at each deployment.</small>
     </div>
   </div>
 </template>

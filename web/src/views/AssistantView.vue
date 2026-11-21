@@ -451,7 +451,7 @@ onBeforeUnmount(() => {
                 <pre class="install">{{ active.install }}</pre>
               </M3Expand>
               <p v-if="active.ready" class="small muted">
-                The panel runs this command with its own tools disabled: every change still waits for your approval here.
+                Every change still waits for your approval.
               </p>
               <button class="btn btn-outlined st" type="button" @click="loadSettings">Check again</button>
             </template>
@@ -488,8 +488,7 @@ onBeforeUnmount(() => {
               <Icon name="chevron-right" :size="18" class="persona-go" />
             </button>
             <p class="small muted">
-              Added to every message, whichever AI answers. It guides the assistant but cannot lift an approval or a
-              blocked action.
+              Added to every message. It can’t lift an approval or a block.
             </p>
           </div>
         </M3Expand>
@@ -617,8 +616,7 @@ onBeforeUnmount(() => {
 
     <M3Dialog v-model="personaOpen" title="Personality prompt">
       <p class="muted" style="margin: 0">
-        This text is added to the instructions sent with every message, whichever AI answers. It shapes how the
-        assistant talks and what it focuses on; it cannot lift an approval or a blocked action.
+        Added to every message. It can’t lift an approval or a block.
       </p>
       <label class="field area">
         <textarea
@@ -641,7 +639,7 @@ onBeforeUnmount(() => {
 
     <M3Dialog v-model="urlOpen" title="Ollama address">
       <p class="muted" style="margin: 0">
-        Where the panel finds Ollama. Keep it on loopback, or point it at another machine running Ollama.
+        Where Ollama runs. Keep it on loopback if you can.
       </p>
       <form @submit.prevent="saveURL">
         <label class="field">

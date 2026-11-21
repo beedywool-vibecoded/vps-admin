@@ -144,7 +144,7 @@ onBeforeUnmount(() => {
     </RouterLink>
 
     <M3Dialog v-model="editing" title="Widgets">
-      <p class="muted small" style="margin: 0">Shown in the bar of this browser. The Overview leaves out the cards the bar shows.</p>
+      <p class="muted small" style="margin: 0">Shown in this browser’s bar.</p>
       <div class="choices">
         <M3Checkbox v-for="w in WIDGETS" :key="w.id" :model-value="visible(w.id)" :label="w.label" @update:model-value="setVisible(w.id, $event)" />
       </div>

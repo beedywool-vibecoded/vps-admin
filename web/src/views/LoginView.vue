@@ -161,7 +161,7 @@ onMounted(() => {
             <Icon name="globe" :size="20" />
             <input v-model="deviceName" aria-label="Name of this device" maxlength="60" />
           </label>
-          <p class="muted small hint">Your name tells the other admins who uses this device, in the device list and the activity log.</p>
+          <p class="muted small hint">Shown to the other admins in devices and activity.</p>
           <button class="btn btn-filled btn-lg st wide" type="submit" :disabled="busy || code.length !== 11 || !owner.trim() || !deviceName.trim()">Pair</button>
         </form>
         <button v-if="state?.hasPasskeys" class="btn btn-text st" type="button" @click="(step = 'signin'), (error = '')">
@@ -172,8 +172,7 @@ onMounted(() => {
       <template v-else-if="step === 'enroll'">
         <h1>Create your passkey</h1>
         <p class="muted">
-          Paired. Now save a passkey (fingerprint, face, PIN or security key): it is what lets you sign in
-          from now on. Codes are only for new devices.
+          Paired. Now save a passkey: it’s how you sign in from now on.
         </p>
         <button class="btn btn-filled btn-lg st wide" type="button" :disabled="busy || !canPasskey" @click="enroll">
           <Icon name="key" :size="20" /> Create a passkey

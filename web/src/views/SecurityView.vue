@@ -64,8 +64,7 @@ onMounted(() => load())
           <span v-if="counts.unknown" class="chip chip-outline">{{ counts.unknown }} unknown</span>
         </div>
         <p class="muted small">
-          The checks only read the configuration. Fixes are listed with each item; the assistant will be
-          able to apply them with your approval.
+          Read-only checks. Fixes are listed with each item.
         </p>
       </div>
     </section>

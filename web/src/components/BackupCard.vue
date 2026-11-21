@@ -255,7 +255,7 @@ function saveSchedule() {
           </button>
           <button v-if="connected" class="btn btn-text st" type="button" @click="editing = false; token = ''; passphrase = ''">Cancel</button>
         </div>
-        <p v-if="st.hasPassphrase" class="muted small">Changing the passphrase makes the archives already on the Drive unreadable. Download them first if you need them. After changing the token, unmount and mount the Drive again so rclone uses it.</p>
+        <p v-if="st.hasPassphrase" class="muted small">A new passphrase makes older archives unreadable. After a new token, mount the Drive again.</p>
       </section>
 
       <template v-else>
@@ -300,7 +300,7 @@ function saveSchedule() {
             <div class="row">
               <div class="grow">
                 <div>Enabled</div>
-                <div class="muted small">The panel database, its key, the apps and their variables, in one encrypted archive</div>
+                <div class="muted small">The panel’s database, key and apps, encrypted</div>
               </div>
               <M3Switch v-model="enabled" label="Back up every day" />
             </div>
@@ -310,8 +310,8 @@ function saveSchedule() {
                 <div>What the daily backup keeps</div>
                 <div class="muted small">
                   {{ kind === 'full'
-                    ? 'The panel state plus app sources, wallpaper and Docker volumes. Containers are paused while volumes are copied.'
-                    : 'The panel state: database, key, apps and their variables. Restoring it leaves the containers untouched.' }}
+                    ? 'Panel state, app sources and Docker volumes. Pauses containers.'
+                    : 'Panel state only. Containers are untouched.' }}
                 </div>
               </div>
               <M3Select v-model="kind" class="kind" label="Daily archive" :options="kindOptions" />
@@ -336,7 +336,7 @@ function saveSchedule() {
           <div class="card-head">
             <h2>Back up now</h2>
           </div>
-          <p class="muted small">Both write an encrypted archive and upload it to the Drive. The full one pauses the containers while it copies their volumes.</p>
+          <p class="muted small">Both upload an encrypted archive. Full pauses containers while copying volumes.</p>
           <div class="acts">
             <button class="btn btn-filled st" type="button" :disabled="busy === 'run' || st.running" @click="run('settings')">
               <Icon name="cloud" :size="18" /> {{ st.running ? st.progress || 'Backing up…' : 'Panel state' }}
@@ -394,7 +394,7 @@ function saveSchedule() {
     </template>
 
     <section v-else class="card">
-      <p class="muted small">The backup status is unavailable. Reload the page, then check the agent's logs.</p>
+      <p class="muted small">Backup status unavailable. Check the agent’s logs.</p>
     </section>
 
     <M3Dialog v-model="restoreOpen" title="Restore this backup">

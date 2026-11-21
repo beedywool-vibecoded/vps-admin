@@ -404,7 +404,7 @@ onBeforeUnmount(() => {
       </section>
       <section v-else class="card danger stack">
         <h2>Delete app</h2>
-        <p class="muted small">Stops and removes the containers, images, the proxy site and the source folder. Named volumes are kept unless you tick the box.</p>
+        <p class="muted small">Removes containers, images, the site and the source. Named volumes stay unless ticked.</p>
         <M3Checkbox v-model="deleteVolumes" class="check" label="Also delete its data volumes" />
         <button class="btn btn-danger st" type="button" :disabled="busy || running" @click="remove">Delete {{ app.id }}</button>
       </section>
